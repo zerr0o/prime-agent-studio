@@ -516,6 +516,24 @@ footer svg {
 #components-status:empty {
   display: none;
 }
+/* Fast MAIN startup: minimal connecting screen, not settings/launcher.
+   Boot hides launcher controls until explicit settings/needs-config.
+   Background stays hidden via native visible=false; CSS only affects foreground. */
+body.boot #choices,
+body.boot #components,
+body.boot #updates,
+body.boot .actions {
+  display: none;
+}
+body.boot #progress {
+  display: flex;
+}
+body.boot-connecting .intro {
+  margin: 54px 0 10px;
+}
+body.boot-ready #progress[hidden] {
+  display: none;
+}
 @media (prefers-color-scheme: light) {
   .component-chip {
     color: #555763;

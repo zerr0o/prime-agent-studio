@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './start-server.mjs';
 import { acquireLock, probeHealth, parsePort, isDirectInvocation } from './launcher-common.mjs';
 import { repairDesktop280Resources } from './desktop-runtime-resources.mjs';
-import { selectedEnvironment } from '../lib/desktop-components.mjs';
+import { quickComponentReceipt, selectedEnvironment } from '../lib/desktop-components.mjs';
 
 const resources = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const importedFiles = ['workspace.json', 'subagent-defaults.json', 'lan-access.json', 'attachments'];
@@ -46,7 +46,7 @@ export async function importLegacyData(sourceRoot, dataDir) {
 }
 
 export async function startDesktop(
-  { resourceDir = resources, dataRoot, port = 3088, legacyRoot, env = process.env },
+  { resourceDir = resources, dataRoot, port = 3088, legacyRoot, env = process.env, allowUnconfigured = false },
   deps = {},
 ) {
   port = parsePort(port);
@@ -62,6 +62,15 @@ export async function startDesktop(
       'Le port du Studio est occupé par un autre service. / Studio port is occupied by another service.',
     );
   await mkdir(dataRoot, { recursive: true });
+  // Cold cheap gate (no exec/download): valid receipt starts immediately.
+  // Missing/changed/explicit mismatch throws components_required:* so the
+  // launcher runs full diagnose only when setup is actually necessary.
+  // Warm reuse above never reaches this gate. Explicit Later/background
+  // passes allowUnconfigured to open Studio anyway (agents report setup).
+  if (!allowUnconfigured) {
+    const receipt = await (deps.quickReceipt || quickComponentReceipt)({ dataRoot, env });
+    if (!receipt.ok) throw new Error(`components_required:${receipt.reason || 'missing'}`);
+  }
   const release = await acquireLock({ lock: join(dataRoot, 'desktop-setup.lock') });
   try {
     const current = await probe(port);

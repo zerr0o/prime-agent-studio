@@ -23,7 +23,7 @@ export async function runComponents(options, { signal, onProgress = () => {} } =
   const result =
     options.action === 'install'
       ? await prepareComponents({ ...options, signal, onProgress })
-      : await diagnoseComponents({ ...options, signal });
+      : await diagnoseComponents({ ...options, signal, onProgress });
   // Reuse a fully working external installation without authorizing any download.
   if (options.action === 'activate' && result.ready) {
     const base = join(options.dataRoot, 'engine');

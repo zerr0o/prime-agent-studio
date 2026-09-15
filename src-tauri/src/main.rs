@@ -243,27 +243,36 @@ fn desktop_logs(
 async fn desktop_start(
     window: WebviewWindow,
     app: tauri::AppHandle,
+    allow_unconfigured: Option<bool>,
+    background: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     native_only(&window)?;
+    // B2: clone prefs/lock state BEFORE claiming starting, so an early
+    // prefs-lock failure never returns with the flag held (permanent busy).
+    let (root, resources, port, legacy) = {
+        let state = app.state::<Desktop>();
+        let prefs = state.prefs.lock().map_err(|e| e.to_string())?;
+        (
+            state.root.clone(),
+            state.resources.clone(),
+            state.port,
+            prefs.legacy_root.clone(),
+        )
+    };
     let state = app.state::<Desktop>();
     if state.starting.swap(true, Ordering::SeqCst) {
         return Err("Le démarrage est déjà en cours. / Startup is already in progress.".into());
     }
-    let root = state.root.clone();
-    let resources = state.resources.clone();
-    let port = state.port;
-    let legacy = state
-        .prefs
-        .lock()
-        .map_err(|e| e.to_string())?
-        .legacy_root
-        .clone();
+    // Explicit background flag only gates error-window pop (constrained UI,
+    // no privilege). Always logged via desktop-error.log below.
+    let background = background.unwrap_or(false);
     let requested = fs::read(state.root.join("restart-after-update.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .is_some_and(|request| request["version"] == app.package_info().version.to_string());
+    let allow_unconfigured = allow_unconfigured.unwrap_or(false);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let options = serde_json::json!({"resourceDir":resources,"dataRoot":root,"port":port,"legacyRoot":legacy});
+        let options = serde_json::json!({"resourceDir":resources,"dataRoot":root,"port":port,"legacyRoot":legacy,"allowUnconfigured":allow_unconfigured});
         if requested {
             let restart = run_desktop_control(&resources, &options);
             // A busy server needs a fresh, explicit confirmation in Preferences.
@@ -274,7 +283,7 @@ async fn desktop_start(
         }
         let mut command = Command::new(resources.join("node.exe"));
         command.arg(resources.join("studio/scripts/desktop-start.mjs"))
-            .arg(serde_json::json!({"resourceDir":resources,"dataRoot":root,"port":port,"legacyRoot":legacy}).to_string())
+            .arg(serde_json::json!({"resourceDir":resources,"dataRoot":root,"port":port,"legacyRoot":legacy,"allowUnconfigured":allow_unconfigured}).to_string())
             .current_dir(&resources);
         #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
         let output = command.output().map_err(|e| format!("Impossible de lancer le Studio. / Could not start Studio: {e}"))?;
@@ -318,7 +327,11 @@ async fn desktop_start(
         Err(error) => {
             let _ = fs::create_dir_all(&state.root);
             let _ = fs::write(state.root.join("desktop-error.log"), &error);
-            show_main(&app);
+            // B4: background failures must not pop a hidden window. Foreground
+            // keeps existing behaviour (show launcher for setup/failure).
+            if !background {
+                show_main(&app);
+            }
             Err(error)
         }
     }

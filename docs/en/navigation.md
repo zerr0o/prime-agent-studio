@@ -33,7 +33,8 @@ The `.pastudio` format (v1) transfers complete conversations into another existi
 
 - Transferred content: complete conversations with their subagents, plus the project Roadmap. Project files, settings, provider keys, memories and the engine are never included.
 - Additive import: imported conversations join the target project without deleting anything. Reimporting the same archive is detected and skipped; if the source changed since, new copies are created, never merged.
-- When resuming an imported conversation, explicitly pick an available model: history keeps track of the original models without applying their settings.
+- When resuming an imported conversation, no manual pick is needed: the source model is reused when configured and available on the destination, otherwise the configured destination default is used (never an old unavailable provider). History keeps the original model records without changing the effective settings. If no usable model is configured, an explicit pick is requested before running.
+- Imported conversations arrive already read (no blue dot); the “Imported” badge clears on first open or after 3 minutes, on all devices. No yellow banner blocks resuming.
 - Histories may contain secrets (pasted keys, tool output): review the content before sharing an archive.
 - External paths quoted in a history are preserved as-is as a record; only new runs use the destination project folder.
 - No running process is migrated: only histories are transferred.

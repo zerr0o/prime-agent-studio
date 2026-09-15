@@ -9,11 +9,16 @@ import { t as tr, bindText, translateKnown } from './i18n.js';
 // code pastudio_import_pending (recoverable). Safe retry = re-POST SAME bytes to
 // preview (token single-use, never re-POST import). Pending preview: 200 with
 // pending:true, previewToken:null, duplicate:false (pending wins over duplicate).
-// No new session marks for pending; the server model gate blocks those starts.
+// No new session marks for pending; the server gate only blocks starts with no
+// usable model (otherwise auto-effective).
 // Raw octet-stream only v1 (no multipart). Full project, no subagent/model selection.
-// Import is additive, never overwrites, never selects the historical source model:
-// imported sessions keep a persisted needs-model mark and the banner below asks for
-// an explicit available-model choice through the existing model dialog (server gate).
+// Import is additive, never overwrites, never reuses an unavailable provider:
+// history model records stay verbatim as evidence and the destination effective
+// generationSettings.model is auto-assigned (source historical if
+// configured+usable, else destination default if configured+usable). The
+// imported badge clears on first user open (POST /api/sessions/read, persisted
+// pastudioOpenedAt) or 3 min TTL from pastudioImportedAt, whichever first.
+// Imported sessions are auto-READ (no blue dot) via server receipts init-once.
 export const ARCHIVE_MAX_BYTES = 128 * 1024 * 1024;
 export const ARCHIVE_ENDPOINTS = {
   export: '/api/project-archives/export',
@@ -31,11 +36,22 @@ const COUNT_KEYS = [
   ['journalEntries', 'archives.count_journal'],
   ['milestones', 'archives.count_milestones'],
 ];
-// Frozen backend contract v1: imported sessions carry pastudioImported,
-// pastudioNeedsModel (true until one explicit-model run consumes it to false),
-// pastudioArchiveId and pastudioImportedAt in overview/history summaries.
-const isFlagged = (summary) =>
-  !!summary && summary.pastudioImported === true && summary.pastudioNeedsModel === true;
+// Imported badge contract: pastudioImported + pastudioImportedAt +
+// pastudioOpenedAt (null until first user open via POST /api/sessions/read).
+// Badge visible until first open or 3 min TTL, whichever first. Persists across
+// refresh/devices via server fields. Legacy sessions without timestamps stay
+// visible until opened. pastudioNeedsModel is legacy-only (new imports set it
+// false; the gate allows auto-effective runs).
+export const ARCHIVE_BADGE_TTL_MS = 3 * 60 * 1000;
+export function isImportedBadgeVisible(summary, nowMs = Date.now()) {
+  if (!summary || summary.pastudioImported !== true) return false;
+  if (summary.pastudioOpenedAt) return false;
+  const at = Number(summary.pastudioImportedAt);
+  if (!Number.isSafeInteger(at)) return true;
+  return Number(nowMs) - at < ARCHIVE_BADGE_TTL_MS;
+}
+// Legacy helper kept for truth-table tests: old mandatory gate flag.
+const isFlagged = (summary) => isImportedBadgeVisible(summary);
 
 async function readBodyJson(response) {
   try {
@@ -69,6 +85,8 @@ export function createProjectArchives({ toast, getContext, refreshOverview, open
   const dialog = $('project-archive-dialog');
   const acknowledged = new Set();
   const freshIds = new Set();
+  const freshAt = new Map();
+  const openingInFlight = new Set();
   let mode = null;
   let destCwd = null;
   let destName = '';
@@ -290,8 +308,12 @@ export function createProjectArchives({ toast, getContext, refreshOverview, open
         throw new Error(detail || tr('archives.import_failed'));
       }
       const result = await response.json();
+      const stamped = Date.now();
       for (const id of Object.values(result?.idMap || {})) {
-        if (typeof id === 'string' && id) freshIds.add(id);
+        if (typeof id === 'string' && id) {
+          freshIds.add(id);
+          freshAt.set(id, stamped);
+        }
       }
       dialog.close();
       toast(() => tr('archives.import_done'));
@@ -309,24 +331,49 @@ export function createProjectArchives({ toast, getContext, refreshOverview, open
     }
   }
 
-  function flaggedIds() {
-    const ids = new Set(freshIds);
+  function flaggedIds(nowMs = Date.now()) {
+    const ids = new Set();
+    for (const id of freshIds) {
+      if (acknowledged.has(id)) continue;
+      const at = freshAt.get(id);
+      // Fresh ids cover the immediate post-import tick before overview refresh;
+      // server fields (importedAt/openedAt) take over afterwards.
+      if (Number.isSafeInteger(at) && nowMs - at >= ARCHIVE_BADGE_TTL_MS) continue;
+      ids.add(id);
+    }
     for (const p of context().projects || []) {
       for (const s of p.sessions || []) {
-        if (s?.id && isFlagged(s)) ids.add(s.id);
+        if (s?.id && isImportedBadgeVisible(s, nowMs) && !acknowledged.has(s.id)) ids.add(s.id);
+      }
+    }
+    // Prune expired fresh ids so the set cannot grow unbounded.
+    for (const id of [...freshIds]) {
+      const at = freshAt.get(id);
+      if (!ids.has(id) || (Number.isSafeInteger(at) && nowMs - at >= ARCHIVE_BADGE_TTL_MS)) {
+        let stillVisible = false;
+        for (const p of context().projects || []) {
+          for (const s of p.sessions || []) {
+            if (s?.id === id && isImportedBadgeVisible(s, nowMs)) { stillVisible = true; break; }
+          }
+          if (stillVisible) break;
+        }
+        if (!stillVisible) {
+          freshIds.delete(id);
+          freshAt.delete(id);
+        }
       }
     }
     return ids;
   }
 
-  function updateBadges() {
-    const ids = flaggedIds();
+  function updateBadges(nowMs = Date.now()) {
+    const ids = flaggedIds(nowMs);
     for (const row of document.querySelectorAll('.session-row[data-session-id]')) {
       const id = row.dataset.sessionId;
       const select = row.querySelector('.session-select');
       if (!select) continue;
       let badge = select.querySelector('.archive-imported-badge');
-      if (ids.has(id) && !acknowledged.has(id)) {
+      if (ids.has(id)) {
         if (!badge) {
           badge = document.createElement('span');
           badge.className = 'archive-imported-badge';
@@ -337,20 +384,79 @@ export function createProjectArchives({ toast, getContext, refreshOverview, open
     }
   }
 
-  function update() {
-    const { sessionId, session } = context();
-    const seen = !sessionId || acknowledged.has(sessionId);
-    const flagged =
-      !seen && (freshIds.has(sessionId) || isFlagged(session));
-    const banner = $('imported-session-banner');
-    if (!banner) return;
-    banner.hidden = !flagged;
-    if (flagged && sessionId) {
-      bindText($('imported-session-banner-text'), () => tr('archives.imported_needs_model'));
-      bindText($('imported-session-choose-model'), () => tr('archives.choose_model'));
+  // Badge opened persistence: actual user selection only (not background
+  // history/inspector/knowledge prefetch). Reuses POST /api/sessions/read
+  // without an answer (opened-only); server sets pastudioOpenedAt once.
+  async function markOpenedOnSelection(sessionId) {
+    if (!sessionId || openingInFlight.has(sessionId)) return;
+    openingInFlight.add(sessionId);
+    try {
+      await fetch('/api/sessions/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sessionId }),
+      }).catch(() => null);
+    } finally {
+      openingInFlight.delete(sessionId);
     }
-    updateBadges();
   }
+
+  function update(nowMs = Date.now()) {
+    const { sessionId, session } = context();
+    // No banner (removed markup): imported runs use the auto-assigned
+    // effective model. Only the TTL/opened badge remains; a missing usable
+    // model surfaces as an explicit server 409 on run.
+    const visibleForSelected =
+      !!sessionId &&
+      !acknowledged.has(sessionId) &&
+      (isImportedBadgeVisible(session, nowMs) ||
+        (freshIds.has(sessionId) &&
+          (!Number.isSafeInteger(freshAt.get(sessionId)) || nowMs - freshAt.get(sessionId) < ARCHIVE_BADGE_TTL_MS)));
+    if (visibleForSelected) {
+      // Optimistic local hide + persisted server flag (survives refresh/devices).
+      acknowledged.add(sessionId);
+      void markOpenedOnSelection(sessionId).then(() => refreshOverview?.().catch(() => {}));
+    }
+    updateBadges(nowMs);
+    try { scheduleExactExpiry(); } catch {}
+  }
+  // TTL exact-3min rendering even with no sidebar events: exact scheduled
+  // timeout for the nearest expiry fires precisely at importedAt+TTL (opened
+  // persistence stays event-driven). Normal update via renderNavigation /
+  // overview-refresh / import covers the rest; no duplicate poll.
+  function scheduleExactExpiry() {
+    try {
+      const nowMs = Date.now();
+      let nearest = Infinity;
+      for (const p of context().projects || []) {
+        for (const s of p.sessions || []) {
+          if (s?.pastudioImported !== true || s?.pastudioOpenedAt) continue;
+          const at = Number(s?.pastudioImportedAt);
+          if (!Number.isSafeInteger(at)) continue;
+          const remaining = at + ARCHIVE_BADGE_TTL_MS - nowMs;
+          if (remaining > 0 && remaining < nearest) nearest = remaining;
+        }
+      }
+      for (const [, at] of freshAt) {
+        if (!Number.isSafeInteger(at)) continue;
+        const remaining = at + ARCHIVE_BADGE_TTL_MS - Date.now();
+        if (remaining > 0 && remaining < nearest) nearest = remaining;
+      }
+      if (Number.isFinite(nearest)) {
+        if (globalThis.__pastudioBadgeExact) clearTimeout(globalThis.__pastudioBadgeExact);
+        globalThis.__pastudioBadgeExact = setTimeout(() => {
+          try { update(); } catch {}
+          scheduleExactExpiry();
+        }, Math.min(Math.max(nearest, 0), 2147483647));
+        if (typeof globalThis.__pastudioBadgeExact?.unref === 'function') {
+          try { globalThis.__pastudioBadgeExact.unref(); } catch {}
+        }
+      }
+    } catch {}
+  }
+  // Exact expiry + normal update only (no duplicate poll): update() runs on
+  // renderNavigation/selection/overview-refresh (app 10s) and import/selection;
+  // scheduleExactExpiry fires precisely at the nearest importedAt+TTL.
 
   $('project-archive-file').addEventListener('change', (event) => {
     const next = event.target.files?.[0] || null;
@@ -379,12 +485,5 @@ export function createProjectArchives({ toast, getContext, refreshOverview, open
     $('project-archive-pending').hidden = true;
     showError();
   });
-  $('imported-session-choose-model').addEventListener('click', () => {
-    const { sessionId } = context();
-    if (sessionId) acknowledged.add(sessionId);
-    update();
-    openModelPicker?.();
-  });
-
   return { openExport, openImport, update };
 }

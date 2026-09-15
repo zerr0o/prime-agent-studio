@@ -159,9 +159,13 @@ export function createApp(options = {}) {
     readEdges: options.readInspectorEdges,
   });
   // .pastudio portable archives (v1, local-only; never added to the LAN gateway allowlist).
+  // getCatalog injects the destination catalog for effective-model finalization
+  // (source historical if configured+usable, else destination default if
+  // configured+usable). No credentials are read here; models() already returns
+  // the sanitized catalog + configuredProviders + default.
   const projectArchives =
     options.projectArchives ||
-    createProjectArchives({ store, roadmap, sessionDir, dataDir, agentHome });
+    createProjectArchives({ store, roadmap, sessionDir, dataDir, agentHome, getCatalog: () => models() });
   async function readRawArchive(req) {
     const type = String(req.headers['content-type'] || '');
     if (!/^application\/octet-stream(?:\s*;|$)/i.test(type))
@@ -431,7 +435,30 @@ export function createApp(options = {}) {
     }
     const catalog = await models();
     const settings = existing?.generationSettings;
-    const selectedModel = (body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
+    // .pastudio gate first (before selectedModel): imported sessions use the
+    // auto-assigned destination effective model so the run never executes the
+    // old unavailable archived model when a usable fallback exists. Pending
+    // storage integrity is never bypassed (fail-closed on unknown). An explicit
+    // usable pick still validates and persists; only when no usable model
+    // exists is an explicit choice required. The explicit choice is persisted
+    // BEFORE spawn so a spawn failure cannot lose it; the flag is consumed only
+    // AFTER runtime.start resolves (see below).
+    let pastudioGated = false;
+    let pastudioResolved = null;
+    if (existing?.id) {
+      await projectArchives.recoverPending().catch(() => {});
+      const check = await projectArchives.checkPastudioModelGate(existing.id, body.model, catalog);
+      pastudioGated = check.gated;
+      pastudioResolved = typeof check.model === 'string' ? check.model : null;
+    }
+    // Echo-safe: the client always echoes a model (selector restore), so for
+    // imported sessions a stale echo equal to verbatim history must not win
+    // over a usable resolved fallback. Gate already resolves echo==historical
+    // to stored/default when usable; prefer resolved first for imported.
+    // True explicit usable picks equal resolved, so no valid choice is
+    // overwritten; true explicit unavailable (not echo) already 409s in gate.
+    const selectedModel =
+      (pastudioResolved ?? body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
     const selectedThinking =
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
@@ -440,14 +467,6 @@ export function createApp(options = {}) {
       body.allowQuestions ?? settings?.allowQuestions ?? (await studioPreferences()).allowQuestionsByDefault;
     if (catalog.models?.find((model) => model.id === selectedModel)?.availability === 'unavailable')
       throw new HttpError(409, tr('model.unavailableSelection'));
-    // .pastudio gate: imported sessions need an EXPLICIT available model choice (never restored provider).
-    // The explicit choice is persisted BEFORE spawn so a spawn failure cannot lose it;
-    // the flag is consumed only AFTER runtime.start resolves (see below).
-    let pastudioGated = false;
-    if (existing?.id) {
-      await projectArchives.recoverPending().catch(() => {});
-      pastudioGated = (await projectArchives.checkPastudioModelGate(existing.id, body.model, catalog)).gated;
-    }
     // Check after awaited validation so simultaneous HTTP requests cannot race the lock.
     if (activeRuns().length >= 8)
       throw new HttpError(429, tr('server.huit_sessions_tournent_deja_arretez_en_une_avant_de_continuer'));
@@ -955,6 +974,8 @@ export function createApp(options = {}) {
         return json(res, 200, await store.markRead(await readBody(req)));
       if (method === 'POST' && path === '/api/projects/move')
         return json(res, 200, await store.moveProject(await readBody(req)));
+      if (method === 'POST' && path === '/api/sessions/move')
+        return json(res, 200, await store.moveSession(await readBody(req)));
       if (method === 'GET' && path === '/api/check-cwd') {
         try {
           return json(res, 200, { cwd: await validateDirectory(url.searchParams.get('cwd')), exists: true });

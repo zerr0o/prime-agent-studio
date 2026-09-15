@@ -82,6 +82,9 @@ const messages = {
     settingsNote: 'Choisissez comment le Studio vous accompagne sur ce PC.',
     connectingTitle: 'Votre espace se prépare.',
     connectingNote: 'Nous retrouvons le serveur actif ou le démarrons pour vous.',
+    connectingProbe: 'Connexion au serveur…',
+    startingServer: 'Démarrage du serveur…',
+    checkingComponents: 'Vérification des composants…',
     failure: 'Le Studio n’a pas pu démarrer.',
     noBridge: 'Ouvrez cette page dans l’application Prime Agent Studio.',
     selected: 'Installation sélectionnée : ',
@@ -185,6 +188,9 @@ const messages = {
     settingsNote: 'Choose how Studio accompanies you on this PC.',
     connectingTitle: 'Preparing your workspace.',
     connectingNote: 'We are finding the running server or starting it for you.',
+    connectingProbe: 'Connecting to server…',
+    startingServer: 'Starting server…',
+    checkingComponents: 'Checking components…',
     failure: 'Studio could not start.',
     noBridge: 'Open this page in the Prime Agent Studio application.',
     selected: 'Selected installation: ',
@@ -212,7 +218,12 @@ const language = navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'en'
   $ = (id) => document.getElementById(id);
 document.documentElement.lang = language;
 const settings = new URLSearchParams(location.search).has('settings');
+const backgroundParam = new URLSearchParams(location.search).has('background');
 document.body.classList.toggle('app-settings', settings);
+// Boot class hides launcher controls until explicit settings/needs-config.
+// Main window shows minimal connecting state first, never settings visually.
+document.body.classList.add('boot');
+document.body.classList.add('boot-connecting');
 for (const [id, key] of Object.entries({
   eyebrow: 'eyebrow',
   title: settings ? 'settingsTitle' : 'title',
@@ -250,7 +261,38 @@ for (const [id, key] of Object.entries({
 const invoke = window.__TAURI__?.core?.invoke;
 let componentsBusy = false;
 let latestComponents;
-let serverAlreadyRunning = false;
+// Warm-first helpers: connecting-first UI, never silent frozen.
+function isComponentsRequired(error) {
+  return String(error || '').includes('components_required');
+}
+function setPhase(text) {
+  if (text) {
+    $('progress').hidden = false;
+    $('progress-text').textContent = text;
+  }
+}
+function showConnecting(title, note, phase) {
+  document.body.classList.add('boot');
+  document.body.classList.add('boot-connecting');
+  document.body.classList.remove('boot-ready');
+  $('choices').hidden = true;
+  $('components').hidden = true;
+  if ($('updates') && !settings) $('updates').hidden = true;
+  if (title) $('title').textContent = title;
+  if (note) $('description').textContent = note;
+  if (phase) setPhase(phase);
+  else $('progress').hidden = false;
+  $('start').disabled = true;
+  showError('');
+}
+function showLauncher() {
+  document.body.classList.remove('boot-connecting');
+  document.body.classList.add('boot-ready');
+  document.body.classList.remove('boot');
+  $('choices').hidden = false;
+  $('progress').hidden = true;
+  $('start').disabled = false;
+}
 const componentNames = {
   engine: 'Prime Agent',
   uv: 'uv',
@@ -341,7 +383,13 @@ $('components-toggle').onclick = () => {
 async function componentsAction(action, component) {
   if (componentsBusy) return;
   componentsBusy = true;
+  // Concrete phase immediately, never silent frozen window.
   $('components').hidden = false;
+  document.body.classList.remove('boot-connecting');
+  document.body.classList.add('boot-ready');
+  document.body.classList.remove('boot');
+  setPhase(t.checkingComponents);
+  $('components-status').textContent = t.checkingComponents;
   for (const el of $('components').querySelectorAll('button')) el.disabled = true;
   $('components-cancel').hidden = action !== 'install';
   $('components-cancel').disabled = false;
@@ -350,11 +398,14 @@ async function componentsAction(action, component) {
   try {
     result = await invoke('desktop_components', { action, component: component || null });
     renderComponents(result);
-    if (action === 'install' && result.ready && result.activation === 'active') await start();
+    if (action === 'install' && result.ready && result.activation === 'active')
+      await start({ allowUnconfigured: true, background: backgroundParam });
     return result;
   } catch (error) {
     latestComponents = undefined;
-    $('components-status').textContent = componentError(String(error));
+    const message = isComponentsRequired(error) ? t.checkingComponents : componentError(String(error));
+    $('components-status').textContent = message;
+    setPhase(message);
   } finally {
     componentsBusy = false;
     for (const el of $('components').querySelectorAll('button')) el.disabled = false;
@@ -372,8 +423,12 @@ void window.__TAURI__?.event?.listen('components-progress', ({ payload }) => {
     payload.received === undefined
       ? ''
       : ` · ${payload.received.toLocaleString(language)} ${language === 'fr' ? 'octets reçus' : 'bytes received'}${payload.total ? ` / ${payload.total.toLocaleString(language)}` : ''}`;
-  $('components-status').textContent =
-    `${componentNames[payload.component] || ''} — ${t.componentStages[payload.stage] || ''}${received}`;
+  // Detailed diagnose steps (engine/python/shell/uv) plus download progress.
+  const text =
+    `${componentNames[payload.component] || payload.component || ''} — ${t.componentStages[payload.stage] || payload.stage || ''}${received}`;
+  $('components-status').textContent = text;
+  // Mirror diagnose phases in the main connecting line so the window never freezes silently.
+  if ($('components') && !$('components').hidden) setPhase(text);
 });
 // Launcher has no vendor marked/DOMPurify bundle. Escape first, then allow a
 // small markdown subset (headings, lists, bold, code, allowlisted links).
@@ -575,35 +630,50 @@ function showError(value) {
   $('error').hidden = !value;
   $('logs').hidden = !value;
 }
-async function start() {
+async function start(options = {}) {
   if (busy) return;
+  const allowUnconfigured = Boolean(options.allowUnconfigured);
+  const background = options.background !== undefined ? Boolean(options.background) : backgroundParam;
   busy = true;
   showError('');
   $('start').disabled = true;
   $('import').disabled = true;
-  $('progress').hidden = false;
+  setPhase(t.connectingProbe);
   try {
-    if (latestComponents?.ready && !serverAlreadyRunning)
+    // B3: decide on live probe only (inside desktop_start), not persisted
+    // prefs.started. Always persist validated components via activate when
+    // ready, so explicit paths survive to installation.json before strict start.
+    if (latestComponents?.ready)
       await invoke('desktop_components', { action: 'activate', component: null });
-    await invoke('desktop_start');
+    setPhase(t.startingServer);
+    await invoke('desktop_start', { allowUnconfigured, background });
     if (settings) {
       $('progress').hidden = true;
       $('start').disabled = false;
     }
+    // Success: Rust navigates MAIN to Studio; keep connecting visible until navigation.
   } catch (error) {
+    // Setup necessary: let boot run full diagnose with phases, not generic failure.
+    if (isComponentsRequired(error) && !allowUnconfigured) throw error;
+    // Occupied/transient or real failure: no duplicate spawn, no settings popup.
     $('progress').hidden = true;
-    $('choices').hidden = false;
+    showLauncher();
     $('title').textContent = t.failure;
     showError(String(error));
     $('start').textContent = t.retry;
     $('start').disabled = false;
     $('start').focus();
+    if (options.rethrow) throw error;
   } finally {
     busy = false;
     $('import').disabled = false;
   }
 }
-$('start').onclick = start;
+$('start').onclick = () => {
+  // Later (not ready) explicitly opens Studio anyway; otherwise strict warm-first.
+  const later = latestComponents && latestComponents.ready === false;
+  return start({ allowUnconfigured: Boolean(later), background: backgroundParam });
+};
 $('logs').onclick = async () => {
   try {
     await invoke('desktop_logs');
@@ -642,6 +712,7 @@ $('import').onclick = async () => {
 };
 (async () => {
   if (!invoke) {
+    document.body.classList.remove('boot', 'boot-connecting');
     showError(t.noBridge);
     return;
   }
@@ -662,15 +733,48 @@ $('import').onclick = async () => {
       $('source').hidden = false;
       $('source').textContent = t.selected + state.legacyRoot;
     }
-    serverAlreadyRunning = Boolean(state.started);
-    const background = new URLSearchParams(location.search).has('background');
-    if (!background) await componentsAction('diagnose');
-    if ((background || serverAlreadyRunning) && !settings) {
-      $('title').textContent = t.connectingTitle;
-      $('description').textContent = t.connectingNote;
-      await start();
-    } else $('choices').hidden = false;
+    const background = backgroundParam;
+    if (settings) {
+      // Settings: visible launcher controls, no auto-start, no auto-diagnose.
+      showLauncher();
+      return;
+    }
+    if (background) {
+      // Preserve hidden background: silent warm-first, allow unconfigured
+      // so a missing receipt never pops a window or downloads. Native keeps
+      // the window hidden on failure (explicit background arg) and logs.
+      try {
+        await invoke('desktop_start', { allowUnconfigured: true, background: true });
+      } catch {
+        // Stay hidden; Rust already logged desktop-error.log. Next foreground handles setup.
+      }
+      return;
+    }
+    // Foreground MAIN: connecting-first, live probe only (not persisted flag).
+    showConnecting(t.connectingTitle, t.connectingNote, t.connectingProbe);
+    try {
+      await start({});
+    } catch (error) {
+      if (!isComponentsRequired(error)) throw error;
+      // Setup necessary: concrete diagnose phases. When ready, persist via
+      // activate before strict start so explicit paths are recorded (B3);
+      // otherwise show launcher with Later/install.
+      $('title').textContent = t.title;
+      $('description').textContent = t.description;
+      showLauncher();
+      await componentsAction('diagnose');
+      $('choices').hidden = false;
+      if (latestComponents?.ready) {
+        try {
+          await start({});
+        } catch (retryError) {
+          if (!isComponentsRequired(retryError)) throw retryError;
+          $('components').hidden = false;
+        }
+      } else $('components').hidden = false;
+    }
   } catch (error) {
+    document.body.classList.remove('boot-connecting');
     showError(String(error));
   }
 })();

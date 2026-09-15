@@ -73,7 +73,11 @@ pub async fn desktop_components(
         let _ = child.wait();
         result
     }).await.map_err(|_| "preparation_failed".to_owned()).and_then(|r| r);
-    *state.input.lock().map_err(|_| "preparation_failed")? = None;
+    // Never return with busy held (permanent setup_busy): reset even if the
+    // input lock is poisoned.
+    if let Ok(mut input) = state.input.lock() {
+        *input = None;
+    }
     state.busy.store(false, Ordering::SeqCst);
     result
 }

@@ -213,15 +213,6 @@
             ></span
           >
         </div>
-        <div id="imported-session-banner" class="configuration-warning" role="status" hidden>
-          <span id="imported-session-banner-text" data-i18n="archives.imported_needs_model"
-            >Session importée — choisissez un modèle disponible pour la prochaine exécution.
-            L’historique reste lisible.</span
-          >
-          <button id="imported-session-choose-model" type="button" data-i18n="archives.choose_model">
-            Choisir un modèle
-          </button>
-        </div>
         <div id="global-banner" class="global-banner" role="status" hidden>
           <span id="global-banner-text"></span
           ><button
@@ -764,7 +755,13 @@
         <span data-icon="pencil"></span><span data-i18n="ui.renommer">Renommer</span></button
       ><button role="menuitem" data-action="pin">
         <span data-icon="pin"></span><span id="pin-label" data-i18n="ui.epingler">Épingler</span></button
-      ><button role="menuitem" data-action="export">
+      ><button role="menuitem" data-action="up">
+        <span data-icon="arrow-up"></span><span data-i18n="sessions.move_up">Monter la conversation</span>
+      </button>
+      <button role="menuitem" data-action="down">
+        <span data-icon="arrow-down"></span><span data-i18n="sessions.move_down">Descendre la conversation</span>
+      </button>
+      <button role="menuitem" data-action="export">
         <span data-icon="download"></span
         ><span data-i18n="ui.exporter_en_markdown">Exporter en Markdown </span>
       </button>

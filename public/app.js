@@ -25,6 +25,7 @@ import { fileLinkRenderer, bindFileLinks } from './file-links.js';
 import { createSessionActivity } from './session-activity.js';
 import { parseAgentEnvelope } from './agent-messages.js';
 import { createProjectSorting } from './project-sorting.js';
+import { createSessionSorting } from './session-sorting.js';
 import { createProjectNavigation, hasPendingQuestion } from './project-navigation.js';
 import { createKnowledgeBrowser } from './knowledge.js';
 import { createProjectArchives } from './project-archives.js';
@@ -40,6 +41,7 @@ import {
 let questionsUI;
 let imageComposer;
 let projectSorting;
+let sessionSorting;
 let projectNavigation;
 let liveMessagesUI;
 let commandsUI;
@@ -864,7 +866,7 @@ function renderProjects() {
     const run = pendingQuestionRuns[0];
     if (run?.sessionId) void selectSession(run.sessionId, run.cwd);
   };
-  if (projectSorting?.active || !projectNavigation) return;
+  if (projectSorting?.active || sessionSorting?.active || !projectNavigation) return;
   const query = $('session-search').value.trim();
   bindText($('session-list-label'), () =>
     state.archived
@@ -942,25 +944,27 @@ function renderProjectOverview() {
       : tr('ui.retrouvez_une_conversation_et_reprenez_la_ou_vous_en_etiez'),
   );
   const query = $('project-session-search').value.trim().toLocaleLowerCase(getLanguage());
-  const items = [
-    ...sessions,
-    ...pendingRuns.map((r) => ({
+  // Server sessions arrive in stable manual order; preserve it. Ephemeral runs
+  // join the top of unpinned until persisted. Activity never reorders.
+  const ephemeralRuns = pendingRuns
+    .filter((r) => !sessions.some((s) => s.id && s.id === r.sessionId))
+    .map((r) => ({
       id: r.sessionId,
       runId: r.id,
       title: r.prompt?.slice(0, 100) || tr('ui.nouvelle_session'),
       cwd: r.cwd,
       updatedAt: r.startedAt,
-    })),
-  ]
-    .filter(
-      (s) =>
-        Boolean(s.archived) === state.archived &&
-        (!query || (s.title || '').toLocaleLowerCase(getLanguage()).includes(query)),
-    )
-    .sort(
-      (a, b) =>
-        Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || toTime(b.updatedAt) - toTime(a.updatedAt),
-    );
+    }));
+  const ordered = [
+    ...sessions.filter((s) => s.pinned),
+    ...ephemeralRuns,
+    ...sessions.filter((s) => !s.pinned),
+  ];
+  const items = ordered.filter(
+    (s) =>
+      Boolean(s.archived) === state.archived &&
+      (!query || (s.title || '').toLocaleLowerCase(getLanguage()).includes(query)),
+  );
   const runningIds = new Set([...state.runs.values()].filter(isRunning).map((r) => r.sessionId));
   const questionRuns = [...state.runs.values()].filter(hasPendingQuestion);
   const unreadIds = items.filter((s) => sessionActivity.isUnread(s.id)).map((s) => s.id);
@@ -1653,14 +1657,18 @@ function upsertSession(id, run) {
     p = { cwd: run.cwd, name: run.cwd.split(/[\\/]/).pop(), exists: true, sessions: [] };
     state.projects.push(p);
   }
-  if (!p.sessions.some((s) => s.id === id))
-    p.sessions.unshift({
+  if (!p.sessions.some((s) => s.id === id)) {
+    // Transient optimistic row matches server top-of-unpinned until refresh.
+    const entry = {
       id,
       cwd: run.cwd,
       title: run.prompt?.replace(/\s+/g, ' ').slice(0, 100) || tr('ui.nouvelle_session'),
       createdAt: run.startedAt,
       updatedAt: run.startedAt,
-    });
+    };
+    const pinnedCount = p.sessions.filter((s) => s.pinned).length;
+    p.sessions.splice(pinnedCount, 0, entry);
+  }
 }
 function ensureAssistant(run, seq) {
   if (!run.currentMessage || !run.currentMessage.streaming) {
@@ -2458,7 +2466,7 @@ function openProjectMenu(cwd, anchor) {
   ]) {
     const next = state.projects[projectIndex + direction];
     $('project-menu').querySelector(`[data-project-action="${action}"]`).disabled =
-      !next || !!next.pinned !== !!p.pinned;
+      state.archived || !!$('session-search').value.trim() || !next || !!next.pinned !== !!p.pinned;
   }
   $('project-menu').hidden = false;
   anchor.setAttribute('aria-expanded', 'true');
@@ -2552,11 +2560,24 @@ function openSessionMenu(id, anchor) {
   const menu = $('session-menu');
   bindText($('pin-label'), () => (s.pinned ? tr('ui.desepingler') : tr('ui.epingler')));
   bindText($('archive-label'), () => (s.archived ? tr('ui.desarchiver') : tr('ui.archiver')));
+  const siblings = (
+    (s.cwd ? state.projects.find((p) => samePath(p.cwd, s.cwd))?.sessions : null) || []
+  ).filter(
+    (entry) => Boolean(entry.archived) === Boolean(s.archived) && !!entry.pinned === !!s.pinned,
+  );
+  const index = siblings.findIndex((entry) => entry.id === id);
+  for (const [action, direction] of [
+    ['up', -1],
+    ['down', 1],
+  ]) {
+    const button = menu.querySelector(`[data-action="${action}"]`);
+    if (button) button.disabled = !siblings[index + direction] || Boolean($('session-search').value.trim());
+  }
   menu.hidden = false;
   positionMenus();
   anchor.setAttribute('aria-expanded', 'true');
   $('session-menu-button').setAttribute('aria-expanded', 'true');
-  menu.querySelector('button').focus({ preventScroll: true });
+  menu.querySelector('button:not(:disabled):not([hidden])')?.focus({ preventScroll: true });
 }
 async function patchSession(id, patch) {
   await api('/api/sessions', { method: 'PATCH', body: { id, ...patch } });
@@ -2582,6 +2603,12 @@ async function menuAction(action) {
       await patchSession(id, { archived: !s.archived });
       toast(() => (s.archived ? tr('ui.session_restauree') : tr('ui.session_archivee')));
       if (s.id === state.sessionId && !s.archived) newSession();
+    } else if (action === 'up' || action === 'down') {
+      await api('/api/sessions/move', {
+        method: 'POST',
+        body: { id, direction: action === 'up' ? -1 : 1 },
+      });
+      await refreshOverview();
     } else if (action === 'export') await exportSession(id);
   } catch (e) {
     toast(translateKnown(e.message), true);
@@ -2984,6 +3011,15 @@ projectSorting = createProjectSorting({
   root: $('project-list'),
   canSort: () => !state.readOnly && !state.archived && !$('session-search').value.trim(),
   move: (body) => api('/api/projects/move', { method: 'POST', body }),
+  refresh: refreshOverview,
+  render: renderProjects,
+  reportError: (error) => toast(translateKnown(error.message), true),
+});
+sessionSorting = createSessionSorting({
+  root: $('session-list'),
+  scroller: $('project-list'),
+  canSort: () => !state.readOnly && !$('session-search').value.trim(),
+  move: (body) => api('/api/sessions/move', { method: 'POST', body }),
   refresh: refreshOverview,
   render: renderProjects,
   reportError: (error) => toast(translateKnown(error.message), true),

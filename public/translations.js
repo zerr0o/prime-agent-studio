@@ -518,6 +518,16 @@ export const messages = {
     fr: 'L’ordre des projets a changé. Actualisez la liste.',
     en: 'The project order changed. Refresh the list.',
   },
+  'sessions.move_up': { fr: 'Monter la conversation', en: 'Move conversation up' },
+  'sessions.move_down': { fr: 'Descendre la conversation', en: 'Move conversation down' },
+  'sessions.drag_hint': {
+    fr: 'Glisser pour déplacer · Au clavier : flèches haut et bas. Les conversations épinglées restent en tête.',
+    en: 'Drag to reorder · Keyboard: up and down arrows. Pinned conversations stay at the top.',
+  },
+  'sessions.invalid_order': {
+    fr: 'L’ordre des conversations a changé. Actualisez la liste.',
+    en: 'The conversation order changed. Refresh the list.',
+  },
   'activity.invalid_receipt': {
     fr: 'Ce message ne peut pas être marqué comme lu.',
     en: 'This message cannot be marked as read.',
@@ -5358,11 +5368,6 @@ export const messages = {
     fr: 'Finalisation en attente : la reprise est sûre et sans doublon. Relancez l’aperçu si besoin, sans choisir un nouveau fichier.',
     en: 'Finalization pending: recovery is safe and duplicate-free. Re-run the preview if needed, no new file required.',
   },
-  'archives.imported_needs_model': {
-    fr: 'Session importée — choisissez un modèle disponible pour la prochaine exécution. L’historique reste lisible.',
-    en: 'Imported session — choose an available model for the next run. History stays readable.',
-  },
-  'archives.choose_model': { fr: 'Choisir un modèle', en: 'Choose a model' },
   'archives.imported_badge': { fr: 'Importée', en: 'Imported' },
   'archives.count_sessions': { fr: 'Sessions', en: 'Sessions' },
   'archives.count_children': { fr: 'Sessions enfant', en: 'Child sessions' },

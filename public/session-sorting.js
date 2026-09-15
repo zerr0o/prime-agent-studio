@@ -1,10 +1,19 @@
-// Pointer events work inside WebView2 and allow a touch handle without blocking list scrolling.
-export function createProjectSorting({ root, canSort, move, refresh, render, reportError }) {
+// Stable conversation drag/drop, mirroring project-sorting UX.
+// Scoped to one project + pinned + archived bucket; conversations never move
+// projects. Touch uses the handle only so list scrolling stays available.
+export function createSessionSorting({ root, scroller, canSort, move, refresh, render, reportError }) {
   let gesture = null,
     saving = false,
     frame = 0,
     suppressClickUntil = 0;
-  const entries = () => [...root.querySelectorAll('.project-entry')];
+  const entries = () => [...root.querySelectorAll('.session-row[data-session-id]')];
+  const groupOf = (entry) =>
+    entries().filter(
+      (other) =>
+        other.dataset.projectKey === entry.dataset.projectKey &&
+        other.dataset.pinned === entry.dataset.pinned &&
+        other.dataset.archived === entry.dataset.archived,
+    );
   const clearTargets = () => {
     for (const entry of entries()) delete entry.dataset.drop;
   };
@@ -22,34 +31,27 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
       render();
       if (focusHandle)
         entries()
-          .find((entry) => entry.dataset.cwd === body.cwd)
-          ?.querySelector('.project-drag-handle')
+          .find((entry) => entry.dataset.sessionId === body.id)
+          ?.querySelector('.session-drag-handle')
           ?.focus({ preventScroll: true });
     }
   }
   function targetAtPointer() {
     clearTargets();
     gesture.target = null;
-    const bounds = root.getBoundingClientRect();
+    const scrollerBounds = (scroller || root).getBoundingClientRect();
     if (
-      gesture.x < bounds.left ||
-      gesture.x > bounds.right ||
-      gesture.y < bounds.top - 20 ||
-      gesture.y > bounds.bottom + 20
+      gesture.x < scrollerBounds.left ||
+      gesture.x > scrollerBounds.right ||
+      gesture.y < scrollerBounds.top - 20 ||
+      gesture.y > scrollerBounds.bottom + 20
     )
       return;
-    const group = entries().filter((entry) => entry.dataset.pinned === gesture.entry.dataset.pinned);
-    // Only allow the pinned/unpinned group under the pointer, not a hidden group above it.
+    const group = groupOf(gesture.entry);
     const first = group[0]?.getBoundingClientRect(),
       last = group.at(-1)?.getBoundingClientRect();
-    const heading = group[0]?.previousElementSibling;
-    const groupTop = heading?.classList.contains('project-group-label')
-      ? heading.getBoundingClientRect().top
-      : first?.top;
-    // The first heading is part of its group's drop area, including the list's
-    // top autoscroll edge. A later group still starts at its own heading.
-    const minimum = group[0] === entries()[0] ? bounds.top - 20 : groupTop - 8;
-    if (!first || gesture.y < minimum || gesture.y > last.bottom + 8) return;
+    if (!first || !last) return;
+    if (gesture.y < first.top - 8 || gesture.y > last.bottom + 8) return;
     const candidates = group.filter((entry) => entry !== gesture.entry);
     const target =
       candidates.find((entry) => {
@@ -59,21 +61,21 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
     if (!target) return;
     const rect = target.getBoundingClientRect();
     const position = gesture.y < rect.top + rect.height / 2 ? 'before' : 'after';
-    // Dropping back in the original slot is a no-op.
     const from = group.indexOf(gesture.entry),
       to = group.indexOf(target);
     if ((position === 'before' && to === from + 1) || (position === 'after' && to === from - 1)) return;
     target.dataset.drop = position;
-    gesture.target = { targetCwd: target.dataset.cwd, position };
+    gesture.target = { targetId: target.dataset.sessionId, position };
   }
   function autoScroll() {
     if (!gesture?.dragging) return;
-    const bounds = root.getBoundingClientRect();
+    const scrollerEl = scroller || root;
+    const bounds = scrollerEl.getBoundingClientRect();
     if (gesture.x >= bounds.left && gesture.x <= bounds.right) {
       const edge = 32;
       const speed = gesture.y < bounds.top + edge ? -8 : gesture.y > bounds.bottom - edge ? 8 : 0;
       if (speed) {
-        root.scrollTop += speed;
+        scrollerEl.scrollTop += speed;
         targetAtPointer();
       }
     }
@@ -86,22 +88,22 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
     cancelAnimationFrame(frame);
     if (root.hasPointerCapture(current.pointerId)) root.releasePointerCapture(current.pointerId);
     clearTargets();
-    current.entry.classList.remove('project-dragging');
-    root.classList.remove('project-sorting');
+    current.entry.classList.remove('session-dragging');
+    (scroller || root).classList.remove('session-sorting');
+    root.classList.remove('session-sorting');
     if (!current.dragging) return;
     suppressClickUntil = performance.now() + 350;
     if (!cancelled && current.target && canSort())
-      void commit({ cwd: current.entry.dataset.cwd, ...current.target });
+      void commit({ id: current.entry.dataset.sessionId, ...current.target });
     else render();
   }
   root.addEventListener('pointerdown', (event) => {
     if (!canSort() || saving || gesture || event.button !== 0 || !event.isPrimary) return;
-    // Conversations own their drag; never let a session row steal a project move.
-    if (event.target.closest('.session-row, .session-drag-handle, .project-conversations')) return;
-    const entry = event.target.closest('.project-entry');
-    const handle = event.target.closest('.project-drag-handle');
-    if (!entry || event.target.closest('.project-more') || (event.pointerType === 'touch' && !handle)) return;
-    if (!handle && !event.target.closest('.project-row')) return;
+    const entry = event.target.closest('.session-row[data-session-id]');
+    const handle = event.target.closest('.session-drag-handle');
+    if (!entry?.dataset.sessionId || event.target.closest('.session-more') || (event.pointerType === 'touch' && !handle))
+      return;
+    if (!handle && !event.target.closest('.session-select')) return;
     gesture = {
       entry,
       pointerId: event.pointerId,
@@ -112,6 +114,8 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
       dragging: false,
       target: null,
     };
+    // Prevent the project drag handler on the outer list from stealing rows.
+    event.stopPropagation();
   });
   window.addEventListener(
     'pointermove',
@@ -122,9 +126,12 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
       if (!gesture.dragging) {
         if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 6) return;
         gesture.dragging = true;
-        root.setPointerCapture(event.pointerId);
-        gesture.entry.classList.add('project-dragging');
-        root.classList.add('project-sorting');
+        try {
+          root.setPointerCapture(event.pointerId);
+        } catch {}
+        gesture.entry.classList.add('session-dragging');
+        (scroller || root).classList.add('session-sorting');
+        root.classList.add('session-sorting');
         autoScroll();
       }
       event.preventDefault();
@@ -136,8 +143,6 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
     if (gesture?.pointerId === event.pointerId) finish();
   });
   root.addEventListener('lostpointercapture', (event) => {
-    // Touch starts with implicit capture on the handle; transferring it to the list
-    // must not be mistaken for cancelling the drag.
     if (event.target === root) finish(true);
   });
   window.addEventListener('pointercancel', () => finish(true));
@@ -160,16 +165,18 @@ export function createProjectSorting({ root, canSort, move, refresh, render, rep
   );
   root.addEventListener('dragstart', (event) => event.preventDefault());
   root.addEventListener('keydown', (event) => {
-    const handle = event.target.closest('.project-drag-handle');
+    const handle = event.target.closest('.session-drag-handle');
     if (!handle || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
+    event.stopPropagation();
     if (saving || gesture || !canSort()) return;
-    const entry = handle.closest('.project-entry'),
-      group = entries();
+    const entry = handle.closest('.session-row[data-session-id]');
+    if (!entry?.dataset.sessionId) return;
+    const group = groupOf(entry);
     const direction = event.key === 'ArrowUp' ? -1 : 1;
     const next = group[group.indexOf(entry) + direction];
-    if (!next || next.dataset.pinned !== entry.dataset.pinned) return;
-    void commit({ cwd: entry.dataset.cwd, direction }, true);
+    if (!next) return;
+    void commit({ id: entry.dataset.sessionId, direction }, true);
   });
   return {
     get active() {

@@ -509,6 +509,18 @@ kbd {
   .project-show-more {
     min-height: 44px;
   }
+  .session-drag-handle {
+    opacity: 1;
+    width: 28px;
+    flex-basis: 28px;
+    min-height: 44px;
+  }
+  .session-row .session-more {
+    display: flex;
+    width: 32px;
+    flex-basis: 32px;
+    min-height: 44px;
+  }
 }
 .danger-text,
 .popover-menu .danger-text {
@@ -627,6 +639,49 @@ kbd {
 }
 .session-row:hover .session-select {
   padding-right: 0;
+}
+.session-drag-handle {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  min-height: 32px;
+  flex: 0 0 16px;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0;
+}
+.session-drag-handle svg {
+  width: 12px;
+  height: 16px;
+  stroke-width: 3;
+}
+.session-row:hover .session-drag-handle,
+.session-drag-handle:focus-visible {
+  opacity: 1;
+}
+.session-sorting,
+.session-sorting * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.session-dragging {
+  opacity: 0.45;
+}
+.session-row[data-drop]::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 2px;
+  height: 2px;
+  background: var(--muted);
+  pointer-events: none;
+}
+.session-row[data-drop='before']::after {
+  top: 0;
+}
+.session-row[data-drop='after']::after {
+  bottom: 0;
 }
 .running-dot {
   flex-shrink: 0;

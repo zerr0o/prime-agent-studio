@@ -4,6 +4,13 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.5.0
+
+- **Ouverture prioritaire** : écran de connexion dans la fenêtre principale, réutilisation immédiate du serveur actif et contrôle léger des composants au démarrage à froid. Le diagnostic complet affiche ses étapes et reste disponible à la demande.
+- **Ordre stable des conversations** : les nouveaux messages ne déplacent plus les conversations. Les épinglées restent en haut ; déplacement par menu, clavier et glisser-déposer dans le même projet. Les nouvelles conversations apparaissent en tête de leur groupe.
+- **Imports plus discrets** : conversations importées marquées lues, mention « importé » retirée à la première ouverture ou après trois minutes, sans bandeau jaune. Modèle historique conservé s’il est utilisable, sinon modèle par défaut configuré du PC ; choix manuel seulement si aucun modèle utilisable n’est disponible.
+- **Validation** : revues de code, compilation native et vérifications isolées. Le temps total d’ouverture sur l’installation réelle et le parcours tactile complet restent à vérifier ; aucune suite de tests relancée pour cette publication.
+
 ## 3.4.1
 
 - **Correctifs d’export .pastudio (fichier transférable, opération sur le PC lui-même)** : fichier transférable et importable sur un autre PC ; export et import depuis le Studio ouvert sur ce PC, pas depuis un navigateur distant (LAN/Tailscale/PWA). Compression sélective ZIP DEFLATE (niveau 6, seulement si plus petit, sinon stockée, en séquence avec repli stocké) ; tolérance de fork à l’export — l’identifiant canonique est `header.id`, le nom du fichier reste le chemin physique, seuls les doublons du même identifiant canonique via des fichiers physiques différents sont refusés ; code d’erreur d’origine préservé avec détail générique borné.

@@ -44,6 +44,12 @@ try {
           invoke: async (name, args) => {
             window.calls.push({ name, args });
             if (name === 'desktop_state') return { version: '3.2.7', started: true, imported: true };
+            // Warm-first: foreground tries desktop_start before diagnose.
+            // Strict first call requires setup; bypass (Later/background) opens anyway.
+            if (name === 'desktop_start') {
+              if (args?.allowUnconfigured) return { port: 3088 };
+              throw new Error('components_required:missing');
+            }
             if (name === 'desktop_components') {
               if (args.action === 'install') {
                 window.componentProgress({
@@ -76,8 +82,12 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     const url = `http://127.0.0.1:${server.address().port}`;
     await page.goto(url);
+    // Warm-first: strict desktop_start first (throws components_required),
+    // then full diagnose shows components with Later. No auto-install.
+    await expect
+      .poll(() => page.evaluate(() => window.calls.some((c) => c.name === 'desktop_start')))
+      .toBe(true);
     await expect(page.locator('#components')).toBeVisible();
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.name === 'desktop_start')), false);
     assert.equal(await page.evaluate(() => window.calls.some((c) => c.args?.action === 'install')), false);
     await expect(page.locator('#start')).toContainText(locale.startsWith('fr') ? 'Plus tard' : 'Later');
     await page.locator('#components-install').click();
@@ -110,7 +120,12 @@ try {
     await expect(page.locator('#components-status')).toContainText(
       locale.startsWith('fr') ? 'différée' : 'deferred',
     );
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.name === 'desktop_start')), false);
+    // Deferred activation must not open Studio: only the initial strict
+    // desktop_start (which required setup) has run so far.
+    assert.equal(
+      await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length),
+      1,
+    );
     await expect(page.locator('#components-details')).toBeHidden();
     await expect(page.locator('#components-install')).toBeHidden();
     await page.locator('#components-toggle').click();

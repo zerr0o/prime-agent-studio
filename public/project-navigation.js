@@ -80,10 +80,15 @@ export function createProjectNavigation({
       const key = pathKey(p.cwd),
         name = p.name || p.cwd.split(/[\\/]/).pop();
       const projectRuns = activeRuns.filter((run) => pathKey(run.cwd) === key);
-      const sessions = (p.sessions || []).map((s) => ({ ...s, cwd: s.cwd || p.cwd }));
+      // Server returns stable manual order (pinned first). Preserve it verbatim;
+      // new activity/messages never reorder. Ephemeral runs (no id yet) join
+      // the top of unpinned until persisted, then take a stable position.
+      const stored = (p.sessions || []).map((s) => ({ ...s, cwd: s.cwd || p.cwd }));
+      const sessions = stored;
+      const ephemeral = [];
       for (const run of projectRuns) {
-        if (!sessions.some((s) => s.id && s.id === run.sessionId))
-          sessions.push({
+        if (!stored.some((s) => s.id && s.id === run.sessionId))
+          ephemeral.push({
             id: run.sessionId,
             runId: run.id,
             cwd: p.cwd,
@@ -91,21 +96,21 @@ export function createProjectNavigation({
             updatedAt: run.startedAt,
           });
       }
+      const ordered = [
+        ...stored.filter((s) => s.pinned),
+        ...ephemeral,
+        ...stored.filter((s) => !s.pinned),
+      ];
       const matchesProject = `${name} ${p.cwd}`.toLocaleLowerCase(getLanguage()).includes(needle);
-      const visible = sessions
-        .filter(
-          (s) =>
-            Boolean(s.archived) === archived &&
-            (!needle ||
-              matchesProject ||
-              String(s.title || '')
-                .toLocaleLowerCase(getLanguage())
-                .includes(needle)),
-        )
-        .sort(
-          (a, b) =>
-            Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || time(b.updatedAt) - time(a.updatedAt),
-        );
+      const visible = ordered.filter(
+        (s) =>
+          Boolean(s.archived) === archived &&
+          (!needle ||
+            matchesProject ||
+            String(s.title || '')
+              .toLocaleLowerCase(getLanguage())
+              .includes(needle)),
+      );
       if ((needle && !matchesProject && !visible.length) || (archived && !visible.length)) continue;
       const pinned = Boolean(p.pinned);
       if (group !== pinned) {
@@ -202,6 +207,9 @@ export function createProjectNavigation({
           const active = s.id ? s.id === sessionId : s.runId === viewRunId;
           const item = el('div', `session-row${active ? ' active' : ''}`);
           item.dataset.sessionId = s.id || '';
+          item.dataset.projectKey = key;
+          item.dataset.pinned = String(Boolean(s.pinned));
+          item.dataset.archived = String(Boolean(s.archived));
           const running = Boolean(s.runId || projectRuns.some((r) => r.sessionId === s.id));
           const waiting = projectRuns.some(
             (run) =>
@@ -224,6 +232,16 @@ export function createProjectNavigation({
               ? selectRun(projectRuns.find((r) => r.id === s.runId))
               : selectSession(s.id, s.cwd);
           item.append(button);
+          if (!readOnly && s.id && !needle && visible.length > 1) {
+            const handle = el('button', 'session-drag-handle');
+            handle.type = 'button';
+            handle.dataset.navigationKey = `session-drag:${s.id}`;
+            bindAttribute(handle, 'aria-label', () => t('projects.drag', { name: s.title || t('ui.nouvelle_session') }));
+            bindAttribute(handle, 'title', () => t('sessions.drag_hint'));
+            handle.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown');
+            handle.append(icon('grip'));
+            item.append(handle);
+          }
           if (!readOnly && s.id) {
             const menu = el('button', 'icon-button session-more');
             menu.type = 'button';

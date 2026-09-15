@@ -4,6 +4,13 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.5.0
+
+- **Faster opening path**: connecting screen in the main window, immediate reuse of a running server and lightweight component checks on cold startup. Full diagnostics show their phases and remain available on demand.
+- **Stable conversation order**: new messages no longer reorder conversations. Pinned conversations stay first; reorder within a project using the menu, keyboard or drag and drop. New conversations appear at the top of their group.
+- **Quieter imports**: imported conversations start as read; the imported badge disappears on first open or after three minutes, without a yellow banner. Keep the historical model when usable, otherwise use the configured destination default; manual selection is needed only when no usable model is available.
+- **Validation**: code reviews, native compilation and isolated checks. Full live startup timing and the complete touch interaction remain unverified; no test suite rerun for this release.
+
 ## 3.4.1
 
 - **.pastudio export fixes (transferable file, operation on the PC itself)**: transferable file importable on another PC; export and import from Studio opened on that PC, not from a remote browser (LAN/Tailscale/PWA). Selective ZIP DEFLATE compression (level 6, only when smaller, otherwise stored, sequential with stored fallback); export fork tolerance — canonical id is `header.id`, filename stays the physical path, only duplicate canonical ids from different physical files are rejected; original error code preserved with bounded generic detail.

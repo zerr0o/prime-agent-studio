@@ -17,7 +17,14 @@ async function fixture(t) {
     assert.equal(dirname(root), resolve(tmpdir()));
     await rm(root, { recursive: true, force: true });
   });
-  const options = { dataRoot: join(root, 'user'), resourceDir: join(root, 'resources'), port: 9999 };
+  // Real detached restart tests restart mechanics, not the cheap receipt gate:
+  // bypass components_required explicitly (like Later/background).
+  const options = {
+    dataRoot: join(root, 'user'),
+    resourceDir: join(root, 'resources'),
+    port: 9999,
+    allowUnconfigured: true,
+  };
   await mkdir(join(options.dataRoot, 'data'), { recursive: true });
   await mkdir(join(options.resourceDir, 'studio', 'scripts'), { recursive: true });
   await Promise.all(

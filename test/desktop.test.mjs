@@ -68,11 +68,31 @@ test('desktop refuses an occupied port before changing data', async (t) => {
   await assert.rejects(startDesktop(f, { probe: async () => ({ state: 'occupied' }) }), /occupied/);
   await assert.rejects(readdir(f.dataRoot), { code: 'ENOENT' });
 });
+test('desktop cold start without receipt requires diagnose unless explicitly allowed', async (t) => {
+  const f = await fixture(t);
+  await assert.rejects(
+    startDesktop(f, { probe: async () => ({ state: 'absent' }) }),
+    /components_required/,
+  );
+  let options;
+  const allowed = await startDesktop(
+    { ...f, allowUnconfigured: true, env: { PATH: 'original' } },
+    {
+      probe: async () => ({ state: 'absent' }),
+      start: async (args) => {
+        options = args;
+        return { port: 3088 };
+      },
+    },
+  );
+  assert.equal(allowed.port, 3088);
+  assert.equal(options.env.PRIME_AGENT_GUI_DATA_DIR, join(f.dataRoot, 'data'));
+});
 test('desktop cold start preserves migration data and separates persistent data, kernel, and immutable runtime', async (t) => {
   const f = await fixture(t);
   let options;
   await startDesktop(
-    { ...f, env: { PATH: 'original' } },
+    { ...f, allowUnconfigured: true, env: { PATH: 'original' } },
     {
       probe: async () => ({ state: 'absent' }),
       start: async (args) => {
@@ -94,7 +114,7 @@ test('desktop cold start preserves migration data and separates persistent data,
   const firstRoot = options.root;
   await writeFile(join(f.dataRoot, 'data', 'workspace.json'), 'new user data');
   await writeFile(join(f.resourceDir, 'desktop-resource.json'), JSON.stringify({ identity: 'b'.repeat(64) }));
-  await startDesktop(f, {
+  await startDesktop({ ...f, allowUnconfigured: true }, {
     probe: async () => ({ state: 'absent' }),
     start: async (args) => {
       options = args;
@@ -131,6 +151,9 @@ test('migration rejects directory links and does not copy their targets', async 
 test('invalid generation names cannot escape the persistent runtime directory', async (t) => {
   const f = await fixture(t);
   await writeFile(join(f.resourceDir, 'desktop-resource.json'), JSON.stringify({ identity: '../escape' }));
-  await assert.rejects(startDesktop(f, { probe: async () => ({ state: 'absent' }) }), /manifest/);
+  await assert.rejects(
+    startDesktop({ ...f, allowUnconfigured: true }, { probe: async () => ({ state: 'absent' }) }),
+    /manifest/,
+  );
   assert.equal(pathsFor('C:/installation', f.dataRoot).ownership, join(f.dataRoot, 'server.json'));
 });
