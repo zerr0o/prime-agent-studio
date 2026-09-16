@@ -43,6 +43,8 @@ jobs:
         run: node scripts/prepare-release-test-engine.mjs
       - run: node --test --test-concurrency=2 test/*.test.mjs
       - run: npm run check
+      - name: Prepare desktop resources for native tests
+        run: npm run desktop:resources
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Build signed Windows installer
         env:
