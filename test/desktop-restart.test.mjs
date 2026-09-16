@@ -15,7 +15,9 @@ async function fixture(t) {
   t.after(async () => {
     await cleanup.before?.();
     assert.equal(dirname(root), resolve(tmpdir()));
-    await rm(root, { recursive: true, force: true });
+    // Windows can retain the executable mapping briefly after taskkill reports success.
+    // Keep cleanup bounded and fail if the fixture is still in use after retries.
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
   // Real detached restart tests restart mechanics, not the cheap receipt gate:
   // bypass components_required explicitly (like Later/background).

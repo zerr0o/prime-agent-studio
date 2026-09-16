@@ -4,6 +4,10 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.6.1
+
+- **Windows release**: bounded retries clean up the restart test’s temporary files after process shutdown.
+
 ## 3.6.0
 
 - **Read while streaming**: scrolling up detaches automatic following. Return to the bottom or use the return button to resume following without interrupting the response.

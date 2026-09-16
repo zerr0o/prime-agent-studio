@@ -4,6 +4,10 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.6.1
+
+- **Publication Windows** : nettoyage des fichiers temporaires du test de redémarrage avec reprises bornées après la fermeture du processus.
+
 ## 3.6.0
 
 - **Lecture pendant le streaming** : remonter dans la conversation détache le suivi automatique. Revenir en bas ou utiliser le bouton de retour réactive le suivi, sans interrompre la réponse.
