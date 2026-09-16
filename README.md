@@ -44,7 +44,7 @@
 
 Prime Agent Studio brings your **local Prime Agent sessions** together in a Windows application and a browser interface. Follow streaming responses, find your projects and continue a conversation without opening a terminal. On Windows, agents and their tools run in the background, without unexpected PowerShell windows.
 
-**Version 3.5.0** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.5.0/Prime-Agent-Studio_3.5.0_x64-setup.exe) · [Release history](docs/en/changelog.md).
+**Version 3.6.0** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.6.0/Prime-Agent-Studio_3.6.0_x64-setup.exe) · [Release history](docs/en/changelog.md).
 
 ## Images and questions in the conversation
 
@@ -139,7 +139,7 @@ Download the [Windows x64 installer](https://github.com/zerr0o/prime-agent-studi
 
 Updates are signed for Tauri; the installer does not yet carry a Windows Authenticode signature.
 
-**After updating:** the application can keep using the previous server while agents finish. Once they have finished, use **Preferences → Updates → Restart server** in the Windows application to activate 3.5.0. [Update guide](docs/en/desktop.md).
+**After updating:** the application can keep using the previous server while agents finish. Once they have finished, use **Preferences → Updates → Restart server** in the Windows application to activate 3.6.0. [Update guide](docs/en/desktop.md).
 
 ### From source
 

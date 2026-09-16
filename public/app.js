@@ -1447,6 +1447,12 @@ function nearBottom() {
   const s = $('conversation-scroll');
   return s.scrollHeight - s.scrollTop - s.clientHeight < 110;
 }
+// True only at the actual bottom. Follow mode reattaches exclusively here, so even a
+// small upward gesture inside the generous nearBottom() band still detaches.
+function atConversationBottom() {
+  const s = $('conversation-scroll');
+  return s.scrollHeight - s.scrollTop - s.clientHeight < 3;
+}
 function markVisibleSessionRead() {
   if (
     document.hidden ||
@@ -1478,6 +1484,8 @@ async function syncSessionActivity() {
   renderProjectOverview();
 }
 function scrollBottom(smooth = false) {
+  cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = 0;
   followConversation = true;
   $('conversation-scroll').scrollTo({
     top: $('conversation-scroll').scrollHeight,
@@ -1486,9 +1494,17 @@ function scrollBottom(smooth = false) {
   $('scroll-bottom').hidden = true;
   markVisibleSessionRead();
 }
+function detachConversation() {
+  followConversation = false;
+  cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = 0;
+  lastConversationTop = $('conversation-scroll').scrollTop;
+  $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
+}
 let renderScheduled = false;
-let bottomScrollFrame;
+let bottomScrollFrame = 0;
 let followConversation = true;
+let lastConversationTop = 0;
 function scheduleMessages() {
   if (renderScheduled) return;
   renderScheduled = true;
@@ -1501,6 +1517,11 @@ function scheduleMessages() {
 }
 function renderMessages(forceScroll = false) {
   cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = 0;
+  if (forceScroll) {
+    // Explicit navigation / new-run switches always restart from the bottom.
+    followConversation = true;
+  }
   const stick = forceScroll || followConversation,
     messages = activeMessages();
   $('welcome').hidden = state.projectOverview || messages.length > 0 || state.loading;
@@ -1515,8 +1536,14 @@ function renderMessages(forceScroll = false) {
   if (!messages.length && !state.loading) {
     $('conversation-scroll').scrollTop = 0;
     $('scroll-bottom').hidden = true;
-  } else if (stick) bottomScrollFrame = requestAnimationFrame(() => scrollBottom());
-  else $('scroll-bottom').hidden = nearBottom();
+  } else if (stick)
+    // Re-check followConversation when the frame fires: the user may have scrolled up
+    // between render and paint, and scrollBottom() itself would otherwise reattach.
+    bottomScrollFrame = requestAnimationFrame(() => {
+      bottomScrollFrame = 0;
+      if (followConversation) scrollBottom();
+    });
+  else $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
 }
 function closeSidebar() {
   $('sidebar').classList.remove('mobile-open');
@@ -2704,7 +2731,8 @@ const knowledgeUI = createKnowledgeBrowser({
       (node) => node.dataset.messageId === messageId,
     );
     if (message) {
-      cancelAnimationFrame(bottomScrollFrame);
+      // Jump-to-message navigation detaches auto-follow so streaming keeps the reading position.
+      detachConversation();
       for (
         let ancestor = message.parentElement;
         ancestor && ancestor !== $('messages');
@@ -2714,6 +2742,8 @@ const knowledgeUI = createKnowledgeBrowser({
       message.scrollIntoView({ block: 'start', behavior: 'instant' });
       message.setAttribute('tabindex', '-1');
       message.focus({ preventScroll: true });
+      lastConversationTop = $('conversation-scroll').scrollTop;
+      $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
     }
   },
 });
@@ -3072,8 +3102,22 @@ $('toggle-details').onclick = () => {
 };
 $('scroll-bottom').onclick = () => scrollBottom(true);
 $('conversation-scroll').onscroll = () => {
-  followConversation = nearBottom();
-  $('scroll-bottom').hidden = state.projectOverview || nearBottom();
+  const top = $('conversation-scroll').scrollTop;
+  // Any meaningful upward move detaches, even inside the generous nearBottom() band.
+  // Only the actual bottom reattaches. Downward moves that stop short keep the current
+  // mode, so our own smooth scrollBottom frames are never mistaken for user intent and
+  // no gesture listeners or timers are needed.
+  const movedUp = top < lastConversationTop - 2,
+    atBottom = atConversationBottom();
+  lastConversationTop = top;
+  if (atBottom) followConversation = true;
+  else if (movedUp) {
+    followConversation = false;
+    // Drop any queued auto-follow so streaming cannot yank the view back.
+    cancelAnimationFrame(bottomScrollFrame);
+    bottomScrollFrame = 0;
+  }
+  $('scroll-bottom').hidden = state.projectOverview || atBottom;
   markVisibleSessionRead();
 };
 // Images and native questions can grow after the transcript render has finished.
@@ -3081,7 +3125,7 @@ $('conversation-scroll').onscroll = () => {
 const conversationSizeObserver = new ResizeObserver(() => {
   if (state.projectOverview) return;
   if (followConversation) scrollBottom();
-  else $('scroll-bottom').hidden = nearBottom();
+  else $('scroll-bottom').hidden = atConversationBottom();
 });
 conversationSizeObserver.observe($('messages'));
 conversationSizeObserver.observe($('interactive-questions'));

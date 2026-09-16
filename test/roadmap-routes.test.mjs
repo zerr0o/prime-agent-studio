@@ -161,6 +161,25 @@ test('work validates the entire selection and revision before starting a run', a
   assert.equal((await f.get()).json.revision, document.revision);
 });
 
+test('work rejects invalid additional instructions before dispatch and leaves the roadmap unchanged', async (t) => {
+  const f = await fixture(t);
+  await f.change('init');
+  const document = (await f.change('plan.create', { title: 'Plan' })).json;
+  for (const instructions of [42, {}, null, 'x'.repeat(4001), 'test\0suite']) {
+    const result = await f.api('/api/roadmap/work', {
+      cwd: f.cwd,
+      expectedRevision: document.revision,
+      targets: [{ kind: 'plan', planId: document.plans[0].id }],
+      requestId: randomUUID(),
+      instructions,
+    });
+    assert.equal(result.status, 400);
+    assert.equal(result.json.code, 'roadmap_invalid');
+  }
+  assert.equal(f.controls.length, 0);
+  assert.equal((await f.get()).json.revision, document.revision);
+});
+
 test('work is idempotent across concurrent retries and attaches the actual session to every selected task', async (t) => {
   const f = await fixture(t);
   await f.change('init');
@@ -178,6 +197,7 @@ test('work is idempotent across concurrent retries and attaches the actual sessi
     requestId: randomUUID(),
     model: 'fixture/model',
     thinking: 'high',
+    instructions: 'Vérifier aussi le mode hors ligne.\nNe pas publier de version.',
   };
   const results = await Promise.all([f.api('/api/roadmap/work', input), f.api('/api/roadmap/work', input)]);
   assert.deepEqual(
@@ -191,12 +211,40 @@ test('work is idempotent across concurrent retries and attaches the actual sessi
   assert.equal(f.controls[0].input.thinking, 'high');
   assert.match(f.controls[0].input.message, /roadmap_read/);
   assert.match(f.controls[0].input.message, /Vérifier la documentation/);
+  assert.ok(f.controls[0].input.message.includes(input.instructions));
+  const changedInstructions = await f.api('/api/roadmap/work', {
+    ...input,
+    instructions: 'Autres précisions',
+  });
+  assert.equal(changedInstructions.status, 409);
+  assert.equal(changedInstructions.json.code, 'roadmap_request_conflict');
+  const invalidRetry = await f.api('/api/roadmap/work', { ...input, instructions: {} });
+  assert.equal(invalidRetry.status, 400);
+  assert.equal(invalidRetry.json.code, 'roadmap_invalid');
   document = (await f.get()).json;
   assert.deepEqual(document.plans[0].sessions, [f.controls[0].sessionId]);
   assert.deepEqual(document.backlog.items[0].sessions, [f.controls[0].sessionId]);
   const changed = await f.api('/api/roadmap/work', { ...input, thinking: 'low' });
   assert.equal(changed.status, 409);
   assert.equal(changed.json.code, 'roadmap_request_conflict');
+  assert.equal(f.controls.length, 1);
+});
+
+test('empty instructions remain optional and invalid retries cannot reuse an accepted empty request', async (t) => {
+  const f = await fixture(t);
+  await f.change('init');
+  const document = (await f.change('plan.create', { title: 'Plan sans précisions' })).json;
+  const input = {
+    cwd: f.cwd,
+    expectedRevision: document.revision,
+    targets: [{ kind: 'plan', planId: document.plans[0].id }],
+    requestId: randomUUID(),
+  };
+  const accepted = await f.api('/api/roadmap/work', input);
+  assert.equal(accepted.status, 201);
+  assert.doesNotMatch(f.controls[0].input.message, /Instructions complémentaires/);
+  assert.equal((await f.api('/api/roadmap/work', { ...input, instructions: '  \n ' })).status, 201);
+  assert.equal((await f.api('/api/roadmap/work', { ...input, instructions: {} })).status, 400);
   assert.equal(f.controls.length, 1);
 });
 
@@ -309,12 +357,14 @@ test('work sent to an active session enters the existing follow-up queue exactly
     targets: [{ kind: 'plan', planId: document.plans[0].id }],
     sessionId: first.json.sessionId,
     requestId: randomUUID(),
+    instructions: 'Contrôler le téléphone avant de terminer.',
   };
   const results = await Promise.all([f.api('/api/roadmap/work', input), f.api('/api/roadmap/work', input)]);
   assert.ok(results.every((value) => value.status === 201 && value.json.queued));
   assert.equal(f.controls.length, 1);
   assert.equal(f.sends.length, 1);
   assert.equal(f.sends[0].mode, 'follow_up');
+  assert.ok(f.sends[0].message.includes(input.instructions));
 });
 
 test('LAN read-only access reads Roadmap and export but cannot initialize, mutate or dispatch work', async (t) => {

@@ -4,6 +4,14 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.6.0
+
+- **Lecture pendant le streaming** : remonter dans la conversation détache le suivi automatique. Revenir en bas ou utiliser le bouton de retour réactive le suivi, sans interrompre la réponse.
+- **Progression par plan** : un pourcentage discret complète le compteur de tâches. Les cases terminées sont vertes ; les groupes partiellement terminés conservent leur couleur.
+- **Reste à faire uniquement** : filtre réversible des tâches terminées dans les plans et le backlog, sans modifier les données ni les pourcentages. Les parents, notes et plans restent accessibles.
+- **Précisions avant délégation** : champ facultatif d’instructions complémentaires, transmis à une nouvelle conversation ou à la file de la conversation active. La saisie est conservée lors d’un conflit de révision.
+- **Validation** : tests unitaires et tests navigateur isolés, avec streaming simulé et contrôles de la roadmap sur PC et petits écrans.
+
 ## 3.5.0
 
 - **Ouverture prioritaire** : écran de connexion dans la fenêtre principale, réutilisation immédiate du serveur actif et contrôle léger des composants au démarrage à froid. Le diagnostic complet affiche ses étapes et reste disponible à la demande.

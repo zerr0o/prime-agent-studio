@@ -82,6 +82,7 @@ export function createRoadmap({
     contextSession = '',
     contextAccess = '',
     workRequest = null;
+  let showRemainingOnly = false;
   const expanded = new Set(),
     selected = new Set(),
     foldedMilestones = new Set(),
@@ -115,6 +116,10 @@ export function createRoadmap({
     onSummary(doc);
     const backlogNumbers = new Set([...next.backlog.items, ...next.backlog.notes].map((item) => item.number));
     for (const number of selected) if (!backlogNumbers.has(number)) selected.delete(number);
+    if (showRemainingOnly) {
+      const hiddenDone = new Set(next.backlog.items.filter((item) => item.done).map((item) => item.number));
+      for (const number of [...selected]) if (hiddenDone.has(number)) selected.delete(number);
+    }
     if (changed && !pending) render();
   }
   async function refresh() {
@@ -249,6 +254,38 @@ export function createRoadmap({
         }),
         { done: 0, total: 0 },
       );
+  }
+  function planPercent(value) {
+    const { percent = 0, total = 0 } = value || {};
+    const el = node('span', 'rm-plan-percent', total ? `${percent}%` : '');
+    if (total) {
+      el.setAttribute('aria-label', `${percent}%`);
+      el.title = `${value.done}/${value.total} ${rt('progress')} · ${percent}%`;
+    } else el.hidden = true;
+    return el;
+  }
+  function hasRemaining(step) {
+    if (!step.done) return true;
+    return (step.children || []).some(hasRemaining);
+  }
+  function remainingToggle(key) {
+    const btn = button(
+      rt('remainingOnly'),
+      () => {
+        showRemainingOnly = !showRemainingOnly;
+        if (showRemainingOnly && doc) {
+          const hiddenDone = new Set(
+            doc.backlog.items.filter((item) => item.done).map((item) => item.number),
+          );
+          for (const number of [...selected]) if (hiddenDone.has(number)) selected.delete(number);
+        }
+        render();
+      },
+      'rm-text-button rm-filter-toggle',
+    );
+    btn.setAttribute('aria-pressed', String(showRemainingOnly));
+    btn.dataset.rmFocus = `remaining:${key}`;
+    return btn;
   }
   function description(key, text) {
     const box = node('div', 'rm-description-disclosure'),
@@ -589,10 +626,13 @@ export function createRoadmap({
     });
   }
   function renderStep(plan, step, depth, index, siblings) {
+    if (showRemainingOnly && !hasRemaining(step)) return null;
     const li = node('li', 'rm-step'),
       row = node('div', 'rm-step-row'),
       key = `${plan.id}:${step.id}`,
       hasChildren = !!step.children?.length,
+      visibleChildren = showRemainingOnly ? (step.children || []).filter(hasRemaining) : step.children || [],
+      hasVisibleChildren = visibleChildren.length > 0,
       main = node('div', 'rm-step-main');
     li.dataset.stepId = step.id;
     const check = node('input');
@@ -604,7 +644,7 @@ export function createRoadmap({
     check.onchange = () => act('step.check', { planId: plan.id, stepId: step.id, done: check.checked });
     const title = node('span', `rm-step-title${step.done ? ' rm-checked' : ''}`, step.text);
     main.append(check);
-    if (hasChildren) {
+    if (hasVisibleChildren) {
       const toggle = button(
         '',
         () => {
@@ -663,11 +703,14 @@ export function createRoadmap({
       );
     row.prepend(bindDrag(row, 'step', step.id, plan.id));
     li.append(row);
-    if (hasChildren) {
+    if (hasVisibleChildren) {
       const list = node('ul', 'rm-steps');
       list.id = `rm-step-children-${plan.id}-${step.id}`;
       list.hidden = foldedSteps.has(key);
-      step.children.forEach((child, i) => list.append(renderStep(plan, child, depth + 1, i, step.children)));
+      (step.children || []).forEach((child, i) => {
+        const el = renderStep(plan, child, depth + 1, i, step.children);
+        if (el) list.append(el);
+      });
       li.append(list);
     }
     return li;
@@ -687,7 +730,7 @@ export function createRoadmap({
     toggle.setAttribute('aria-label', plan.title);
     toggle.setAttribute('aria-expanded', expanded.has(plan.id) ? 'true' : 'false');
     toggle.setAttribute('aria-controls', `rm-plan-${plan.id}`);
-    head.append(toggle, inlineCount(plan.progress));
+    head.append(toggle, inlineCount(plan.progress), planPercent(plan.progress));
     if (canEdit())
       head.append(
         menu([
@@ -729,8 +772,13 @@ export function createRoadmap({
       body.append(tools);
     }
     const list = node('ul', 'rm-steps');
-    plan.steps.forEach((s, i) => list.append(renderStep(plan, s, 1, i, plan.steps)));
+    plan.steps.forEach((s, i) => {
+      const el = renderStep(plan, s, 1, i, plan.steps);
+      if (el) list.append(el);
+    });
     body.append(list);
+    if (showRemainingOnly && plan.steps.length && !plan.steps.some(hasRemaining))
+      body.append(node('p', 'rm-note', rt('noRemaining')));
     const actions = node('div', 'rm-inline-actions');
     if (canEdit())
       actions.append(
@@ -814,6 +862,11 @@ export function createRoadmap({
       node('p', doc.overview.vision ? 'rm-description' : 'rm-note', doc.overview.vision || rt('visionHint')),
     );
     content.append(vision);
+    if (doc.plans.some((p) => p.steps.length)) {
+      const viewTools = node('div', 'rm-view-tools');
+      viewTools.append(remainingToggle('project'));
+      content.append(viewTools);
+    }
     for (const [index, milestone] of doc.overview.milestones.entries()) {
       const group = node('section', 'rm-milestone');
       group.dataset.milestoneId = milestone.id;
@@ -894,6 +947,11 @@ export function createRoadmap({
   function renderBacklog() {
     content.append(node('p', 'rm-note', rt('backlogHint')));
     if (canEdit()) content.append(button(rt('addItem'), () => backlogForm(), 'rm-primary'));
+    if (doc.backlog.items.length) {
+      const viewTools = node('div', 'rm-view-tools');
+      viewTools.append(remainingToggle('backlog'));
+      content.append(viewTools);
+    }
     if (selected.size && canEdit()) {
       const selection = node('div', 'rm-selection');
       selection.append(
@@ -925,8 +983,12 @@ export function createRoadmap({
             : rows.length,
         ),
       );
+      const visibleRows = showRemainingOnly && kind === 'item' ? rows.filter((item) => !item.done) : rows;
       if (!rows.length) list.append(node('p', 'rm-note', rt('noBacklog')));
+      else if (!visibleRows.length)
+        list.append(node('p', 'rm-note', rt(kind === 'item' ? 'noPending' : 'noBacklog')));
       rows.forEach((item, i) => {
+        if (showRemainingOnly && kind === 'item' && item.done) return;
         const row = node('article', 'rm-backlog-row');
         row.dataset.backlogNumber = String(item.number);
         row.append(bindDrag(row, 'backlog', item.number));
@@ -1045,6 +1107,11 @@ export function createRoadmap({
       const plans = doc.plans.filter((p) => p.sessions.includes(getContext().sessionId));
       if (!plans.length)
         content.append(node('p', 'rm-note', rt(getContext().sessionId ? 'noSession' : 'chooseSession')));
+      if (plans.some((p) => p.steps.length)) {
+        const viewTools = node('div', 'rm-view-tools');
+        viewTools.append(remainingToggle('session'));
+        content.append(viewTools);
+      }
       for (const plan of plans) content.append(renderPlan(plan));
     }
     footer.append(
@@ -1246,8 +1313,16 @@ export function createRoadmap({
             ['', rt('newSession')],
           ],
         },
+        {
+          name: 'instructions',
+          label: rt('workInstructions'),
+          value: '',
+          multiline: true,
+          max: 4000,
+        },
       ],
       save: async (values, revision) => {
+        const instructions = String(values.instructions ?? '').trim();
         const result = await api('/api/roadmap/work', {
           method: 'POST',
           body: {
@@ -1258,6 +1333,7 @@ export function createRoadmap({
             model: context.model,
             thinking: context.thinking,
             requestId: workRequest,
+            ...(instructions ? { instructions } : {}),
           },
         });
         selected.clear();

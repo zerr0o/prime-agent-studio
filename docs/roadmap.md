@@ -18,9 +18,13 @@ Le compteur mesure les tâches terminales cochées, une fois chacune. Un groupe 
 
 Sur téléphone, le panneau utilise la hauteur de l’écran. L’accès distant en lecture seule permet de consulter et de suivre les liens, sans modifier la Roadmap ni lancer un travail.
 
+Chaque plan avec des tâches affiche aussi son pourcentage. Les cases terminées sont vertes ; les groupes partiellement terminés gardent leur couleur. **Reste à faire uniquement** masque les tâches cochées sans changer la progression réelle. Les parents et les notes restent accessibles ; désactivez le filtre pour retrouver toutes les tâches.
+
 ## Confier une tâche et retrouver son résultat
 
 L’action **Travailler dessus** prépare un message à partir des éléments choisis. L’envoi reste explicite et utilise les conversations et la file du Studio. Le lien conservé permet de retrouver la conversation ; il ne la relance pas. Les références natives de sous-agents peuvent ouvrir leur historique via la conversation parente, y compris après leur arrêt.
+
+Dans la fenêtre de confirmation, **Instructions complémentaires (optionnel)** permet d’ajouter jusqu’à 4 000 caractères de précisions. Elles accompagnent le message envoyé sans modifier les tâches de la roadmap.
 
 Un agent peut déclarer les éléments sur lesquels il travaille. Le lien d’activité indique son identité exacte et mène à sa conversation. Il disparaît à la fin de sa boucle de travail, à l’arrêt de son exécution ou à la perte du propriétaire. Une continuation ne récupère pas automatiquement l’ancien indicateur. Ce signal exprime une déclaration de travail ; il ne prouve pas qu’une tâche est terminée.
 

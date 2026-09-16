@@ -18,9 +18,13 @@ Progress counts checked leaf tasks once each. A group reflects its children, and
 
 On phones, the panel uses the screen height. Read-only remote access allows browsing and following links, without editing Roadmap or launching work.
 
+Each plan with tasks also shows its percentage. Completed checkboxes are green; partially completed groups keep their existing color. **Remaining only** hides checked tasks without changing actual progress. Parents and notes remain accessible; disable the filter to see all tasks again.
+
 ## Assign a task and find its result
 
 **Work on this** prepares a message from the selected items. Sending remains explicit and uses Studio conversations and their queue. The saved link returns to the conversation; it does not resume it. Native subagent references can open their history through the parent conversation, including after they have stopped.
+
+In the confirmation dialog, **Additional instructions (optional)** accepts up to 4,000 characters of last-minute details. These accompany the sent message without changing roadmap tasks.
 
 An agent can declare the items it is handling. Its activity link shows the exact agent identity and opens its conversation. It disappears when its agent loop ends, its run stops or its owner is lost. A continuation does not automatically inherit the old indicator. This signal is a declaration of work; it does not prove that a task is complete.
 

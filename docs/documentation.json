@@ -1,14 +1,17 @@
 {
   "version": 1,
-  "languages": ["fr", "en"],
+  "languages": [
+    "fr",
+    "en"
+  ],
   "pages": [
     {
       "id": "roadmap",
       "fr": "docs/roadmap.md",
       "en": "docs/en/roadmap.md",
       "reviewed": {
-        "fr": "38332648e71653d8684ac40b808578b412b1a17c4debba7c204f9645d69e766b",
-        "en": "c5a5f81282a4bfe506281a0d571598920bcd7caf14b5c97cd64b9a42e27696c1"
+        "fr": "3007dc11490fd3f0217eac88a3b38f34bba8c6f051b96e69edc4d48491eda867",
+        "en": "8f7ad30ea994153acf5160fc37d102eb9ed6e0b2ad033713247ec91bbcc06905"
       }
     },
     {
@@ -16,8 +19,8 @@
       "fr": "docs/desktop.md",
       "en": "docs/en/desktop.md",
       "reviewed": {
-        "fr": "b4bc566ba476861247b3014a64d8ac0ccf29bcf4c3a4c5fd6afa1ea254bcb327",
-        "en": "daf6a3863f11f8502b2098a1cf2bd238cae3c0768d23a478e62867f15cd4ca77"
+        "fr": "a1ea8fb12ed17797a298f5b781e76f82b019eb40f4e75e3dcbe30dfeca531c23",
+        "en": "fe370b05796aebbff4e9a4346c1573e8a4e6d39a74d691fc32a7a4a245e49f20"
       }
     },
     {
@@ -25,8 +28,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "c8a717fc141485f6743323d84c70f17257dcded43b5ec48220dccbd3355aca73",
-        "en": "0c5f8688b1e12d48d78a04f62d93a3b008efb616e6b1439fe85bd0c7d0d8a58f"
+        "fr": "3ba33a4c7d98b459dd9f2942f1d3178ee752f8dd5d10452cb01f687533747246",
+        "en": "e182afde3d9ac9fb384cb682eb03aaabbb6ce9fdbf3690095aaca6e97c2517dd"
       }
     },
     {
@@ -34,8 +37,8 @@
       "fr": "docs/changelog.md",
       "en": "docs/en/changelog.md",
       "reviewed": {
-        "fr": "2a6af01f0f162e551ce930debd19d74b57e0071182c654ece7b7c9acbce5eec0",
-        "en": "d08956a86977891cff9bac0bacaa0a94afa8fd6cbcdc46e4674414ec9f4d058d"
+        "fr": "32a587a75f55fefdc6c0c41b8de3629a7e67866a3bd793cbaf33c848ba6f62ca",
+        "en": "f0f43af4fc6016bd25a937c2e8988596be2dc61c65f4555fc403ca5b67099baa"
       }
     },
     {

@@ -122,6 +122,10 @@ try {
   await rows.first().getByRole('button', { name: 'Sélectionner', exact: true }).click();
   await panel(page).locator('.rm-selection').getByRole('button', { name: 'Travailler dessus' }).click();
   await editor.getByLabel('Conversation', { exact: true }).selectOption('');
+  const instructions = editor.getByLabel('Instructions complémentaires (optionnel)', { exact: true });
+  await instructions.fill('Vérifier le mode hors ligne.\nNe pas publier de version.');
+  await expect(instructions).toHaveAttribute('maxlength', '4000');
+  await page.screenshot({ path: resolve(out, 'handoff-instructions.png') });
   let beforeWork = await fixture.app.roadmap.read(fixture.cwd);
   await fixture.app.roadmap.mutate(fixture.cwd, {
     action: 'journal.add',
@@ -131,12 +135,14 @@ try {
   });
   await editor.getByRole('button', { name: 'Travailler dessus', exact: true }).click();
   await expect(editor).toContainText('La roadmap a changé ailleurs');
+  await expect(instructions).toHaveValue('Vérifier le mode hors ligne.\nNe pas publier de version.');
   expect(fixture.calls.length).toBe(0);
   await editor.getByRole('button', { name: 'Actualiser et garder ma saisie' }).click();
   await editor.getByRole('button', { name: 'Travailler dessus', exact: true }).click();
   await expect(editor).not.toBeVisible();
   await expect.poll(() => fixture.calls.length).toBe(1);
   expect(fixture.calls[0].message).toContain('Tâche créée depuis le Studio');
+  expect(fixture.calls[0].message).toContain('Vérifier le mode hors ligne.\nNe pas publier de version.');
   await expect(rows.first().locator('.rm-session-link')).toBeVisible();
   checks.push(
     'Explicit work creates exactly one normal run with the selected task and a durable conversation link.',

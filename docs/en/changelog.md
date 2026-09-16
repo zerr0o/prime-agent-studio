@@ -4,6 +4,14 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.6.0
+
+- **Read while streaming**: scrolling up detaches automatic following. Return to the bottom or use the return button to resume following without interrupting the response.
+- **Progress per plan**: a discreet percentage complements task counts. Completed checkboxes are green; partially completed groups retain their existing color.
+- **Remaining only**: a reversible filter hides completed tasks in plans and backlog without changing data or percentages. Parents, notes and plans remain accessible.
+- **Last-minute instructions**: an optional additional-instructions field is sent to a new conversation or the active conversation queue. Revision conflicts preserve the entered text.
+- **Validation**: unit tests and isolated browser tests, with simulated streaming and roadmap checks on desktop and small screens.
+
 ## 3.5.0
 
 - **Faster opening path**: connecting screen in the main window, immediate reuse of a running server and lightweight component checks on cold startup. Full diagnostics show their phases and remain available on demand.
