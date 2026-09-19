@@ -28,7 +28,7 @@ This panel and its routes are restricted to the PC’s local address. It changes
 
 Choose a project from the menu to display its sessions, then tap a session to open it. **New session** prepares a conversation in that project. Archived sessions remain accessible through the **Archived** filter.
 
-The **Photo** and **Attachment** buttons select images and any file type from the phone, respectively. Attachments transfer to the PC when sent, including through **Steer** or **Follow up**. Tap a received image to enlarge it, or a file to download it. Limits are the same as on desktop: [images and attachments](../../README.md#images-and-attachments).
+The **Photo** and **Attachment** buttons select images and any file type from the phone, respectively. Attachments transfer to the PC when sent, including through **Steer** or **Follow up**. Tap a received image to enlarge it, or a file to download it. Limits are the same as on desktop: [images and attachments](navigation.md#images-and-attachments).
 
 The `readOnly: false` configuration enables remote controls. Choose **Read only** under **Remote permissions** to limit access to viewing. Older configurations without this field remain read-only until explicitly updated. Changes take effect immediately and preserve the PIN; devices must sign in again while agents keep working.
 

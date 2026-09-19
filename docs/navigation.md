@@ -29,6 +29,8 @@ Chaque conversation dispose aussi d’un menu **⋯** pour la renommer, l’épi
 
 ## Importer et exporter des conversations (.pastudio)
 
+![Importer des conversations dans le projet fictif Atelier.](screenshots/desktop-project-import.png)
+
 Le format `.pastudio` (v1) transfère des conversations complètes vers un autre projet existant. Fichier transférable sur un autre PC ; export et import depuis le Studio ouvert sur ce PC, pas depuis un navigateur distant (LAN/Tailscale/PWA).
 
 - Contenu transféré : conversations complètes avec leurs sous-agents, ainsi que la Roadmap du projet. Les fichiers du projet, les réglages, les clés des fournisseurs, les mémoires et le moteur ne sont jamais inclus.
@@ -40,3 +42,20 @@ Le format `.pastudio` (v1) transfère des conversations complètes vers un autre
 - Aucun processus en cours n'est migré : seuls les historiques sont transférés.
 - Un import interrompu reste en attente : prévisualisez-le et relancez-le sans rien réinstaller.
 - Limite d’archive : 128 Mio compressés assortis côté serveur et interface (256 Mio non compressés au total, 128 Mio par entrée) ; une archive de plus de 64 Mio demande la version 3.4.1 des deux côtés.
+
+## Images et pièces jointes
+
+Deux boutons distincts accompagnent le champ de saisie : **Photo** ouvre le sélecteur d’images du téléphone ou du PC ; **Pièce jointe** accepte tout type de fichier. Vous pouvez aussi **glisser-déposer** les fichiers dans la conversation, ou **coller** les images et documents que le navigateur reçoit du presse-papiers. Le collage de texte habituel reste disponible.
+
+Les aperçus permettent de retirer une pièce avant l’envoi. Les pièces du brouillon restent dans ce navigateur après un rechargement. Vous pouvez les envoyer seules, avec une consigne, en **Réorienter** ou **À la suite**. Dans la conversation, cliquez sur une image pour l’agrandir ou sur un fichier pour le télécharger.
+
+![Pièces jointes sur PC : image et document dans la conversation, aperçus du brouillon et boutons Photo et Pièce jointe distincts.](screenshots/desktop-attachments.png)
+
+Les images **PNG, JPEG, GIF et WebP** sont transmises au moteur avec leurs pixels ; choisissez un modèle compatible avec les images. Les autres fichiers sont conservés sur le PC et leur chemin est transmis à Prime Agent pour ses outils. Les autres formats d’image peuvent être joints comme fichiers.
+
+| Par message | Nombre maximal | Taille par pièce | Taille cumulée |
+| ----------- | -------------- | ---------------- | -------------- |
+| Images      | 4              | 4 Mo             | 8 Mo           |
+| Fichiers    | 8              | 10 Mo            | 20 Mo          |
+
+Vous pouvez combiner images et fichiers, dans la limite de **8 pièces jointes au total**. Ces fonctions sont aussi disponibles sur le téléphone, en Wi-Fi ou via Tailscale. Les fichiers envoyés sont conservés sur le PC ; les brouillons appartiennent au navigateur dans lequel vous les préparez.

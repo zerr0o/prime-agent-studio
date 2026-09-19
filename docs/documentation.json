@@ -1,9 +1,6 @@
 {
   "version": 1,
-  "languages": [
-    "fr",
-    "en"
-  ],
+  "languages": ["fr", "en"],
   "pages": [
     {
       "id": "roadmap",
@@ -28,8 +25,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "3e996b61e967d6fced176d447cd5184c10849caf2638321d77d454f08d0f37e1",
-        "en": "926b268ebf9b8382e872f4478a1b660e8230021f45a78ad6c94d8f6ca623d771"
+        "fr": "81cffdfe53daba2bd742b5c3ccb5c35c8cdb5df450a96e7a47b5690da4854973",
+        "en": "f12902df48feede664bb9d59d098f54644f03de83534106ee3711470b90674db"
       }
     },
     {
@@ -82,8 +79,8 @@
       "fr": "docs/lan.md",
       "en": "docs/en/lan.md",
       "reviewed": {
-        "fr": "66b0e58e4c94bf9e00a11318af2d67c655f227e6112a61411d7c08cdf52308d4",
-        "en": "093a18af20816394e1b5870c4076c04b512a30edd61a95fd833e8e8338843453"
+        "fr": "fc3a35134c13d44c83069b97c2a0392c8281d8798e3c10d3d59c08c893d8f47e",
+        "en": "fad369a89793ca5216f26340e087dabb6a4b1be0131147bbbb9a738d3abeb71f"
       }
     },
     {
@@ -127,8 +124,8 @@
       "fr": "docs/navigation.md",
       "en": "docs/en/navigation.md",
       "reviewed": {
-        "fr": "bd5b6f4306df2a680afec9a2e2a4d9dfccdee0180703049e9c9ba634051485e7",
-        "en": "1c52ef2c5efb31d76ce946471c485c7ec0d870aa9ea8c87be734cec3091f6c83"
+        "fr": "175f3bab8a4ed0ba67172f93331e06adee899c9a556ad98fee75676a4b28669a",
+        "en": "ec9df6a95ed0dbcdcb2ac20ce9eb41efcf29018ca022b6904cbad211685218d5"
       }
     },
     {

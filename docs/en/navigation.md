@@ -29,6 +29,8 @@ Each conversation also has a **⋯** menu to rename, pin or unpin it, archive or
 
 ## Import and export conversations (.pastudio)
 
+![Import conversations into the fictional Atelier project.](../screenshots/en/desktop-project-import.png)
+
 The `.pastudio` format (v1) transfers complete conversations into another existing project. Transferable file to another PC; export and import from Studio opened on that PC, not from a remote browser (LAN/Tailscale/PWA).
 
 - Transferred content: complete conversations with their subagents, plus the project Roadmap. Project files, settings, provider keys, memories and the engine are never included.
@@ -40,3 +42,20 @@ The `.pastudio` format (v1) transfers complete conversations into another existi
 - No running process is migrated: only histories are transferred.
 - An interrupted import stays pending: preview it and retry without reinstalling anything.
 - Archive limit: 128 MB compressed matched on server and UI (256 MB total uncompressed, 128 MB per entry); an archive over 64 MB needs 3.4.1 on both sides.
+
+## Images and attachments
+
+Two separate buttons accompany the input: **Photo** opens the phone or PC image picker; **Attachment** accepts any file type. You can also **drag and drop** files into the conversation, or **paste** images and documents provided to the browser by the clipboard. Normal text pasting remains available.
+
+Previews let you remove an attachment before sending. Draft attachments stay in this browser after a reload. Send them on their own, with instructions, as **Steer** or as **Follow up**. In a conversation, click an image to enlarge it or a file to download it.
+
+![Desktop attachments: image and document in a conversation, draft previews, and separate Photo and Attachment buttons.](../screenshots/en/desktop-attachments.png)
+
+**PNG, JPEG, GIF and WebP** images are sent to the engine with their pixels; choose an image-capable model. Other files are stored on the PC, and their paths are passed to Prime Agent for its tools. Other image formats can be attached as files.
+
+| Per message | Maximum count | Size per attachment | Combined size |
+| ----------- | ------------- | ------------------- | ------------- |
+| Images      | 4             | 4 MB                | 8 MB          |
+| Files       | 8             | 10 MB               | 20 MB         |
+
+You can combine images and files, up to **8 attachments in total**. These features also work on phones over Wi-Fi or Tailscale. Sent files are stored on the PC; drafts belong to the browser in which you prepare them.

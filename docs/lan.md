@@ -28,7 +28,7 @@ Ce panneau et ses routes sont réservés à l’adresse locale du PC. Il permet 
 
 Dans le menu, choisissez un projet pour afficher ses sessions dans la page, puis touchez une session pour l’ouvrir. **Nouvelle session** prépare une conversation dans ce projet. Les sessions archivées restent accessibles avec le filtre **Archivées**.
 
-Les boutons **Photo** et **Pièce jointe** sélectionnent respectivement les images et tous types de fichiers du téléphone. Les pièces sont transférées au PC lors de l’envoi, y compris en **Réorienter** ou **À la suite**. Touchez une image reçue pour l’agrandir, ou un fichier pour le télécharger. Les limites sont les mêmes que sur PC : [images et pièces jointes](../README.fr.md#images-et-pièces-jointes).
+Les boutons **Photo** et **Pièce jointe** sélectionnent respectivement les images et tous types de fichiers du téléphone. Les pièces sont transférées au PC lors de l’envoi, y compris en **Réorienter** ou **À la suite**. Touchez une image reçue pour l’agrandir, ou un fichier pour le télécharger. Les limites sont les mêmes que sur PC : [images et pièces jointes](navigation.md#images-et-pièces-jointes).
 
 La configuration `readOnly: false` active les commandes à distance. Pour limiter cet accès à la consultation, choisissez **Lecture seule** dans **Autorisations à distance**. Une ancienne configuration sans ce champ reste en lecture seule jusqu’à sa mise à jour explicite. Le changement s’applique immédiatement et conserve le PIN ; les appareils doivent se reconnecter, les agents continuent.
 
