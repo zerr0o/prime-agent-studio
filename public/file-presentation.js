@@ -29,6 +29,29 @@ export function formatJson(text) {
   return parts.join('');
 }
 
+// Image extensions served inline by the project-files preview API (lib/project-files.mjs).
+export function isImagePath(path) {
+  return /\.(png|jpe?g|webp|gif)$/i.test(String(path || ''));
+}
+
+// Folder that contains a project-relative path ('' for the project root).
+export function parentFolder(path) {
+  const value = String(path || '');
+  const index = value.lastIndexOf('/');
+  return index < 0 ? '' : value.slice(0, index);
+}
+
+// Viewer mode used when a file row is activated: images always open their
+// content preview, deleted files keep their diff view, other tracked changes
+// keep the diff view, and plain browser entries open the content preview.
+export function defaultFileView(file) {
+  if (!file || typeof file !== 'object') return 'preview';
+  if (file.directory) return 'preview';
+  if (file.deleted) return 'diff';
+  if (file.status && !isImagePath(file.path)) return 'diff';
+  return 'preview';
+}
+
 export function filePresentation(path, text) {
   if (/\.(md|markdown|mdown|mkd)$/i.test(path)) return { kind: 'markdown', label: 'Markdown', text };
   if (/\.json$/i.test(path)) {

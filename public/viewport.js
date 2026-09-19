@@ -19,3 +19,26 @@ if (viewport) {
   window.addEventListener('pageshow', schedule);
   update();
 }
+
+// Keep the "Derniers messages" pill above the composer frame. The composer grows
+// while typing (textarea autoresize) and the visual viewport shrinks with the
+// mobile keyboard, so a fixed bottom offset would overlap the input.
+(function keepScrollButtonAboveComposer() {
+  const area = document.querySelector('.conversation-column .composer-area');
+  if (!area) return;
+  let frame = 0;
+  function measure() {
+    frame = 0;
+    document.documentElement.style.setProperty('--scroll-bottom-offset', `${area.offsetHeight + 12}px`);
+  }
+  function schedule() {
+    if (!frame) frame = requestAnimationFrame(measure);
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(schedule).observe(area);
+  document.getElementById('composer')?.addEventListener('input', schedule);
+  window.addEventListener('resize', schedule);
+  window.addEventListener('pageshow', schedule);
+  viewport?.addEventListener('resize', schedule);
+  viewport?.addEventListener('scroll', schedule);
+  measure();
+})();

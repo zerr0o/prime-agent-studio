@@ -1008,8 +1008,12 @@ export function createApp(options = {}) {
         }
       }
       if (method === 'POST' && path === '/api/projects/open') {
-        const project = await store.findProject((await readBody(req)).cwd);
-        return json(res, 200, await (options.openDirectory || openDirectory)(project.cwd));
+        const body = await readBody(req);
+        const project = await store.findProject(body.cwd);
+        const folder = body.path === undefined
+          ? project.cwd
+          : await projectFiles.localDirectory(project.cwd, body.path);
+        return json(res, 200, await (options.openDirectory || openDirectory)(folder));
       }
       if (method === 'DELETE' && path === '/api/projects') {
         const project = await store.findProject((await readBody(req)).cwd);

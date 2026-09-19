@@ -1104,6 +1104,10 @@ export const messages = {
     fr: 'Sans titre',
     en: 'Untitled',
   },
+  'projects.new_conversation': {
+    fr: 'Nouvelle conversation',
+    en: 'New conversation',
+  },
   'ui.nouvelle_session': {
     fr: 'Nouvelle session',
     en: 'New session',

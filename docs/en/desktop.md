@@ -68,7 +68,7 @@ In Studio, open **Preferences → Updates → Check for updates**. When a newer 
 
 The **Restart the server after installation** option applies the new version when the server is idle. If agents are still working, the server stays running and settings open after relaunch. **Restart server** then displays a confirmation: restarting may interrupt runs and will temporarily disconnect devices. Projects and saved history are preserved. Activity is checked again before stopping; a server started by another installation is not stopped.
 
-These controls also remain available in **App settings** through the tray icon, even when the older server does not yet have the new category. In a browser or on a phone, the page directs you to the Windows application to install or restart.
+These controls also remain available in **App settings** through the tray icon, even when the older server does not yet have the new category. In a browser or on a phone, the panel shows versions and release notes. With write access, you can confirm an update request: the Windows application must be running and no agents may be working. Installation and restart are still performed by the Windows application, which checks the conditions again. Normal mobile control of Studio remains available while agents work.
 
 Web links, including Codex sign-in, open in the default browser. File drops use the HTML composer directly, without another file bridge. Only update and restart commands are allowed from the local Studio window; other native settings remain restricted to the launcher.
 

@@ -1,5 +1,5 @@
 import { t as tr, bindText, bindAttribute, translateKnown, getLanguage } from './i18n.js';
-import { filePresentation } from './file-presentation.js';
+import { filePresentation, defaultFileView, parentFolder } from './file-presentation.js';
 import { thinkingLabel } from './reasoning.js';
 import { createSubagentSettings } from './subagent-settings.js';
 
@@ -759,6 +759,7 @@ export function createInspector({
   };
 
   function renderFiles(append = false) {
+    closeFileMenu();
     const list = $('inspector-file-list'),
       crumb = $('inspector-file-breadcrumb');
     const focusedPath = document.activeElement?.closest('[data-file-path]')?.dataset.filePath;
@@ -790,7 +791,8 @@ export function createInspector({
             file.staged ? tr('ui.contient_des_modifications_indexees') : tr('ui.non_indexe'),
           ].join(' · '),
         );
-        row.onclick = () => openFile(file, 'diff');
+        row.onclick = () => openFile(file, defaultFileView(file));
+        attachFileMenu(row, file);
         list.append(row);
       }
       if (!fileData.entries.length)
@@ -833,6 +835,7 @@ export function createInspector({
           () => `${file.directory ? tr('ui.ouvrir_le_dossier') : tr('common.view')} ${file.name}`,
         );
         row.onclick = () => (file.directory ? browse(file.path) : openFile(file, 'preview'));
+        attachFileMenu(row, file);
         list.append(row);
       }
       if (!fileData.total) empty(list, () => tr('ui.ce_dossier_est_vide'));
@@ -919,6 +922,161 @@ export function createInspector({
       update();
     }
   };
+
+  // File actions share the viewer and the permission-gated PC folder opener.
+  const fileMenu = document.createElement('div');
+  fileMenu.className = 'popover-menu inspector-file-menu';
+  fileMenu.setAttribute('role', 'menu');
+  fileMenu.hidden = true;
+  document.body.append(fileMenu);
+  let menuFile = null,
+    menuRow = null;
+  function closeFileMenu() {
+    if (fileMenu.hidden) return;
+    fileMenu.hidden = true;
+    menuFile = null;
+    menuRow = null;
+  }
+  async function copyFilePath(path) {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(path);
+      else throw new Error('clipboard');
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = path;
+      area.setAttribute('aria-hidden', 'true');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.append(area);
+      area.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      area.remove();
+      if (!ok) {
+        toast(() => tr('ui.le_navigateur_ne_permet_pas_la_copie_selectionnez_le_texte_manuel'), true);
+        return;
+      }
+    }
+    toast(() => tr('ui.copie'));
+  }
+  function openFileMenu(file, row, x, y) {
+    menuFile = file;
+    menuRow = row;
+    fileMenu.replaceChildren();
+    fileMenu.setAttribute('aria-label', file.path);
+    const actions = [
+      [
+        () => tr('ui.ouvrir'),
+        () => {
+          const target = menuFile,
+            anchor = menuRow;
+          closeFileMenu();
+          anchor?.focus({ preventScroll: true });
+          if (!target) return;
+          if (target.directory) browse(target.path);
+          else openFile(target, defaultFileView(target));
+        },
+      ],
+      [
+        () => current.remote ? tr('ui.ouvrir_le_dossier_sur_le_pc') : tr('ui.ouvrir_le_dossier'),
+        async () => {
+          const target = menuFile,
+            anchor = menuRow;
+          closeFileMenu();
+          anchor?.focus({ preventScroll: true });
+          if (!target || !current.enabled || current.readOnly || !current.nativeFileOpen || !current.online) return;
+          try {
+            await api('/api/projects/open', {
+              method: 'POST',
+              body: { cwd: current.cwd, path: target.directory ? target.path : parentFolder(target.path) },
+            });
+            toast(() => tr('ui.ouverture_demandee_sur_le_pc'));
+          } catch (error) {
+            toast(translateKnown(error.message), true);
+          }
+        },
+        !current.enabled || current.readOnly || !current.nativeFileOpen || !current.online,
+      ],
+      [
+        () => tr('ui.copier_le_chemin'),
+        () => {
+          const target = menuFile,
+            anchor = menuRow;
+          closeFileMenu();
+          anchor?.focus({ preventScroll: true });
+          if (target) {
+            const separator = current.cwd.includes('\\') ? '\\' : '/';
+            const path = current.cwd.replace(/[\\/]$/, '') + separator + target.path.replaceAll('/', separator);
+            void copyFilePath(path);
+          }
+        },
+      ],
+    ];
+    for (const [label, run, disabled] of actions) {
+      const item = node('button', '', label);
+      item.type = 'button';
+      item.disabled = Boolean(disabled);
+      item.setAttribute('role', 'menuitem');
+      item.onclick = run;
+      fileMenu.append(item);
+    }
+    fileMenu.hidden = false;
+    const viewport = window.visualViewport,
+      left = viewport?.offsetLeft || 0,
+      top = viewport?.offsetTop || 0,
+      width = viewport?.width || innerWidth,
+      height = viewport?.height || innerHeight;
+    fileMenu.style.maxHeight = `${Math.max(80, height - 24)}px`;
+    fileMenu.style.left = `${Math.max(left + 12, Math.min(left + width - fileMenu.offsetWidth - 12, x))}px`;
+    fileMenu.style.top = `${Math.max(top + 12, Math.min(top + height - fileMenu.offsetHeight - 12, y))}px`;
+    fileMenu.querySelector('button')?.focus({ preventScroll: true });
+  }
+  function attachFileMenu(row, file) {
+    row.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openFileMenu(file, row, event.clientX, event.clientY);
+    });
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        const rect = row.getBoundingClientRect();
+        openFileMenu(file, row, rect.left + 16, rect.bottom + 4);
+      }
+    });
+  }
+  const closeFileMenuOnPointer = (event) => {
+    if (!fileMenu.hidden && !event.target.closest('.inspector-file-menu')) closeFileMenu();
+  };
+  const closeFileMenuOnScroll = () => closeFileMenu();
+  const closeFileMenuOnKey = (event) => {
+    if (fileMenu.hidden) return;
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+      const anchor = menuRow;
+      closeFileMenu();
+      anchor?.focus({ preventScroll: true });
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const items = [...fileMenu.querySelectorAll('button:not(:disabled)')];
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next]?.focus({ preventScroll: true });
+    }
+  };
+  document.addEventListener('click', closeFileMenuOnPointer);
+  document.addEventListener('scroll', closeFileMenuOnScroll, true);
+  document.addEventListener('keydown', closeFileMenuOnKey, true);
+  window.addEventListener('resize', closeFileMenuOnScroll);
+  window.visualViewport?.addEventListener('resize', closeFileMenuOnScroll);
+  window.visualViewport?.addEventListener('scroll', closeFileMenuOnScroll);
 
   function beginView(name) {
     cancel('viewer');
@@ -1161,6 +1319,7 @@ export function createInspector({
       agentData = fileData = null;
       lastAgents = '';
       directory = '';
+      closeFileMenu();
       if (viewer.open) viewer.close();
       $('inspector-agent-count').hidden = true;
       $('inspector-usage').hidden = true;
@@ -1230,6 +1389,13 @@ export function createInspector({
     destroy() {
       clearInterval(timer);
       for (const key of [...pending.keys()]) cancel(key);
+      document.removeEventListener('click', closeFileMenuOnPointer);
+      document.removeEventListener('scroll', closeFileMenuOnScroll, true);
+      document.removeEventListener('keydown', closeFileMenuOnKey, true);
+      window.removeEventListener('resize', closeFileMenuOnScroll);
+      window.visualViewport?.removeEventListener('resize', closeFileMenuOnScroll);
+      window.visualViewport?.removeEventListener('scroll', closeFileMenuOnScroll);
+      fileMenu.remove();
     },
   };
 }

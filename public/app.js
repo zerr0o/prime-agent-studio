@@ -2509,7 +2509,10 @@ async function projectMenuAction(action) {
   if (action === 'archive-import') return archivesUI?.openImport(p);
   if (state.readOnly) return;
   try {
-    if (action === 'open') {
+    if (action === 'new-session') {
+      selectProject(p.cwd);
+      newSession();
+    } else if (action === 'open') {
       await api('/api/projects/open', { method: 'POST', body: { cwd: p.cwd } });
       toast(() => tr('ui.dossier_ouvert_sur_le_pc'));
     } else if (action === 'pin') {

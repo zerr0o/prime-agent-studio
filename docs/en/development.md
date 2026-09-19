@@ -192,25 +192,32 @@ Main routes are `GET /api/bootstrap`, `GET /api/overview`, `GET /api/history?id=
 
 ## Regenerate README screenshots
 
-`node scripts/capture-roadmap.mjs` regenerates the French and English Roadmap illustrations using a fully isolated fictional project. It captures the real interface without using a user project or calling a provider.
-
 ```powershell
 node scripts/capture-readme.mjs
 ```
 
-The script opens the real interface in Microsoft Edge without a visible window, on a separate temporary server. Projects, conversations, models and events are demonstration data. No native agent or provider account is used, and no running Studio session is modified.
+This command regenerates illustrations **in French and English** from the repository's current HTML, JavaScript and styles. It uses the Chromium installed for Playwright without a visible window. `PRIME_STUDIO_BROWSER` can select another already installed channel, such as `chrome` or `msedge`.
 
-`npm run test:workspace -- --capture-docs` regenerates the MCP manager screenshot with an isolated demonstration configuration. User accounts are preserved.
+Scenarios are split into three groups in `scripts/readme-captures/`:
 
-Screenshots are saved in `docs/screenshots/`. Five desktop views are captured at 1600 × 1000, including a conversation with attachments and a new conversation with subagent settings. Four screenshots are framed around their dialog: English preferences with the language selector, model selector, model defaults and mobile code. The preferences capture uses a 1200-pixel viewport height to show all settings. Demonstration files remain in the scenario’s temporary folder. The report is saved to `test-results/readme-captures.json`. `PRIME_STUDIO_BROWSER` can select another installed Playwright channel, such as `chrome`.
+| Group       | Views covered                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| `core`      | Conversations, projects, import, Roadmap, live messages, questions, attachments, models and subagents. |
+| `tools`     | Providers, MCP, commands, files, knowledge and session context.                                        |
+| `platforms` | Mobile conversation, remote access, notifications, Windows setup and updates.                          |
 
-To regenerate screenshots with the English interface in `docs/screenshots/en/`, without replacing French screenshots:
+Each group starts a temporary server on the loopback address with isolated folders and fictional data. No native agent, provider account, real MCP server or user session is used. Engine, desktop and network services may be simulated to display the documented states: **these screenshots illustrate the interface; they do not validate a real connection or Windows installation**.
+
+Screenshots contain no added banners. Fictional data is disclosed in the README, outside the images. Views use dimensions suited to their content: desktop, cropped dialogs and phones. Each language has its own captures and demonstration content.
+
+All requested captures are produced before replacing files in `docs/screenshots/` and `docs/screenshots/en/`. The `test-results/readme-captures.json` report records scenarios, dimensions and image hashes. Temporary servers, browsers and folders are cleaned up after execution, including on failure.
+
+To regenerate only one language or group, or prepare a review without replacing published illustrations:
 
 ```powershell
-node scripts/capture-readme.mjs --docs-en
-node scripts/test-providers-ui.mjs --docs-en
-node scripts/test-inspector-ui.mjs --docs-en
-node scripts/test-workspace-ui.mjs --docs-en
+node scripts/capture-readme.mjs --lang en
+node scripts/capture-readme.mjs --group core
+node scripts/capture-readme.mjs --output .local/readme-preview
 ```
 
-`scripts/documentation-capture.mjs` temporarily applies English to these isolated scenario windows and restores their language after capture. Sample conversations and documents retain their original language, as in the application. No user server is restarted.
+`--docs-en` remains an alias for `--lang en`. Specialized test scripts and `scripts/capture-roadmap.mjs` remain available for their own scenarios; they are not needed to rebuild the README illustrations.

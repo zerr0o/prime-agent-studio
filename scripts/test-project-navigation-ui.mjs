@@ -89,6 +89,32 @@ try {
   await expect(page.locator('#sidebar')).not.toHaveClass(/mobile-open/);
   await expect(page.locator('#header-project')).toContainText('Atelier');
   checks.push('Navigation mobile sans débordement, ouverture de la conversation refermant le volet');
+  // The project menu targets its own project, not the currently selected one.
+  await page.locator('#composer').fill('Brouillon Atelier à conserver');
+  await page.locator('#toggle-sidebar').click();
+  await sound.locator('.project-more').click();
+  const menu = page.locator('#project-menu');
+  await expect(menu.locator('[data-project-action]').first()).toHaveAttribute('data-project-action', 'new-session');
+  await expect(menu.locator('[data-project-action]').nth(1)).toHaveAttribute('data-project-action', 'knowledge');
+  await menu.getByRole('menuitem', { name: 'Nouvelle conversation', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#sidebar')).not.toHaveClass(/mobile-open/);
+  await expect(page.locator('#header-project')).toContainText('SoundsPerfect');
+  await expect(page.locator('#header-session')).toHaveText('Nouvelle session');
+  await expect(page.locator('#composer')).toBeFocused();
+  await expect(page.locator('#composer')).toHaveValue('');
+  await expect(page.locator('.session-row.active')).toHaveCount(0);
+  await expect.poll(async () => (await (await fetch(fixture.url + '/api/runs')).json()).runs.length).toBe(1);
+  await page.locator('#toggle-sidebar').click();
+  await project('Atelier').locator('.session-select').first().click();
+  await expect(page.locator('#composer')).toHaveValue('Brouillon Atelier à conserver');
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await sound.locator('.project-row').click({ button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: 'Nouvelle conversation', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#header-project')).toContainText('SoundsPerfect');
+  await expect(page.locator('#composer')).toBeFocused();
+  checks.push('Nouvelle conversation en tête du menu projet, bon projet sur mobile et au clavier, brouillon et agent en cours conservés');
   expect(errors).toEqual([]);
   console.log(JSON.stringify({ passed: true, checks }));
 } finally {

@@ -394,6 +394,17 @@
   font-size: 12px;
   color: var(--accent-text, var(--text));
 }
+.inspector-file-menu {
+  min-width: 210px;
+  max-width: min(280px, calc(100vw - 24px));
+  z-index: 90;
+}
+.inspector-file-menu[hidden] {
+  display: none;
+}
+.inspector-file-menu button {
+  overflow-wrap: anywhere;
+}
 .inspector-viewer {
   width: min(1100px, calc(100vw - 36px));
   max-width: none;

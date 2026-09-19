@@ -1903,7 +1903,9 @@ kbd {
 }
 .scroll-bottom {
   position: absolute;
-  bottom: 180px;
+  /* Dynamic offset (viewport.js) keeps the pill above the composer frame
+     when the textarea grows or the mobile keyboard resizes the viewport. */
+  bottom: var(--scroll-bottom-offset, 180px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
