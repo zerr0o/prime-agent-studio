@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable tag to build (for example v2.8.0)
+        description: Existing stable or beta tag to build (for example v2.8.0 or v3.7.0-beta.1)
         required: true
         type: string
 permissions:
@@ -35,7 +35,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($version -notmatch '^\d+\.\d+\.\d+$' -or $env:RELEASE_TAG -cne "v$version") { throw 'Tag and package version must match' }
+          if ($version -notmatch '^\d+\.\d+\.\d+(-beta\.\d+)?$' -or $env:RELEASE_TAG -cne "v$version") { throw 'Tag and package version must match' }
           if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing TAURI_SIGNING_PRIVATE_KEY repository secret' }
       - run: rustup default stable
       - run: npm ci
@@ -58,12 +58,22 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          $isBeta = $env:RELEASE_TAG -like '*-beta.*'
           $release = gh release view $env:RELEASE_TAG --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if (!(($release | ConvertFrom-Json).isDraft)) { throw 'Refusing to replace assets on a published release' }
           } else {
-            gh release create $env:RELEASE_TAG --verify-tag --draft --title "Prime Agent Studio $env:RELEASE_TAG" --generate-notes
+            if ($isBeta) {
+              gh release create $env:RELEASE_TAG --verify-tag --draft --prerelease --title "Prime Agent Studio $env:RELEASE_TAG" --generate-notes
+            } else {
+              gh release create $env:RELEASE_TAG --verify-tag --draft --title "Prime Agent Studio $env:RELEASE_TAG" --generate-notes
+            }
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release' }
+          }
+          if ($isBeta) {
+            # Beta drafts stay prerelease so GitHub never promotes them to latest.
+            gh release edit $env:RELEASE_TAG --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Could not mark the beta release as prerelease' }
           }
           gh release view $env:RELEASE_TAG --json body --jq .body | Set-Content .local/release-notes.md -Encoding utf8
           npm run desktop:manifest -- .local/release-notes.md

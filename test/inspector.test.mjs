@@ -239,3 +239,51 @@ test('agent hierarchy reads only rooted native edges and overlays live activity 
   );
   assert.equal(agentStatus({ isCompacting: true, isStreaming: true }), 'compacting');
 });
+
+test('0.9.5 child progress uses native monotonic age and never marks an executing tool stale', async () => {
+  const root = { id: 'root-progress', cwd: '/fixture', file: '/fixture/session.jsonl', messages: [] };
+  async function project(child) {
+    const inspector = createSessionInspector({
+      store: { findProject: async () => ({ cwd: root.cwd }), history: async () => root },
+      agentHome: '/fixture/agent',
+      sessionDir: '/fixture/sessions',
+      readEdges: async () => [],
+      getRun: () => ({ status: 'running' }),
+      getClient: () => ({
+        getInspector: async () => ({
+          state: {},
+          children: [{ id: 'child-progress', status: 'running', ...child }],
+        }),
+        close() {},
+      }),
+    });
+    return (await inspector.inspect(root.cwd, root.id)).agents.find((a) => a.id === 'child-progress');
+  }
+  const executing = await project({
+    activity: { kind: 'executing' },
+    progressNote: 'Checking <script>literal</script>',
+    lastActivityAt: 1800000000000,
+    activityStaleMs: 900000,
+  });
+  assert.equal(executing.progressNote, 'Checking <script>literal</script>');
+  assert.equal(executing.lastActivityAt, 1800000000000);
+  assert.equal(executing.activityStaleMs, undefined);
+  assert.equal(executing.status, 'tool');
+  const waiting = await project({
+    activity: { kind: 'waiting' },
+    progressNote: 'x'.repeat(700),
+    activityStaleMs: 65000,
+    lastActivityAt: 1800000000000,
+  });
+  assert.equal(waiting.progressNote.length, 512);
+  assert.equal(waiting.activityStaleMs, 65000);
+  assert.equal(waiting.status, 'waiting');
+  const invalid = await project({
+    progressNote: { secret: true },
+    lastActivityAt: Infinity,
+    activityStaleMs: -10,
+  });
+  assert.equal(invalid.progressNote, '');
+  assert.equal(invalid.lastActivityAt, undefined);
+  assert.equal(invalid.activityStaleMs, undefined);
+});

@@ -326,9 +326,9 @@ test(
 );
 
 const localPython = resolve('.local/kernel-venv/Scripts/python.exe');
-const kernelPython = existsSync(localPython)
+const kernelPython = process.env.PRIME_AGENT_KERNEL_PYTHON || (existsSync(localPython)
   ? localPython
-  : join(homedir(), '.prime', 'agent', 'kernel-venv', 'Scripts', 'python.exe');
+  : join(homedir(), '.prime', 'agent', 'kernel-venv', 'Scripts', 'python.exe'));
 test(
   'Windows Python kernel subprocesses receive CREATE_NO_WINDOW and SW_HIDE',
   { skip: process.platform !== 'win32' || !existsSync(kernelPython) },
@@ -350,7 +350,7 @@ test(
 
 test(
   'Windows rlm.bash Job Object launch stays hidden at CreateProcessW boundary',
-  { skip: process.platform !== 'win32' || !existsSync(localPython) },
+  { skip: process.platform !== 'win32' || !existsSync(kernelPython) },
   async () => {
     const source = `
 import json, ctypes, sys, os
@@ -375,7 +375,7 @@ child.close()
 job.close(handle)
 print(json.dumps(seen))
 `;
-    const { stdout, stderr } = await exec(localPython, ['-c', source], {
+    const { stdout, stderr } = await exec(kernelPython, ['-c', source], {
       env: agentEnvironment(),
       windowsHide: true,
       timeout: 10000,

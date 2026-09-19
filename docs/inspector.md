@@ -8,6 +8,8 @@ Le bouton de panneau en haut à droite du chat ouvre l’espace de travail. Il r
 
 Retrouvez le projet, l’état de la session, les exécutions actives et l’export de la conversation. Le suivi distingue la génération d’une réponse, l’exécution d’un outil, la réduction du contexte et l’attente des sous-agents.
 
+Le statut du chat distingue aussi une attente de quota, un fournisseur indisponible et l’utilisation du modèle de secours choisi dans les préférences. Ces indications suivent les événements du moteur ; elles ne modifient ni le modèle sélectionné ni les limites de reprise.
+
 La consommation additionne les données enregistrées par Prime Agent sur la branche actuelle de la conversation : tokens entrants, sortants et en cache. Le coût estimé apparaît uniquement si le moteur le fournit ; il ne correspond pas à la facturation de votre abonnement. Ces totaux concernent l’agent principal, pas l’ensemble de ses délégations.
 
 ## Agents
@@ -18,11 +20,13 @@ En haut de l’onglet, **Sous-agents du projet** utilise les valeurs communes d�
 
 L’agent principal et ses sous-agents apparaissent dans leur hiérarchie, avec leur modèle, leur **niveau de réflexion**, leur état et le dernier résumé disponible. Le niveau provient de la session active ou des changements enregistrés sur sa branche actuelle, jamais du réglage par défaut du Studio. **Non renseignée** indique une donnée absente d’une ancienne session. Cliquez sur une carte pour lire ses échanges, puis utilisez **Actualiser** pour en récupérer les derniers messages.
 
+Les notes envoyées par `rlm.progress_note(...)` apparaissent sur la carte du sous-agent avec sa dernière activité, lorsque le moteur fournit ces données. L’ancienneté utilise le temps actif mesuré par le moteur : une mise en veille du PC ne rend pas les agents artificiellement inactifs. Pendant l’exécution d’un outil, le Studio ne déduit pas une inactivité de sa durée. Ces notes sont du texte et ne constituent pas un verdict de réussite.
+
 Pendant une exécution lancée par le Studio, la liste se rafraîchit toutes les quelques secondes tant que le panneau est visible. Un agent ayant terminé une première tâche peut travailler à nouveau : son activité actuelle est prioritaire sur son ancien statut « terminé ».
 
 Hors exécution, le Studio affiche les délégations conservées dans le registre natif de Prime Agent. **Historique** signifie que des échanges ont été retrouvés mais que l’état actuel de cet agent n’est pas connu. Certaines anciennes sessions n’ont plus de délégations enregistrées. L’indication d’indisponibilité du suivi ne provoque aucun redémarrage.
 
-Le suivi utilise le protocole de Prime Agent **0.9.2**. Consulter une carte ne reprend pas, n’arrête pas et ne détache pas l’agent. La liste présente au plus 200 sous-agents et chaque aperçu les 150 derniers messages ; les raisonnements internes ne sont pas développés dans cet aperçu.
+Le suivi utilise le protocole de Prime Agent **0.9.5**. Consulter une carte ne reprend pas, n’arrête pas et ne détache pas l’agent. La liste présente au plus 200 sous-agents et chaque aperçu les 150 derniers messages ; les raisonnements internes ne sont pas développés dans cet aperçu.
 
 ## Fichiers
 

@@ -39,6 +39,14 @@ test('subagent defaults preserve explicit choices, use project overrides and rel
   assert.match(subagentInstruction(cwd, store.file), /fixture\/default[\s\S]*high/);
   state = await store.set({ cwd, revision: state.revision, policy: { model: '', thinking: 'low' } });
   assert.deepEqual(policyFor(cwd, store.file), { model: '', thinking: 'low' });
+  assert.deepEqual(applySubagentDefaults(cwd, { name: 'native-default' }, store.file), {
+    name: 'native-default',
+    thinking: 'low',
+  });
+  assert.match(
+    subagentInstruction(cwd, store.file),
+    /omit the model argument to use the native default model/,
+  );
   assert.equal(policyFor(other, store.file).model, 'fixture/default');
   state = await store.set({ cwd, revision: state.revision, policy: null });
   assert.equal(policyFor(cwd, store.file).thinking, 'high');

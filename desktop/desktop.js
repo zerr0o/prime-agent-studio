@@ -4,7 +4,7 @@ const messages = {
     componentsDetails: 'Détails',
     componentsHideDetails: 'Masquer les détails',
     componentsNote:
-      'Cette version de Studio utilise Prime Agent 0.9.4. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
+      'Cette version de Studio utilise Prime Agent 0.9.5. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
     componentsInstall: 'Installer les composants manquants',
     componentsDiagnose: 'Vérifier à nouveau',
     componentsExisting: 'Choisir une installation existante',
@@ -26,7 +26,7 @@ const messages = {
       'L’intégrité ou la structure du téléchargement est invalide. Aucun composant altéré n’est activé.',
     componentsCancelled: 'Préparation annulée. Vous pouvez réessayer.',
     componentsEngineVersion:
-      'Cette version de Studio nécessite Prime Agent 0.9.4 avec ses modules et ressources complets. Installez la version proposée, ou choisissez un paquet compatible.',
+      'Cette version de Studio nécessite Prime Agent 0.9.5 avec ses modules et ressources complets. Installez la version proposée, ou choisissez un paquet compatible.',
     componentsNetwork: 'Le téléchargement a échoué. Vérifiez la connexion réseau et réessayez.',
     componentsDisk:
       'L’espace disque est insuffisant. Libérez de l’espace dans le dossier de données du Studio, puis réessayez.',
@@ -113,7 +113,7 @@ const messages = {
     componentsDetails: 'Details',
     componentsHideDetails: 'Hide details',
     componentsNote:
-      'This Studio version uses Prime Agent 0.9.4. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
+      'This Studio version uses Prime Agent 0.9.5. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
     componentsInstall: 'Install missing components',
     componentsDiagnose: 'Check again',
     componentsExisting: 'Choose an existing installation',
@@ -134,7 +134,7 @@ const messages = {
       'The download integrity or archive structure is invalid. No altered component is activated.',
     componentsCancelled: 'Preparation cancelled. You can try again.',
     componentsEngineVersion:
-      'This Studio version requires Prime Agent 0.9.4 with complete modules and resources. Install the proposed version, or select a compatible package.',
+      'This Studio version requires Prime Agent 0.9.5 with complete modules and resources. Install the proposed version, or select a compatible package.',
     componentsNetwork: 'Download failed. Check your network connection and try again.',
     componentsDisk:
       'There is not enough disk space. Free space in the Studio data directory, then try again.',
@@ -424,8 +424,7 @@ void window.__TAURI__?.event?.listen('components-progress', ({ payload }) => {
       ? ''
       : ` · ${payload.received.toLocaleString(language)} ${language === 'fr' ? 'octets reçus' : 'bytes received'}${payload.total ? ` / ${payload.total.toLocaleString(language)}` : ''}`;
   // Detailed diagnose steps (engine/python/shell/uv) plus download progress.
-  const text =
-    `${componentNames[payload.component] || payload.component || ''} — ${t.componentStages[payload.stage] || payload.stage || ''}${received}`;
+  const text = `${componentNames[payload.component] || payload.component || ''} — ${t.componentStages[payload.stage] || payload.stage || ''}${received}`;
   $('components-status').textContent = text;
   // Mirror diagnose phases in the main connecting line so the window never freezes silently.
   if ($('components') && !$('components').hidden) setPhase(text);
@@ -643,8 +642,7 @@ async function start(options = {}) {
     // B3: decide on live probe only (inside desktop_start), not persisted
     // prefs.started. Always persist validated components via activate when
     // ready, so explicit paths survive to installation.json before strict start.
-    if (latestComponents?.ready)
-      await invoke('desktop_components', { action: 'activate', component: null });
+    if (latestComponents?.ready) await invoke('desktop_components', { action: 'activate', component: null });
     setPhase(t.startingServer);
     await invoke('desktop_start', { allowUnconfigured, background });
     if (settings) {
@@ -735,8 +733,11 @@ $('import').onclick = async () => {
     }
     const background = backgroundParam;
     if (settings) {
-      // Settings: visible launcher controls, no auto-start, no auto-diagnose.
+      // Settings: visible launcher controls, no auto-start. Run the same
+      // read-only diagnose so components can be configured here; installs
+      // still require an explicit click and never start automatically.
       showLauncher();
+      await componentsAction('diagnose');
       return;
     }
     if (background) {

@@ -7,8 +7,8 @@
       "fr": "docs/roadmap.md",
       "en": "docs/en/roadmap.md",
       "reviewed": {
-        "fr": "3007dc11490fd3f0217eac88a3b38f34bba8c6f051b96e69edc4d48491eda867",
-        "en": "8f7ad30ea994153acf5160fc37d102eb9ed6e0b2ad033713247ec91bbcc06905"
+        "fr": "6e8ab257532e3400d39f1e450867d2dc46e5ecd4910a96e3eccc5fb8e0ccedf0",
+        "en": "c43a04f6db765f59b25b68c194f7e8205bd1fdd84d9e1fba4ffd034bbc82cee1"
       }
     },
     {
@@ -16,8 +16,8 @@
       "fr": "docs/desktop.md",
       "en": "docs/en/desktop.md",
       "reviewed": {
-        "fr": "c16d5ec7ae863272f94ae335fcbaed43e3495f2c16a4df49f09ac7e5828a6066",
-        "en": "3bb9073fc0978c86e463066ddd018b9da4ced1ff7d5e1f1768f2c26c7c9a3557"
+        "fr": "70cfd77559d219ee8af719e73524739c006e74f78e43ccd9724ce4e0fbf082b7",
+        "en": "946ef9244b5fc664ba058a2ffdc2d7355572cc1e3622565ec4d4310ec43a175f"
       }
     },
     {
@@ -25,8 +25,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "71a3f37768a9371fe3a3d6c478844e0219c9375872edac15ea334511e12975a3",
-        "en": "6db5a1b2d2e6e20ccd45f550ba41e0f5a24d27237549a33b19c8ce71e50bc84e"
+        "fr": "710c408a6055aa8fa7ae9350bf8694356d6990d758c706636ca4f209900433f4",
+        "en": "0216da146736b7f1062dcde243f6a627d4de6e09c0a45a07a721c0ff985c7b52"
       }
     },
     {
@@ -34,8 +34,8 @@
       "fr": "docs/changelog.md",
       "en": "docs/en/changelog.md",
       "reviewed": {
-        "fr": "8c2c326424d5b03f157c21d90f07f5e3dfd8f8193bb84e3589dee6a7ff776ee5",
-        "en": "2dd6fee6714e9c34a87641bbb590f4182e56cf8b6b268aeb3e505418b251a579"
+        "fr": "f94781483eb77dda2d972c34b9ec1ee2dd6743b82f21f3b764d60ecd5206c5c6",
+        "en": "be7292d2dc7e9ec7231fbd0103cec1f822c140a761b57a4b2c2be571f445ceb9"
       }
     },
     {
@@ -52,8 +52,8 @@
       "fr": "docs/configuration.md",
       "en": "docs/en/configuration.md",
       "reviewed": {
-        "fr": "cc1e91b6eb1d9343778f7a8ffd99b8cdd069efaadd65a7492332f270bbe23569",
-        "en": "d8c1aa6bd0d502e0173d73fd33c3e2d542bf96447a04b268c17485726f2c99be"
+        "fr": "80a2925b4d9b0d87a5ec011c2931b2dd055093b9d0ea3d21483e4124dec46fc8",
+        "en": "8a9a04a4e6e6e197dc2b41be3d3350327793ffa50646b170cc4d5f4e94b2c9fa"
       }
     },
     {
@@ -61,8 +61,8 @@
       "fr": "docs/development.md",
       "en": "docs/en/development.md",
       "reviewed": {
-        "fr": "f18845c8c60a52019d5e7ce73af5524ee0c5f3d1af40838ca2b2611e3d854e5a",
-        "en": "d78f9564b7875b44c71a9a853ac6613ea2f68433783abeaa8da6c5c9afe00e49"
+        "fr": "2b25ef1a8fd922f86ce61edc9718be48bccbdd8a7e1b0ee68d85c0c7eb0a1663",
+        "en": "3413cee18c257e4cd941f38d34a203f02ec622b5657a0580d2b3b11015ed2e74"
       }
     },
     {
@@ -70,8 +70,8 @@
       "fr": "docs/inspector.md",
       "en": "docs/en/inspector.md",
       "reviewed": {
-        "fr": "d7bc6f369861c5e97337a3c0d75fed4888a8bbd820966b948037f32da801f1d5",
-        "en": "c74698be5a3f031da3f73e357f661e18b60475e97a631d8a2ad0da669483077a"
+        "fr": "d618adab975b43f42c85e40e12ce12602f8538f92c96d8e9b03e75e1b03320b7",
+        "en": "441635d859cd10e6a3c71b5b600d621840e1559fd50498535d5b57ce36d54539"
       }
     },
     {
@@ -97,8 +97,8 @@
       "fr": "docs/providers.md",
       "en": "docs/en/providers.md",
       "reviewed": {
-        "fr": "a7ec56cfd688677e0495eb4888772e75ed6fd78af6d1952f70475ea35db299cb",
-        "en": "dd36250c6052c169c6d86591b40522647d781fe494b2701542e0bf6bb6e12d9c"
+        "fr": "137ac37fc6c20eebcb93e5eaa7f79128518c8d02882b1ae65f28fe63cf2034d6",
+        "en": "26b7e5be45e3ad9520664eeba6d997e336db4ac884cc568d88bec83084088de4"
       }
     },
     {

@@ -281,3 +281,165 @@ test('OAuth refuses unsafe authorization URLs and rechecks busy status before sa
   assert.equal(service.job(job.id).status, 'error');
   assert.equal(fake.spawned[1].child.killed, true);
 });
+
+test('OAuth methods follow the native registry including xAI Grok without a frozen list', async (t) => {
+  const { agentHome } = await fixture(t);
+  const data = {};
+  const fromStorageOptions = [];
+  const oauthIds = ['anthropic', 'github-copilot', 'openai-codex', 'xai'];
+  const fakeNative = {
+    FileAuthStorageBackend: class {
+      constructor(path) {
+        this.path = path;
+      }
+      withLock(fn) {
+        const current = JSON.stringify(data);
+        const { result, next } = fn(current);
+        if (next !== undefined) Object.assign(data, JSON.parse(next));
+        return result;
+      }
+      async withLockAsync(fn) {
+        const current = JSON.stringify(data);
+        const { result, next } = await fn(current);
+        if (next !== undefined) Object.assign(data, JSON.parse(next));
+        return result;
+      }
+    },
+    AuthStorage: {
+      fromStorage: (backend, options) => {
+        fromStorageOptions.push(options);
+        return {
+          drainErrors: () => [],
+          reload: () => {},
+          getOAuthProviders: () => oauthIds.map((id) => ({ id, name: id === 'xai' ? 'xAI (Grok)' : id })),
+          list: () => Object.keys(data),
+          get: (id) => data[id],
+          set: (id, credential) => {
+            data[id] = credential;
+          },
+          removeVerified: (id) => {
+            delete data[id];
+          },
+        };
+      },
+    },
+    ModelRegistry: {
+      create: () => ({
+        getAll: () => [
+          { provider: 'anthropic' },
+          { provider: 'github-copilot' },
+          { provider: 'openai-codex' },
+          { provider: 'xai' },
+          { provider: 'deepseek' },
+        ],
+        getProviderAuthStatus: () => ({ configured: false }),
+        getProviderDisplayName: (id) => (id === 'xai' ? 'xAI (Grok)' : id),
+        getError: () => undefined,
+      }),
+    },
+  };
+  const store = await createProviderAuth({ agentHome, native: fakeNative });
+  const list = store.list();
+  const methods = Object.fromEntries(list.providers.map((p) => [p.id, p.methods]));
+  // Registry-driven: xAI/Grok exposes both subscription (OAuth) and API-key entry.
+  assert.deepEqual(methods.xai.sort(), ['api_key', 'oauth']);
+  assert.deepEqual(methods.anthropic.sort(), ['api_key', 'oauth']);
+  assert.deepEqual(methods['openai-codex'], ['oauth']);
+  assert.deepEqual(methods['github-copilot'], ['oauth']);
+  assert.deepEqual(methods.deepseek, ['api_key']);
+  // A future registry entry needs no production-code change.
+  oauthIds.push('future-oauth');
+  fakeNative.ModelRegistry.create = () => ({
+    getAll: () => [{ provider: 'future-oauth' }],
+    getProviderAuthStatus: () => ({ configured: false }),
+    getProviderDisplayName: (id) => id,
+    getError: () => undefined,
+  });
+  const extended = await createProviderAuth({ agentHome, native: fakeNative });
+  assert.ok(extended.list().providers.some((p) => p.id === 'future-oauth' && p.methods.includes('oauth')));
+});
+
+test('ordinary writes never enable the Prime CLI candidate', async (t) => {
+  const { agentHome } = await fixture(t);
+  const data = {};
+  const seen = [];
+  const fakeNative = {
+    FileAuthStorageBackend: class {
+      withLock(fn) {
+        const { result, next } = fn(JSON.stringify(data));
+        if (next !== undefined) Object.assign(data, JSON.parse(next));
+        return result;
+      }
+      async withLockAsync(fn) {
+        const { result, next } = await fn(JSON.stringify(data));
+        if (next !== undefined) Object.assign(data, JSON.parse(next));
+        return result;
+      }
+    },
+    AuthStorage: {
+      fromStorage: (backend, options) => {
+        seen.push(options);
+        return {
+          drainErrors: () => [],
+          reload: () => {},
+          getOAuthProviders: () => [],
+          list: () => Object.keys(data),
+          get: (id) => data[id],
+          set: (id, credential) => {
+            data[id] = credential;
+          },
+          removeVerified: (id) => {
+            delete data[id];
+          },
+        };
+      },
+    },
+    ModelRegistry: {
+      create: () => ({
+        getAll: () => [{ provider: 'deepseek' }],
+        getProviderAuthStatus: () => ({ configured: false }),
+        getProviderDisplayName: (id) => id,
+        getError: () => undefined,
+      }),
+    },
+  };
+  const store = await createProviderAuth({ agentHome, native: fakeNative });
+  const revision = store.list().providers.find((p) => p.id === 'deepseek').revision;
+  await store.save({ provider: 'deepseek', revision, kind: 'key', value: 'test-isolated-secret' });
+  assert.ok(seen.length >= 2);
+  assert.deepEqual(seen[seen.length - 1], { usePrimeCliConfig: false });
+  assert.equal(data.deepseek.key, 'test-isolated-secret');
+});
+
+test('legacy prime_cli source stays readable for older engines', async (t) => {
+  const { agentHome } = await fixture(t);
+  const fakeNative = {
+    FileAuthStorageBackend: class {
+      withLock(fn) {
+        return fn('{}').result;
+      }
+      async withLockAsync(fn) {
+        return (await fn('{}')).result;
+      }
+    },
+    AuthStorage: {
+      fromStorage: () => ({
+        drainErrors: () => [],
+        reload: () => {},
+        getOAuthProviders: () => [],
+        list: () => [],
+        get: () => undefined,
+      }),
+    },
+    ModelRegistry: {
+      create: () => ({
+        getAll: () => [{ provider: 'prime-inference' }],
+        getProviderAuthStatus: () => ({ configured: true, source: 'prime_cli' }),
+        getProviderDisplayName: (id) => id,
+        getError: () => undefined,
+      }),
+    },
+  };
+  const store = await createProviderAuth({ agentHome, native: fakeNative });
+  assert.equal(store.list().providers[0].source, 'prime_cli');
+});

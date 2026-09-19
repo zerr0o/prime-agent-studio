@@ -12,13 +12,15 @@ The list uses the installed Prime Agent catalog, with search by name or ID. It s
 - **Add an API key** saves a key in Prime Agent’s native storage. An already-saved key is never prefilled or returned to the browser.
 - **Environment variable** stores the name of an existing variable in the server’s environment. The variable must already be defined and nonempty. This panel does not change system variables.
 
-With Prime Agent 0.9.2, available account flows are OpenAI Codex, Anthropic and GitHub Copilot. Access and billing rules remain those of the provider; see the [native provider documentation](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.2/packages/coding-agent/docs/providers.md).
+With Prime Agent 0.9.5, account flows are those exposed by the native registry: OpenAI Codex, Anthropic, GitHub Copilot and xAI (Grok). Studio keeps no frozen list and follows the installed engine. For xAI, the same `xai` entry accepts an account connection (eligible subscription) or an existing API key (`XAI_API_KEY`); access and billing rules remain those of the provider, see the [native provider documentation](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.5/packages/coding-agent/docs/providers.md).
+
+In ordinary use, Prime Inference uses `PRIME_API_KEY` then the `auth.json` entry; the Prime CLI configuration (`~/.prime/config.json`) is no longer read and is reused only during an explicit upstream login. If you only relied on the CLI, reconnect that provider (existing API key supported). Studio never silently imports CLI credentials and never really opens an external login.
 
 Azure and Cloudflare require additional environment settings. Bedrock and Vertex use their existing cloud settings; guidance in each card explains where to configure them. Custom providers must first be defined in **Models and defaults**.
 
 ## Catalog and availability
 
-With Prime Agent **0.9.4**, the model picker uses the native registry of available models for configured providers. Refreshing includes public models and private Prime Inference models accessible to your account. If the engine is older or this registry is unavailable, Studio uses the catalog bundled with the installation and custom models.
+With Prime Agent **0.9.4**, the model picker uses the native registry of available models for configured providers. Refreshing includes public models and private Prime Inference models accessible to your account. If the engine is older or this registry is unavailable, Studio uses the catalog bundled with the installation and custom models. With Prime Agent **0.9.5**, ordinary resolution no longer reads the Prime CLI configuration and the catalog no longer watches it; a CLI team snapshot is reused only during an explicit upstream login, then kept by the Agent without tracking later CLI changes.
 
 For **OpenRouter**, Studio also checks identifiers against the public catalog at `https://openrouter.ai/api/v1/models`, with a five-minute cache. This lookup generates no response and checks neither your credits, your quota nor a model’s capacity to respond at that moment. A network error does not mark the whole list unavailable. This public check is skipped when you configure a custom OpenRouter endpoint.
 
@@ -28,9 +30,9 @@ The **Refresh models** button beside favorites in the picker resynchronizes the 
 
 ## Disconnecting and active sessions
 
-**Disconnect** asks for confirmation, then removes only that provider’s saved credentials from `auth.json`. Conversations, custom models, MCP connections and other providers remain in place. Environment variables, `models.json` settings and the Prime CLI connection are not removed, so they may continue to provide access.
+**Disconnect** asks for confirmation, then removes only that provider’s saved credentials from `auth.json`. Conversations, custom models, MCP connections and other providers remain in place. Environment variables and `models.json` settings are not removed, so they may continue to provide access. The Prime CLI configuration is neither removed nor read in ordinary use.
 
-For Prime Inference, `PRIME_API_KEY` and Prime CLI configuration take priority over the key saved in `auth.json`.
+For Prime Inference, `PRIME_API_KEY` takes priority over the key saved in `auth.json`.
 
 Adding a provider remains possible while agents are working. Replacing or removing existing credentials waits for Studio’s runs to finish. Agents launched in another terminal share these credentials: wait for their work to finish too before replacing or removing them. The panel stops no sessions and reloads no active workers.
 

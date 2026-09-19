@@ -17,6 +17,7 @@ import {
   verifyDigest,
   releaseOrigin,
   checkNode,
+  inspectEngineStatic,
 } from '../lib/desktop-components.mjs';
 import { acquireLock } from '../scripts/launcher-common.mjs';
 
@@ -51,7 +52,7 @@ function tar(entries) {
   return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
 }
 test('policy pins an exact tested engine; unsupported architectures and Node lines fail closed', () => {
-  assert.equal(COMPONENT_POLICY.engine, '0.9.4');
+  assert.equal(COMPONENT_POLICY.engine, '0.9.5');
   checkNode('24.19.0', 'win32', 'x64');
   for (const args of [
     ['24.19.0', 'win32', 'arm64'],
@@ -60,6 +61,27 @@ test('policy pins an exact tested engine; unsupported architectures and Node lin
     ['26.0.0', 'win32', 'x64'],
   ])
     assert.throws(() => checkNode(...args));
+});
+test('0.9.5 requires the complete bundle with the direct Node entry; a missing cli-node.js fails closed', async (t) => {
+  const root = await fixture(t);
+  const packageDir = join(root, 'package');
+  await mkdir(join(packageDir, 'dist/bundle'), { recursive: true });
+  await writeFile(
+    join(packageDir, 'package.json'),
+    JSON.stringify({
+      name: 'prime-agent',
+      version: COMPONENT_POLICY.engine,
+      engines: { node: '>=22.8.0' },
+      bin: { 'prime-agent': 'dist/bundle/cli.js' },
+    }),
+  );
+  await writeFile(join(packageDir, 'dist/bundle/cli.js'), '#!/usr/bin/env node\n');
+  const cliPath = join(packageDir, 'dist/bundle/cli.js');
+  await assert.rejects(inspectEngineStatic(cliPath), /engine_incompatible/);
+  await writeFile(join(packageDir, 'dist/bundle/cli-node.js'), '#!/usr/bin/env node\n');
+  const ok = await inspectEngineStatic(cliPath);
+  assert.equal(ok.cli.path, cliPath);
+  assert.equal(ok.cli.packageDir, packageDir);
 });
 test('explicit environment beats saved selection, which beats the managed manifest; no PATH mutation', async (t) => {
   const root = await fixture(t);

@@ -57,9 +57,10 @@ export function subagentInstruction(cwd, file) {
   if (!policy.model && !policy.thinking) return '';
   return [
     '## Prime Agent Studio — subagent defaults',
-    'For delegated agents created with rlm.run or rlm, use these defaults unless the user requests another choice for the task:',
-    `- Model: ${policy.model || 'inherit the parent model'}.`,
+    'For delegated agents created with rlm.spawn, use these defaults unless the user requests another choice for the task:',
+    `- Model: ${policy.model || 'omit the model argument to use the native default model, otherwise inherit the parent model'}.`,
     `- Thinking level: ${policy.thinking || 'inherit the parent thinking level (native model compatibility rules apply)'}.`,
+    'Every rlm.spawn call requires an explicit unique `name` keyword argument.',
     'The Studio supplies these values for omitted model/thinking arguments. Explicit arguments take priority. Do not select another model or thinking level without a task-specific reason. Existing children keep their current settings.',
   ].join('\n');
 }

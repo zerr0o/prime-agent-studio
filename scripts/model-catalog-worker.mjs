@@ -32,12 +32,15 @@ async function initialize({ packageDir, agentHome }) {
   )
     throw new Error('Unsupported native catalogue');
   thinkingLevels = ai.getSupportedThinkingLevels;
-  auth = native.AuthStorage.create(join(agentHome, 'auth.json'), { usePrimeCliConfig: true });
+  // Prime Agent 0.9.5 ordinary resolution is Prime env then auth.json. The Prime CLI
+  // config is reused only during an explicit upstream login, never as an ordinary
+  // candidate and never silently: keep it disabled here and do not watch its file.
+  auth = native.AuthStorage.create(join(agentHome, 'auth.json'), { usePrimeCliConfig: false });
   if (auth.drainErrors?.().length) throw new Error('Native auth could not be read');
   modelsPath = join(agentHome, 'models.json');
+  // Later CLI login, logout, URL or team changes do not affect Agent, so only the
+  // Studio-owned files can invalidate this catalogue.
   configPaths = [join(agentHome, 'auth.json'), modelsPath, join(agentHome, 'settings.json')];
-  const primeConfigPath = auth.getPrimeCliConfigPath?.();
-  if (primeConfigPath) configPaths.push(primeConfigPath);
 }
 
 async function fingerprint() {

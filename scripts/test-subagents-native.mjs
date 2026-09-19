@@ -47,10 +47,16 @@ const provider = createServer(async (req, res) => {
     spawned.add(phase);
     code =
       phase === 'first'
-        ? 'import rlm\na = await rlm.run("CHILD_DEFAULT_FIRST", name="policy-default")\nb = await rlm.run("CHILD_EXPLICIT", model="fixture/explicit", thinking="off", name="policy-explicit")\nprint("CHILDREN_ADMITTED")'
-        : 'import rlm\na = await rlm.run("CHILD_PROJECT_SECOND", name="policy-project")\nprint("CHILD_ADMITTED")';
+        ? 'import rlm\na = await rlm.spawn("CHILD_DEFAULT_FIRST", name="policy-default")\nb = await rlm.spawn("CHILD_EXPLICIT", model="fixture/explicit", thinking="off", name="policy-explicit")\nprint("CHILDREN_ADMITTED")'
+        : 'import rlm\na = await rlm.spawn("CHILD_PROJECT_SECOND", name="policy-project")\nprint("CHILD_ADMITTED")';
   }
-  if (!phase) await until(() => releaseChildren);
+  // Emit a real 0.9.5 progress note before holding this child open for inspection.
+  if (!phase && body.model === 'default' && !spawned.has('progress-note')) {
+    spawned.add('progress-note');
+    code =
+      'import rlm\nresult = await rlm.progress_note("NATIVE_PROGRESS_MARKER")\nassert result.accepted\nprint("PROGRESS_RECORDED")';
+  }
+  if (!phase && !code) await until(() => releaseChildren);
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const frame = (delta, finish_reason = null) =>
     res.write(
@@ -129,7 +135,13 @@ try {
     () => requests.some((r) => r.model === 'default') && requests.some((r) => r.model === 'explicit'),
   );
   client = createLiveSessionClient(runtime.getLiveEndpoint());
-  const live = await client.getInspector(first.sessionId, cwd);
+  const live = await until(async () => {
+    const snapshot = await client.getInspector(first.sessionId, cwd);
+    return snapshot.children.some((child) => child.progressNote === 'NATIVE_PROGRESS_MARKER') && snapshot;
+  });
+  const progressChild = live.children.find((child) => child.sessionName === 'policy-default');
+  assert.equal(progressChild.progressNote, 'NATIVE_PROGRESS_MARKER');
+  assert.ok(Number.isFinite(progressChild.lastActivityAt) && progressChild.lastActivityAt > 0);
   assert.equal(live.state.model, 'fixture/parent');
   assert.equal(live.state.thinkingLevel, 'medium');
   assert.equal(live.children.find((c) => c.sessionName === 'policy-default')?.thinkingLevel, 'high');
@@ -193,6 +205,7 @@ try {
           'native defaults applied to Python delegation',
           'explicit model/thinking preserved',
           'live and historical thinking',
+          'native progress_note and lastActivityAt reach the live inspector',
           'dynamic per-project system prompt on resumed session',
           'existing prompt and children preserved',
         ],

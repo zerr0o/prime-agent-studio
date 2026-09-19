@@ -89,6 +89,9 @@ function fixture(options = {}) {
                   activity: { kind: 'executing', toolName: 'ipython', privateCredentials: 'secret' },
                   sessionDir: 'private-secret',
                   answerPreview: 'A result',
+                  progressNote: 'Checking the result',
+                  lastActivityAt: 1800000000000,
+                  activityStaleMs: 2000,
                 },
               ],
             },
@@ -193,6 +196,9 @@ test('inspector observes sub-agents without attaching or exposing private metada
   assert.equal(snapshot.children[0].thinkingLevel, 'off');
   assert.equal(snapshot.state.isRunningTools, true);
   assert.equal(snapshot.children[0].activity.kind, 'executing');
+  assert.equal(snapshot.children[0].progressNote, 'Checking the result');
+  assert.equal(snapshot.children[0].lastActivityAt, 1800000000000);
+  assert.equal(snapshot.children[0].activityStaleMs, 2000);
   assert.ok(!JSON.stringify(snapshot).includes('secret'));
   assert.deepEqual(
     f.calls.map((call) => call.type),

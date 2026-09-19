@@ -10,7 +10,9 @@ import { readFileSync, appendFileSync } from 'node:fs';
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
 export class AuthStorage {
   static create(path, options) {
-    if (!options.usePrimeCliConfig) throw new Error('Prime CLI auth source was lost');
+    // Prime Agent 0.9.5 ordinary resolution is Prime env then auth.json. The worker
+    // must never re-enable the Prime CLI candidate for catalogue reads.
+    if (options?.usePrimeCliConfig !== false) throw new Error('Ordinary catalog resolution must not use Prime CLI config');
     const auth = new AuthStorage();
     auth.path = path;
     auth.reload();
@@ -18,9 +20,8 @@ export class AuthStorage {
   }
   reload() {
     this.data = json(this.path);
-    this.team = json(process.env.CATALOG_FIXTURE_PRIME_CONFIG).team || this.data.team;
+    this.team = this.data.team;
   }
-  getPrimeCliConfigPath() { return process.env.CATALOG_FIXTURE_PRIME_CONFIG; }
 }
 export class ModelRegistry {
   static create(auth, path) { return new ModelRegistry(auth, path); }
@@ -31,7 +32,8 @@ export class ModelRegistry {
   }
   getAll() { throw new Error('Unfiltered private models must never be read'); }
   getAvailable() {
-    if (!this.auth.data.enabled) return [];
+    // Prime env (explicit test key) then auth.json; no Prime CLI candidate.
+    if (!this.auth.data.enabled && !process.env.CATALOG_FIXTURE_PRIME_ENV) return [];
     return this.models;
   }
   async refreshAvailableModels() {
@@ -41,7 +43,8 @@ export class ModelRegistry {
       agentHome: process.env.PRIME_AGENT_CODING_AGENT_DIR,
       inheritedWorker: process.env.PRIME_AGENT_INTERNAL_DAEMON_WORKER,
       marker: process.env.CATALOG_FIXTURE_MARKER,
-      team: this.auth.team
+      team: this.auth.team,
+      primeEnv: process.env.CATALOG_FIXTURE_PRIME_ENV || null
     }) + '\\n');
     if (spec.fail) throw new Error(spec.fail);
     const liveModels = spec.teams?.[this.auth.team] || spec.liveModels;
@@ -51,11 +54,13 @@ export class ModelRegistry {
 }
 `;
 
-async function fixture(t, spec, credentials = { enabled: true, team: 'a' }) {
+async function fixture(t, spec, credentials = { enabled: true, team: 'a' }, extraEnv = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'prime-studio-catalog-'));
   const packageDir = join(dir, 'engine');
   const agentHome = join(dir, 'agent');
-  const primeConfig = join(dir, 'prime-cli.json');
+  // A Prime CLI config may exist on the machine, but the 0.9.5 worker must never
+  // read or watch it for ordinary catalogue resolution.
+  const cliConfig = join(dir, 'prime-cli.json');
   const log = join(dir, 'requests.jsonl');
   const ai = join(packageDir, 'node_modules', '@earendil-works', 'pi-ai', 'dist');
   await mkdir(join(packageDir, 'dist'), { recursive: true });
@@ -74,16 +79,16 @@ async function fixture(t, spec, credentials = { enabled: true, team: 'a' }) {
   await writeFile(join(agentHome, 'auth.json'), JSON.stringify(credentials));
   await writeFile(join(agentHome, 'settings.json'), '{}');
   await writeFile(join(agentHome, 'models.json'), JSON.stringify(spec));
-  await writeFile(primeConfig, '{}');
+  await writeFile(cliConfig, '{}');
   const bridge = createNativeModelCatalog({
     cli: { packageDir },
     agentHome,
     env: {
       SystemRoot: process.env.SystemRoot,
-      CATALOG_FIXTURE_PRIME_CONFIG: primeConfig,
       CATALOG_FIXTURE_LOG: log,
       CATALOG_FIXTURE_MARKER: 'isolated',
       PRIME_AGENT_INTERNAL_DAEMON_WORKER: 'must-not-be-inherited',
+      ...extraEnv,
     },
   });
   t.after(async () => {
@@ -101,7 +106,7 @@ async function fixture(t, spec, credentials = { enabled: true, team: 'a' }) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
   };
-  return { bridge, agentHome, primeConfig, packageDir, requests };
+  return { bridge, agentHome, cliConfig, packageDir, requests };
 }
 
 async function until(fn, predicate, timeout = 3000) {
@@ -209,28 +214,49 @@ test('OpenRouter provenance distinguishes native public endpoints from per-model
   assert.equal(serialized.includes('https://'), false);
 });
 
-test('auth and Prime CLI team changes cannot revive an older in-flight catalogue', async (t) => {
-  const { bridge, agentHome, primeConfig, requests } = await fixture(t, {
+test('auth changes cannot revive an older in-flight catalogue and CLI config is ignored', async (t) => {
+  const { bridge, agentHome, cliConfig, requests } = await fixture(t, {
     models: [model('public')],
     teams: { a: [model('private/a')], b: [model('private/b')] },
     delay: 250,
   });
   await bridge.read();
   await until(requests, (value) => value.length === 1);
-  await writeFile(primeConfig, JSON.stringify({ team: 'b' }));
+  // A Prime CLI team change must not drive ordinary Agent resolution or refresh.
+  await writeFile(cliConfig, JSON.stringify({ team: 'b' }));
   const changed = await bridge.read();
   assert.deepEqual(
     changed.models.map((m) => m.id),
     ['public'],
   );
+  // Only the Agent-owned auth.json team selects the private catalogue.
+  const teamA = await until(
+    () => bridge.read(),
+    (value) => value.models[0]?.id === 'private/a',
+  );
+  assert.equal(teamA.models[0].id, 'private/a');
+  assert.equal((await requests()).length, 1);
+  await writeFile(join(agentHome, 'auth.json'), JSON.stringify({ enabled: true, team: 'b' }));
   await until(
     () => bridge.read(),
     (value) => value.models[0]?.id === 'private/b',
   );
+  assert.equal((await requests()).length, 2);
   await writeFile(join(agentHome, 'auth.json'), JSON.stringify({ enabled: false, team: 'b' }));
   assert.deepEqual((await bridge.read()).models, []);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.deepEqual((await bridge.read()).models, []);
+});
+
+test('Prime environment key keeps the catalogue available without stored credentials', async (t) => {
+  const spec = { models: [model('env-visible')] };
+  const offline = await fixture(t, spec, { enabled: false });
+  assert.deepEqual((await offline.bridge.read()).models, []);
+  const online = await fixture(t, spec, { enabled: false }, { CATALOG_FIXTURE_PRIME_ENV: 'test-prime-env-key' });
+  assert.deepEqual(
+    (await online.bridge.read()).models.map((m) => m.id),
+    ['env-visible'],
+  );
 });
 
 test('model and settings edits invalidate the native catalogue within the refresh TTL', async (t) => {

@@ -177,7 +177,7 @@ try {
   const childPrompt = `Test technique borné. Ne délègue pas. N'utilise aucun fichier hormis le fichier de résultat explicitement indiqué. Exécute exactement le code Python ci-dessous dans un appel ipython, puis réponds seulement PRIME_RECOVERY_CHILD_OK. Ne contacte pas le parent : le fichier est le résultat convenu.\n${childCode}`;
   const admissionCode = [
     `recovery_parent_marker = ${py(parentMarker)}`,
-    `recovery_child = await rlm(${py(childPrompt)}, name='recovery-child', model=${py(model)}, thinking='low')`,
+    `recovery_child = await rlm.spawn(${py(childPrompt)}, name='recovery-child', model=${py(model)}, thinking='low')`,
     "print('PRIME_RECOVERY_ADMITTED', recovery_child.name)",
   ].join('\n');
   const admission = await turn(

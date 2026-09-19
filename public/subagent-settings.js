@@ -79,14 +79,14 @@ export function createSubagentSettings({
     const model = getModels().find((m) => m.id === draft.model);
     const name =
       model?.name ||
-      (draft.model ? tr('common.unavailable', { value1: draft.model }) : tr('ui.modele_parent'));
+      (draft.model ? tr('common.unavailable', { value1: draft.model }) : tr('ui.defaut_du_moteur'));
     modelButton.value = draft.model;
     bindText($('.model-picker-name'), () => name);
     bindText(
       $('.model-picker-provider'),
-      () => model?.provider || (draft.model ? tr('ui.modele_indisponible') : tr('ui.heriter_du_parent')),
+      () => model?.provider || (draft.model ? tr('ui.modele_indisponible') : tr('ui.modele_natif_sinon_parent')),
     );
-    bindAttribute(modelButton, 'title', () => draft.model || tr('ui.utiliser_le_modele_de_l_agent_parent'));
+    bindAttribute(modelButton, 'title', () => draft.model || tr('ui.modele_natif_sinon_parent'));
     bindAttribute(modelButton, 'aria-label', () =>
       tr('ui.modele_des_sous_agents', { value1: name, value2: model ? ', ' + model.id : '' }),
     );
@@ -197,10 +197,10 @@ export function createSubagentSettings({
         return tr('ui.modele_des_sous_agents_2');
       },
       get defaultLabel() {
-        return tr('ui.heriter_du_modele_parent');
+        return tr('ui.defaut_du_moteur');
       },
       get defaultDetail() {
-        return tr('ui.utiliser_le_modele_de_l_agent_qui_delegue');
+        return tr('ui.modele_natif_sinon_parent');
       },
       onSelect(model) {
         if (turn !== generation || busy || !data) return;

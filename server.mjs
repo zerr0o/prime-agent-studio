@@ -15,6 +15,7 @@ import { createRemoteUpdates } from './lib/remote-updates.mjs';
 import { tailscaleSetupUrl } from './lib/tailscale-https.mjs';
 import { createModelConfigStore } from './lib/model-config.mjs';
 import { createModelDefaultsStore } from './lib/model-defaults.mjs';
+import { createEngineSettingsStore } from './lib/engine-settings.mjs';
 import { createSubagentDefaultsStore } from './lib/subagent-defaults.mjs';
 import { validPolicy } from './runtime/subagent-policy.mjs';
 import { openDirectory } from './lib/open-directory.mjs';
@@ -197,6 +198,7 @@ export function createApp(options = {}) {
     });
   const modelConfig = options.modelConfig || createModelConfigStore({ agentHome });
   const modelDefaults = options.modelDefaults || createModelDefaultsStore({ agentHome });
+  const engineSettings = options.engineSettings || createEngineSettingsStore({ agentHome });
   const mcp = options.mcp || createMcpService({ agentHome });
   const directoryPicker = options.directoryPicker || createDirectoryPicker();
   const providers =
@@ -327,6 +329,37 @@ export function createApp(options = {}) {
       selection = { provider: selected.provider, id: selected.id.slice(prefix.length) };
     }
     return configuredModels(modelDefaults.set(selection));
+  }
+  function findEngineModel(catalog, reference) {
+    const trimmed = String(reference || '').trim();
+    if (!trimmed) return null;
+    const lowered = trimmed.toLowerCase();
+    const exact = (catalog.models || []).find((model) => String(model.id).toLowerCase() === lowered);
+    if (exact) return exact;
+    // Bare model id: resolve only when unambiguous, mirroring the native resolver.
+    const bare = !(trimmed.includes('/'))
+      ? (catalog.models || []).filter((model) => String(model.id).split('/').pop().toLowerCase() === lowered)
+      : [];
+    if (bare.length === 1) return bare[0];
+    return null;
+  }
+  async function setEngineSettings(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      throw new HttpError(400, tr('server.reglages_moteur_invalides'));
+    // The catalog is only required to validate non-empty model references;
+    // budget-only writes must succeed even when the catalog is down.
+    const refs = ['auxiliaryModel', 'providerBackupModel', 'nativeSubagentDefaultModel'].filter(
+      (field) => typeof body[field] === 'string' && body[field].trim(),
+    );
+    const catalog = refs.length ? await models() : null;
+    for (const field of refs) {
+      const selected = findEngineModel(catalog, body[field]);
+      if (!selected)
+        throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
+      if (selected.availability === 'unavailable')
+        throw new HttpError(409, tr('model.unavailableSelection'));
+    }
+    return engineSettings.set(body);
   }
   function activeRuns() {
     return [...runs.values()].filter((r) => r.status === 'running' || r.status === 'stopping').map(publicRun);
@@ -826,6 +859,10 @@ export function createApp(options = {}) {
       }
       if (method === 'POST' && path === '/api/model-defaults')
         return json(res, 200, await setDefaultModel(await readBody(req)));
+      if (method === 'GET' && path === '/api/engine-settings')
+        return json(res, 200, await engineSettings.get());
+      if (method === 'POST' && path === '/api/engine-settings')
+        return json(res, 200, await setEngineSettings(await readBody(req)));
       if (method === 'POST' && path === '/api/model-config')
         return json(res, 200, await configuredModels(modelConfig.upsert(await readBody(req))));
       if (method === 'DELETE' && path === '/api/model-config')
@@ -1132,7 +1169,11 @@ export function createApp(options = {}) {
               ),
             }
           : {}),
-        ...(Number.isSafeInteger(error.currentRevision) ? { currentRevision: error.currentRevision } : {}),
+        ...(Number.isSafeInteger(error.currentRevision) ||
+        (typeof error.currentRevision === 'string' && /^[a-f0-9]{64}$/.test(error.currentRevision)) ||
+        error.currentRevision === null
+          ? { currentRevision: error.currentRevision }
+          : {}),
       });
     }
   });
@@ -1160,6 +1201,7 @@ export function createApp(options = {}) {
     runtime,
     modelConfig,
     modelDefaults,
+    engineSettings,
     remoteAccess,
     remoteNetwork,
     roadmap,

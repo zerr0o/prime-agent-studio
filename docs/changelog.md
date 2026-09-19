@@ -4,6 +4,16 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.7.0-beta.1
+
+- **Packaging guidé** : politique épinglée sur Prime Agent **0.9.5** (npm 10.9.4 et uv 0.8.22 inchangés), avec les trois dépendances `@earendil-works` vérifiées contre le même inventaire officiel.
+
+- **Relais en direct** : les événements du worker restent ordonnés lorsque le tampon interne se remplit, avec une limite mémoire explicite et sans rejouer l’historique.
+- **Runtime natif** : API Python `rlm.spawn(..., name=...)`, notes `rlm.progress_note(...)` et entrée Node directe du moteur pour préserver les hooks et l’identité du superviseur.
+- **Réglages avancés** : modèles d’affinage, de secours et de sous-agent natif ; budgets autonomes par défaut. Aucun secours ni mode autonome activé implicitement. Sauvegardes, verrou natif et détection des modifications concurrentes conservés.
+- **Authentification** : résolution par environnement puis stockage natif, sans import silencieux des comptes du CLI. Parcours Grok OAuth et clé API conservés.
+- **Conversation et suivi** : messages inter-agents 0.9.5 et anciens formats, progression et dernière activité des sous-agents, états d’attente, de secours et de restauration du fournisseur.
+
 ## 3.6.1
 
 - **Publication Windows** : nettoyage des fichiers temporaires du test de redémarrage avec reprises bornées après la fermeture du processus.

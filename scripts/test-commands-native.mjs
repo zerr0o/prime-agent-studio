@@ -212,6 +212,12 @@ try {
     events.some((e) => e.kind === 'message' && e.message.role === 'system' && /goal/i.test(e.message.text)),
     'Command results must be visible in the live conversation',
   );
+  assert.equal(
+    events.filter((e) => e.kind === 'message' && e.message.role === 'system' && /goal/i.test(e.message.text))
+      .length,
+    1,
+    'Queued command result is delivered exactly once',
+  );
   checks.push(
     'Skills développés par Prime Agent au premier tour et en réorientation',
     'Prompts natifs avec arguments entre guillemets',
@@ -227,6 +233,12 @@ try {
   });
   assert.equal((await bounded(idle.done)).status, 'completed');
   assert.equal(requests.length, before, 'A status command on an idle session makes no model request');
+  assert.equal(
+    events.filter((e) => e.kind === 'message' && e.message.role === 'system' && /goal/i.test(e.message.text))
+      .length,
+    2,
+    'Resuming does not replay the previous command result',
+  );
   checks.push('Commande native entre deux tours sans appel au modèle');
   console.log(JSON.stringify({ passed: true, checks }));
 } catch (error) {

@@ -183,6 +183,66 @@ test('a verified private namespace adopts a native successor without spawning a 
   assert.ok(f.sockets.every((socket) => socket === first.socketPath));
 });
 
+test('bridge launches use the direct node entry while keeping the public path for receipts', async () => {
+  const f = fixture();
+  f.daemon.close();
+  const { EventEmitter } = await import('node:events');
+  const launches = [];
+  const child = Object.assign(new EventEmitter(), {
+    pid: 52000,
+    exitCode: null,
+    signalCode: null,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+  });
+  class Client {
+    async connect() {}
+    async waitForHello() {
+      return { supervisorPid: 52000 };
+    }
+    async request() {
+      child.exitCode = 0;
+      child.emit('exit', 0, null);
+      return { success: true };
+    }
+    close() {}
+  }
+  const { createOwnedDaemon } = await import('../lib/daemon.mjs');
+  const daemon = createOwnedDaemon(
+    {
+      cli: {
+        packageDir: '/fake/package',
+        path: '/fake/package/dist/bundle/cli.js',
+        launchPath: '/fake/package/dist/bundle/cli-node.js',
+        node: true,
+      },
+      env: {},
+      startupTimeout: 1000,
+      closeTimeout: 10,
+      async terminateProcess(c) {
+        if (c && c.exitCode === null) {
+          c.exitCode = -1;
+          c.emit('exit', -1, null);
+        }
+      },
+    },
+    {
+      loadClient: async () => Client,
+      spawnProcess(command, args, options) {
+        launches.push({ command, args, options });
+        return child;
+      },
+    },
+  );
+  const ready = await daemon.ensureReady();
+  assert.equal(ready.pid, 52000);
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0].command, process.execPath);
+  assert.deepEqual(launches[0].args.slice(0, 1), ['/fake/package/dist/bundle/cli-node.js']);
+  assert.ok(!launches[0].args.includes('/fake/package/dist/bundle/cli.js'));
+  await daemon.close();
+});
+
 test('a native successor is probed again and replaced by an owned child after it disappears', async () => {
   const controls = {};
   const f = fixture(controls);

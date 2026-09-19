@@ -4,6 +4,16 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.7.0-beta.1
+
+- **Guided packaging**: policy pinned to Prime Agent **0.9.5** (npm 10.9.4 and uv 0.8.22 unchanged), with the three `@earendil-works` dependencies checked against the same official inventory.
+
+- **Live relay**: worker events stay ordered when the internal buffer fills, with an explicit memory limit and no history replay.
+- **Native runtime**: Python `rlm.spawn(..., name=...)`, `rlm.progress_note(...)` notes and the engine’s direct Node entrypoint preserve hooks and supervisor identity.
+- **Advanced settings**: refinement, fallback and native subagent models; default autonomous budgets. No fallback or autonomous mode enabled implicitly. Backups, native locking and concurrent-change detection are preserved.
+- **Authentication**: environment then native storage, with no silent import of CLI accounts. Grok OAuth and API-key flows are preserved.
+- **Conversation and tracking**: 0.9.5 and legacy inter-agent messages, subagent progress and last activity, provider waiting, fallback and restoration states.
+
 ## 3.6.1
 
 - **Windows release**: bounded retries clean up the restart test’s temporary files after process shutdown.

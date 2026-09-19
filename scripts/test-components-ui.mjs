@@ -107,9 +107,9 @@ try {
         components: {
           engine: {
             status: 'ready',
-            version: '0.9.4',
+            version: '0.9.5',
             path: 'C:\\Données Studio\\engine\\cli.js',
-            provenance: 'https://official.example/prime-agent-0.9.4.tgz',
+            provenance: 'https://official.example/prime-agent-0.9.5.tgz',
           },
           python: { status: 'ready' },
           bash: { status: 'ready' },
@@ -143,8 +143,8 @@ try {
         components: {
           engine: {
             status: 'ready',
-            version: '0.9.4',
-            path: 'C:\\Données Studio\\engine\\prime-agent\\0.9.4-12345678\\dist\\bundle\\cli.js',
+            version: '0.9.5',
+            path: 'C:\\Données Studio\\engine\\prime-agent\\0.9.5-12345678\\dist\\bundle\\cli.js',
           },
           node: { status: 'ready', version: '24.21.0' },
           python: { status: 'ready', path: 'C:\\Données Studio\\.local\\kernel-venv\\python.exe' },

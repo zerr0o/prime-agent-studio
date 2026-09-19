@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "3.6.2",
+  "version": "3.7.0-beta.1",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -67,7 +67,8 @@
     "test:desktop-runtime": "node scripts/test-desktop-runtime.mjs",
     "test:components": "node --test test/desktop-components.test.mjs && node scripts/test-components-ui.mjs",
     "test:components:download": "node scripts/test-components-download.mjs --download",
-    "test:mcp:packaged": "node scripts/test-mcp-packaged.mjs"
+    "test:mcp:packaged": "node scripts/test-mcp-packaged.mjs",
+    "test:engine-settings": "node --test test/engine-settings.test.mjs && node scripts/test-engine-settings-ui.mjs"
   },
   "engines": {
     "node": ">=22.8.0"

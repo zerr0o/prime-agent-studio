@@ -3,8 +3,15 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDirectInvocation } from './launcher-common.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export function isBetaVersion(version) {
+  return /^\d+\.\d+\.\d+-beta\.\d+$/.test(String(version || ''));
+}
+export function manifestFileName(version) {
+  return isBetaVersion(version) ? 'beta.json' : 'latest.json';
+}
 export function updateManifest({ version, signature, notes = '', date = new Date().toISOString() }) {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('A stable version is required');
+  if (!/^\d+\.\d+\.\d+$/.test(version) && !/^\d+\.\d+\.\d+-beta\.\d+$/.test(version))
+    throw new Error('A stable or beta version is required (for example 2.8.0 or 3.7.0-beta.1)');
   if (
     !signature?.trim() ||
     !Buffer.from(signature.trim(), 'base64').toString().startsWith('untrusted comment:')
@@ -37,6 +44,7 @@ if (isDirectInvocation(import.meta.url)) {
   const destination = join(output, `Prime-Agent-Studio_${version}_x64-setup.exe`);
   await copyFile(source, destination);
   await copyFile(source + '.sig', destination + '.sig');
-  await writeFile(join(output, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  console.log(`Signed installer, signature and latest.json prepared in ${output}`);
+  const fileName = manifestFileName(version);
+  await writeFile(join(output, fileName), JSON.stringify(manifest, null, 2) + '\n');
+  console.log(`Signed installer, signature and ${fileName} prepared in ${output}`);
 }

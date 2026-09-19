@@ -39,6 +39,12 @@ export default function studioRoadmap(pi) {
   if (typeof config.socketPath !== 'string' || typeof config.token !== 'string') return;
   const states = new Map();
 
+  function timersFor(ctx) {
+    if (ctx && typeof ctx.setInterval === 'function' && typeof ctx.clearInterval === 'function')
+      return { setInterval: ctx.setInterval.bind(ctx), clearInterval: ctx.clearInterval.bind(ctx) };
+    return { setInterval, clearInterval };
+  }
+
   function identity(ctx) {
     return {
       cwd: ctx.cwd,
@@ -50,7 +56,7 @@ export default function studioRoadmap(pi) {
     const value = identity(ctx);
     let state = states.get(value.sessionId);
     if (!state) {
-      state = { identity: value, epoch: randomUUID(), ended: false, timer: null };
+      state = { identity: value, epoch: randomUUID(), ended: false, timer: null, clearTimer: null };
       states.set(value.sessionId, state);
     }
     return state;
@@ -130,8 +136,13 @@ export default function studioRoadmap(pi) {
     });
   }
   function stopHeartbeat(state) {
-    clearInterval(state.timer);
+    try {
+      (state.clearTimer ?? clearInterval)(state.timer);
+    } catch {
+      /* Clearing a finished heartbeat never fails the roadmap call. */
+    }
     state.timer = null;
+    state.clearTimer = null;
   }
   async function end(ctx) {
     const state = stateFor(ctx);
@@ -146,7 +157,7 @@ export default function studioRoadmap(pi) {
       void send('clear', {}, prior).catch(() => {});
     }
     const value = identity(ctx);
-    states.set(value.sessionId, { identity: value, epoch: randomUUID(), ended: false, timer: null });
+    states.set(value.sessionId, { identity: value, epoch: randomUUID(), ended: false, timer: null, clearTimer: null });
   });
   pi.on('agent_end', (_event, ctx) => end(ctx));
   pi.on('session_shutdown', (_event, ctx) => end(ctx));
@@ -175,7 +186,7 @@ export default function studioRoadmap(pi) {
       execute: async (_id, params, signal, _update, ctx) => {
         const state = stateFor(ctx);
         if (state.ended) throw new Error('This agent turn has ended.');
-        return result(name, await execute(params, state, signal));
+        return result(name, await execute(params, state, signal, ctx));
       },
     });
   }
@@ -310,14 +321,28 @@ export default function studioRoadmap(pi) {
     'Déclarer le travail en cours',
     'Show a temporary activity indicator on existing Roadmap targets for this exact native agent. Send targets=[] to clear it. This does not launch work, change progress or create a goal; activity clears when this agent finishes.',
     object({ targets: Type.Array(workTarget, { maxItems: 20 }) }),
-    async (params, state, signal) => {
+    async (params, state, signal, ctx) => {
       const response = await send('work', params, state, signal);
       stopHeartbeat(state);
       if (!response.active && !state.ended) state.epoch = randomUUID();
       if (response.active && !state.ended) {
-        state.timer = setInterval(() => {
-          void send('heartbeat', {}, state).catch(() => stopHeartbeat(state));
-        }, 10000);
+        const timers = timersFor(ctx);
+        let timer = null;
+        try {
+          timer = timers.setInterval(() => {
+            void send('heartbeat', {}, state).catch(() => stopHeartbeat(state));
+          }, 10000);
+        } catch {
+          timer = setInterval(() => {
+            void send('heartbeat', {}, state).catch(() => stopHeartbeat(state));
+          }, 10000);
+          state.clearTimer = clearInterval;
+          state.timer = timer;
+          state.timer.unref?.();
+          return response;
+        }
+        state.clearTimer = timers.clearInterval;
+        state.timer = timer;
         state.timer.unref?.();
       }
       return response;

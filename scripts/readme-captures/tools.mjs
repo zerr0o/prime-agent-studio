@@ -357,7 +357,7 @@ function createFixtureApp(fixture) {
     dataDir: fixture.dataDir,
     initialCwd: fixture.cwd,
     runtime: {
-      getStatus: async () => ({ available: true, version: '0.9.4' }),
+      getStatus: async () => ({ available: true, version: '0.9.5' }),
       getModels: async () => ({
         models: [
           {

@@ -117,7 +117,7 @@ const provider = createServer(async (req, res) => {
         tool = {
           name: 'ipython',
           arguments: {
-            code: 'import rlm\nchild = await rlm.run("Verify the second Roadmap checklist step", model="fixture/child", name="roadmap-tester")\nprint("CHILD_ADMITTED")',
+            code: 'import rlm\nchild = await rlm.spawn("Verify the second Roadmap checklist step", model="fixture/child", name="roadmap-tester")\nprint("CHILD_ADMITTED")',
           },
         };
       } else if (step === 8) {

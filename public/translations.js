@@ -4563,8 +4563,8 @@ export const messages = {
     en: 'This return address does not match the current sign-in.',
   },
   'server.la_variable_prime_api_key_et_la_configuration_prime_cli_sont_pri': {
-    fr: 'La variable PRIME_API_KEY et la configuration Prime CLI sont prioritaires sur la clé enregistrée ici. Elles restent gérées séparément.',
-    en: 'The PRIME_API_KEY variable and Prime CLI configuration take priority over the key saved here. They remain managed separately.',
+    fr: 'La variable PRIME_API_KEY est prioritaire, puis la clé enregistrée dans auth.json. Un compte connecté uniquement via la CLI Prime nécessite une reconnexion ou un import explicite ; aucun import silencieux.',
+    en: 'The PRIME_API_KEY environment variable takes priority, then the key stored in auth.json. An account connected only via the Prime CLI needs reconnection or explicit import; nothing is imported silently.',
   },
   'server.utilisez_un_profil_aws_ou_les_variables_aws_du_pc_ces_reglages_r': {
     fr: 'Utilisez un profil AWS ou les variables AWS du PC. Ces réglages restent gérés par votre environnement.',
@@ -5382,4 +5382,93 @@ export const messages = {
   'archives.count_backlog_notes': { fr: 'Notes du backlog', en: 'Backlog notes' },
   'archives.count_journal': { fr: 'Entrées du journal', en: 'Journal entries' },
   'archives.count_milestones': { fr: 'Jalons', en: 'Milestones' },
+  'providerRetry.usage': {
+    fr: 'Quota atteint · nouvelle tentative dans {seconds} s',
+    en: 'Usage limit reached · retry in {seconds}s',
+  },
+  'providerRetry.unavailable': {
+    fr: 'Fournisseur indisponible · nouvelle tentative dans {seconds} s',
+    en: 'Provider unavailable · retry in {seconds}s',
+  },
+  'providerRetry.backup': {
+    fr: 'Modèle de secours : {model}',
+    en: 'Backup model: {model}',
+  },
+  'providerRetry.restored': {
+    fr: 'Modèle principal rétabli : {model}',
+    en: 'Primary model restored: {model}',
+  },
+  'providerRetry.failed': { fr: 'Reprise interrompue', en: 'Recovery stopped' },
+  'agents.progress': { fr: 'Progression : {note}', en: 'Progress: {note}' },
+  'agents.lastActivity': { fr: 'Dernière activité : {time}', en: 'Last activity: {time}' },
+  'agents.activitySeconds': {
+    fr: 'Dernière activité il y a {value} s',
+    en: 'Last activity {value}s ago',
+  },
+  'agents.activityMinutes': {
+    fr: 'Dernière activité il y a {value} min',
+    en: 'Last activity {value} min ago',
+  },
+  'engine.default_value': { fr: 'Défaut : {value1}', en: 'Default: {value1}' },
+  'ui.defaut_du_moteur': { fr: 'Défaut du moteur', en: 'Engine default' },
+  'ui.modele_natif_sinon_parent': {
+    fr: 'Modèle natif par défaut, sinon parent',
+    en: 'Native default model, otherwise parent',
+  },
+  'engine.advanced_models': {
+    fr: 'Modèles avancés (Prime Agent 0.9.5)',
+    en: 'Advanced models (Prime Agent 0.9.5)',
+  },
+  'engine.advanced_models_note': {
+    fr: 'Affinage, secours et sous-agent natif. Vide = comportement natif, sans changement.',
+    en: 'Refinement, fallback and native subagent. Empty = native behavior, no change.',
+  },
+  'engine.auxiliary_label': { fr: 'Modèle d’affinage', en: 'Refinement model' },
+  'engine.auxiliary_note': {
+    fr: 'Utilisé pour l’auto-affinage quand il est défini et authentifié. Sinon, le modèle de session est utilisé.',
+    en: 'Used for auto-refinement when set and authenticated. Otherwise the session model is used.',
+  },
+  'engine.backup_label': { fr: 'Modèle de secours', en: 'Fallback model' },
+  'engine.backup_note': {
+    fr: 'Désactivé par défaut : les demandes ne changent jamais de modèle en silence. Défini = repli en cas de quota ou de panne.',
+    en: 'Off by default: requests never silently switch models. When set = fallback on quota or outage.',
+  },
+  'engine.native_subagent_label': { fr: 'Sous-agent natif par défaut', en: 'Native subagent default' },
+  'engine.native_subagent_note': {
+    fr: 'Champ natif distinct, sans écraser les réglages Studio. Priorité : choix explicite > réglages Studio (globaux ou du projet) > défaut natif > parent.',
+    en: 'Separate native field, never overwrites Studio settings. Priority: explicit choice > Studio settings (global or project) > native default > parent.',
+  },
+  'engine.automatic_choice': { fr: 'Choix automatique (natif)', en: 'Automatic (native)' },
+  'engine.autonomous_title': { fr: 'Budgets autonomes par défaut', en: 'Default autonomous budgets' },
+  'engine.autonomous_note': {
+    fr: 'Limites prêtes sans activer le mode autonome. Vide = défaut natif. Les options explicites restent prioritaires.',
+    en: 'Limits ready without enabling autonomous mode. Empty = native default. Explicit flags still win.',
+  },
+  'engine.max_continuations': { fr: 'Relances max', en: 'Max continuations' },
+  'engine.max_turns': { fr: 'Tours max', en: 'Max turns' },
+  'engine.max_tokens': { fr: 'Jetons max', en: 'Max tokens' },
+  'engine.timeout_ms': { fr: 'Délai max (ms)', en: 'Max delay (ms)' },
+  'engine.unlimited': { fr: 'Illimité', en: 'Unlimited' },
+  'engine.save_engine': { fr: 'Enregistrer les réglages moteur', en: 'Save engine settings' },
+  'engine.reload_engine': { fr: 'Recharger les réglages', en: 'Reload settings' },
+  'engine.loading_engine': { fr: 'Chargement des réglages moteur…', en: 'Loading engine settings…' },
+  'engine.saved_engine': { fr: 'Réglages moteur enregistrés.', en: 'Engine settings saved.' },
+  'engine.unsaved_engine': { fr: 'Modification non enregistrée.', en: 'Change not saved.' },
+  'engine.unavailable_engine': { fr: 'Réglages moteur indisponibles.', en: 'Engine settings unavailable.' },
+  'engine.disabled_remote': {
+    fr: 'Lecture seule depuis cet accès : modifiez ces réglages sur le PC.',
+    en: 'Read-only from this access: change these settings on the PC.',
+  },
+  'engine.models_unavailable': {
+    fr: 'Catalogue des modèles indisponible. Réessayez après reconnexion.',
+    en: 'Model catalog unavailable. Retry after reconnecting.',
+  },
+  'server.reglages_moteur_invalides': {
+    fr: 'Réglages moteur invalides.',
+    en: 'Invalid engine settings.',
+  },
+  'server.budget_autonome_invalide': {
+    fr: 'Budget autonome invalide : entier positif ou « unlimited ».',
+    en: 'Invalid autonomous budget: positive integer or “unlimited”.',
+  },
 };

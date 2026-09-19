@@ -83,7 +83,7 @@ const provider = createServer(async (req, res) => {
         tool = {
           name: 'ipython',
           arguments: {
-            code: 'import rlm\nchild = await rlm.run("Search prior Dirac findings", model="fixture/child", name="knowledge-reader")\nprint("CHILD_ADMITTED")',
+            code: 'import rlm\nchild = await rlm.spawn("Search prior Dirac findings", model="fixture/child", name="knowledge-reader")\nprint("CHILD_ADMITTED")',
           },
         };
     }

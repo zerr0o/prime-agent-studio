@@ -463,7 +463,7 @@ const models = [
 for (const item of models) item.thinkingLevels = ['off', 'low', 'medium', 'high', 'xhigh'];
 const runtime = {
   async getStatus() {
-    return { available: true, version: '0.9.4' };
+    return { available: true, version: '0.9.5' };
   },
   async getModels() {
     return {

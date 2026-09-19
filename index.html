@@ -759,7 +759,8 @@
         <span data-icon="arrow-up"></span><span data-i18n="sessions.move_up">Monter la conversation</span>
       </button>
       <button role="menuitem" data-action="down">
-        <span data-icon="arrow-down"></span><span data-i18n="sessions.move_down">Descendre la conversation</span>
+        <span data-icon="arrow-down"></span
+        ><span data-i18n="sessions.move_down">Descendre la conversation</span>
       </button>
       <button role="menuitem" data-action="export">
         <span data-icon="download"></span
@@ -843,7 +844,9 @@
           </p>
           <ul class="archive-warnings">
             <li data-i18n="archives.warn_additive">Import additif : rien n’est écrasé.</li>
-            <li data-i18n="archives.warn_no_overwrite">Les sessions et la Roadmap existantes sont conservées.</li>
+            <li data-i18n="archives.warn_no_overwrite">
+              Les sessions et la Roadmap existantes sont conservées.
+            </li>
             <li data-i18n="archives.warn_secret">
               L’historique peut contenir des secrets : vérifiez avant de partager ce fichier.
             </li>
@@ -852,14 +855,9 @@
             </li>
           </ul>
         </div>
-        <p
-          id="project-archive-pending"
-          class="archive-note"
-          data-i18n="archives.pending_notice"
-          hidden
-        >
-          Finalisation en attente : la reprise est sûre et sans doublon. Relancez l’aperçu si
-          besoin, sans choisir un nouveau fichier.
+        <p id="project-archive-pending" class="archive-note" data-i18n="archives.pending_notice" hidden>
+          Finalisation en attente : la reprise est sûre et sans doublon. Relancez l’aperçu si besoin, sans
+          choisir un nouveau fichier.
         </p>
         <p
           id="project-archive-destination-note"
@@ -869,20 +867,17 @@
         >
           Pour importer vers un nouveau projet, créez d’abord le projet puis rouvrez ce menu.
         </p>
-        <p
-          id="project-archive-remote"
-          class="archive-note"
-          data-i18n="archives.remote_unavailable"
-          hidden
-        >
-          Fichier transférable sur un autre PC. Export et import depuis le Studio ouvert sur ce PC, pas depuis un navigateur distant (LAN/Tailscale/PWA).
+        <p id="project-archive-remote" class="archive-note" data-i18n="archives.remote_unavailable" hidden>
+          Fichier transférable sur un autre PC. Export et import depuis le Studio ouvert sur ce PC, pas depuis
+          un navigateur distant (LAN/Tailscale/PWA).
         </p>
         <div id="project-archive-error" class="form-error" role="alert" hidden></div>
         <div class="modal-actions">
           <button class="secondary-button" type="button" data-close-dialog>
             <span data-i18n="ui.annuler">Annuler</span></button
           ><button id="project-archive-confirm" class="primary-button" type="submit">
-            <span data-icon="check"></span><span id="project-archive-confirm-label" data-i18n="archives.export_action">Exporter</span>
+            <span data-icon="check"></span
+            ><span id="project-archive-confirm-label" data-i18n="archives.export_action">Exporter</span>
           </button>
         </div>
       </form>
@@ -1798,6 +1793,11 @@
             </p>
           </article>
           <article id="subagent-settings" class="model-defaults-card subagent-settings"></article>
+          <article
+            id="engine-settings"
+            class="model-defaults-card engine-settings"
+            aria-labelledby="engine-settings-heading"
+          ></article>
           <div class="model-config-section-heading">
             <div>
               <h3 data-i18n="ui.vos_modeles_personnalises">Vos modèles personnalisés</h3>

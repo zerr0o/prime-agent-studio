@@ -95,7 +95,7 @@ To add a message or language, follow the [translation guide](translations.md). S
 
 Documentation also has two language versions. `npm run check:docs`, included in `npm run check`, checks the pair registry, links, anchors and review fingerprints. After an edit, review both languages and run `npm run docs:sync -- identifier`; the [translation guide](translations.md#maintain-bilingual-documentation) describes this process. This check does not automatically assess linguistic quality.
 
-Automated tests use temporary data and a fake engine, without model usage. Windows tests also check native process-creation parameters, VBS startup, server reuse and descendant shutdown. Browser tests use the locally installed Microsoft Edge and produce screenshots under `test-results/`.
+Automated tests use temporary data and a fake engine, without model usage. Windows tests also check native process-creation parameters, VBS startup, server reuse and descendant shutdown. Browser tests use the locally installed Microsoft Edge and produce screenshots under `test-results/`. Guided packaging (`lib/desktop-components.mjs`, `test/desktop-components.test.mjs`) is pinned to Prime Agent 0.9.5 with npm 10.9.4 and uv 0.8.22; unit tests run under Node without production downloads.
 
 `test:subagents:native` uses the real engine and Python with a simulated local HTTP provider, without an account or paid call. It verifies default and explicit arguments, the existing prompt, live and historical reasoning levels, then a project-specific change while the first subagents are still working.
 

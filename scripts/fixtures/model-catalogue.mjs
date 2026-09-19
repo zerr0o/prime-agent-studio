@@ -56,7 +56,7 @@ export async function createModelCatalogueFixture(options = {}) {
     dataDir: join(root, 'data'),
     initialCwd: cwd,
     runtime: {
-      getStatus: async () => ({ available: true, version: '0.9.4', cli: 'fixture' }),
+      getStatus: async () => ({ available: true, version: '0.9.5', cli: 'fixture' }),
       getModels: async () => modelCatalogue(options),
       start: async () => {
         throw new Error('No agent should start in this catalogue fixture');

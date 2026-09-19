@@ -322,7 +322,11 @@ export function createInspector({
     );
   }
   function validQuotaResult(result) {
-    return result && result.available === true && (validQuotaWindow(result.short) || validQuotaWindow(result.weekly));
+    return (
+      result &&
+      result.available === true &&
+      (validQuotaWindow(result.short) || validQuotaWindow(result.weekly))
+    );
   }
   function validContextUsage(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -389,7 +393,8 @@ export function createInspector({
   function formatQuotaText(result) {
     if (!validQuotaResult(result)) return tr('ui.quota_indisponible');
     const parts = [];
-    if (typeof result.plan === 'string' && result.plan) parts.push(tr('ui.quota_plan', { plan: result.plan }));
+    if (typeof result.plan === 'string' && result.plan)
+      parts.push(tr('ui.quota_plan', { plan: result.plan }));
     for (const [window, key] of [
       [result.short, 'ui.quota_courte'],
       [result.weekly, 'ui.quota_hebdo'],
@@ -429,7 +434,12 @@ export function createInspector({
       bindText(label, () => tr('ui.session_context_title'));
       contextSection.append(label);
       const windowSize =
-        raw && typeof raw === 'object' && typeof raw.contextWindow === 'number' && Number.isFinite(raw.contextWindow) && raw.contextWindow > 0 && raw.contextWindow <= 100_000_000
+        raw &&
+        typeof raw === 'object' &&
+        typeof raw.contextWindow === 'number' &&
+        Number.isFinite(raw.contextWindow) &&
+        raw.contextWindow > 0 &&
+        raw.contextWindow <= 100_000_000
           ? Math.round(raw.contextWindow)
           : undefined;
       if (windowSize !== undefined) {
@@ -437,7 +447,9 @@ export function createInspector({
         windowLine.className = 'session-context-line';
         bindText(windowLine, () => {
           try {
-            const total = new Intl.NumberFormat(getLanguage() === 'en' ? 'en-US' : 'fr-FR').format(windowSize);
+            const total = new Intl.NumberFormat(getLanguage() === 'en' ? 'en-US' : 'fr-FR').format(
+              windowSize,
+            );
             return `${tr('ui.fenetre_de_contexte')} : ${total}`;
           } catch {
             return `${windowSize}`;
@@ -478,7 +490,8 @@ export function createInspector({
     line.className = 'session-context-line';
     bindText(line, () => {
       try {
-        const number = (value) => new Intl.NumberFormat(getLanguage() === 'en' ? 'en-US' : 'fr-FR').format(value);
+        const number = (value) =>
+          new Intl.NumberFormat(getLanguage() === 'en' ? 'en-US' : 'fr-FR').format(value);
         return tr('ui.session_context_detail', {
           used: number(usage.tokens),
           total: number(usage.contextWindow),
@@ -595,7 +608,10 @@ export function createInspector({
       quotaState = 'loading';
       paint();
       try {
-        const params = new URLSearchParams({ provider: 'openai-codex', revision: quotaRevisionCache || entry.revision || '' });
+        const params = new URLSearchParams({
+          provider: 'openai-codex',
+          revision: quotaRevisionCache || entry.revision || '',
+        });
         const result = await api(`/api/providers/codex-usage?${params}`);
         if (validQuotaResult(result)) {
           quotaSnapshot = result;
@@ -675,6 +691,29 @@ export function createInspector({
           tr('ui.reflexion_2', { value1: thinkingLabel(agent.thinking) }),
         ),
       );
+      if (agent.progressNote)
+        card.append(
+          node('span', 'inspector-agent-progress', () => tr('agents.progress', { note: agent.progressNote })),
+        );
+      if (Number.isFinite(agent.lastActivityAt)) {
+        const activity = node('span', 'inspector-note inspector-agent-activity', () => {
+          if (Number.isFinite(agent.activityStaleMs)) {
+            const minutes = agent.activityStaleMs >= 60000;
+            return tr(minutes ? 'agents.activityMinutes' : 'agents.activitySeconds', {
+              value: Math.floor(agent.activityStaleMs / (minutes ? 60000 : 1000)),
+            });
+          }
+          return tr('agents.lastActivity', {
+            time: new Date(agent.lastActivityAt).toLocaleTimeString(getLanguage()),
+          });
+        });
+        bindAttribute(activity, 'title', () =>
+          tr('agents.lastActivity', {
+            time: new Date(agent.lastActivityAt).toLocaleString(getLanguage()),
+          }),
+        );
+        card.append(activity);
+      }
       if (agent.preview || translateKnown(agent.error))
         card.append(
           node('span', 'inspector-agent-preview', () => translateKnown(agent.error) || agent.preview),
@@ -982,13 +1021,14 @@ export function createInspector({
         },
       ],
       [
-        () => current.remote ? tr('ui.ouvrir_le_dossier_sur_le_pc') : tr('ui.ouvrir_le_dossier'),
+        () => (current.remote ? tr('ui.ouvrir_le_dossier_sur_le_pc') : tr('ui.ouvrir_le_dossier')),
         async () => {
           const target = menuFile,
             anchor = menuRow;
           closeFileMenu();
           anchor?.focus({ preventScroll: true });
-          if (!target || !current.enabled || current.readOnly || !current.nativeFileOpen || !current.online) return;
+          if (!target || !current.enabled || current.readOnly || !current.nativeFileOpen || !current.online)
+            return;
           try {
             await api('/api/projects/open', {
               method: 'POST',
@@ -1010,7 +1050,8 @@ export function createInspector({
           anchor?.focus({ preventScroll: true });
           if (target) {
             const separator = current.cwd.includes('\\') ? '\\' : '/';
-            const path = current.cwd.replace(/[\\/]$/, '') + separator + target.path.replaceAll('/', separator);
+            const path =
+              current.cwd.replace(/[\\/]$/, '') + separator + target.path.replaceAll('/', separator);
             void copyFilePath(path);
           }
         },
@@ -1066,8 +1107,12 @@ export function createInspector({
       event.stopPropagation();
       const items = [...fileMenu.querySelectorAll('button:not(:disabled)')];
       const index = items.indexOf(document.activeElement);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? items.length - 1
+            : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
       items[next]?.focus({ preventScroll: true });
     }
   };

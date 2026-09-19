@@ -674,3 +674,16 @@
     padding: 12px 14px;
   }
 }
+
+/* Native progress notes are text, not rendered Markdown or task verdicts. */
+.inspector-agent-progress {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.inspector-agent-activity {
+  display: block;
+}

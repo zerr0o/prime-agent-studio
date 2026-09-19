@@ -38,7 +38,7 @@ const provider = createServer(async (req, res) => {
               'import rlm, agent_message, json, sys',
               'assert callable(agent_message.send)',
               'print("PARENT_IMPORT_OK", sys.executable)',
-              `child = await rlm.run("MESSENGER_TASK_${phase}", model="fixture/child", thinking="low", name="messenger-${phase}")`,
+              `child = await rlm.spawn("MESSENGER_TASK_${phase}", model="fixture/child", thinking="low", name="messenger-${phase}")`,
               `receipt = await agent_message.send(${JSON.stringify(token('PARENT_TO_CHILD'))}, receiver_role="child", receiver_name="messenger-${phase}")`,
               'assert receipt["deliveryStatus"] in ("queued", "delivered"), receipt',
               'print("PARENT_SEND_OK", json.dumps(receipt))',

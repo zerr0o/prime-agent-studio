@@ -2,6 +2,18 @@
 const clean = (value, limit = 240) => (typeof value === 'string' ? value.slice(0, limit) : '');
 export function parseAgentEnvelope(text) {
   if (typeof text !== 'string') return null;
+  const current = /^\[agent-message from (?:(child|sibling|parent):)?([^\]\r\n]+)\]\r?\n\r?\n([\s\S]*)$/.exec(
+    text,
+  );
+  if (current)
+    return {
+      relationship: current[1] || '',
+      name: clean(current[2]),
+      sender: '',
+      target: '',
+      id: '',
+      text: current[3],
+    };
   const match =
     /^(?:\[from (child|sibling|parent)(?::([^\]\n]+))?\]\r?\n)?Agent-to-agent message received\.\r?\nSource: agent_message\r?\n(?:From: ([^\r\n]+)\r?\n)?To: ([^\r\n]+)\r?\nMessage id: (agentmsg_[^\r\n]+)\r?\n\r?\n([\s\S]*)$/.exec(
       text,

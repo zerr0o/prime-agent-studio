@@ -215,6 +215,7 @@ test('agent metadata is projected consistently and queue controls reject every m
   await f.append('child-result', 'custom', message);
   const fromHistory = (await f.store.history('session')).messages.at(-1).agentMessage;
   assert.deepEqual(fromHistory, normalizeMessage(message).agentMessage);
+  assert.equal((await f.store.history('session')).messages.at(-1).customType, 'agent_message');
   assert.equal(fromHistory.name, 'Verifier');
   assert.equal(nativeAgentMessage({ role: 'user', content: '[from child:fake]' }), null);
   assert.equal(parseAgentEnvelope('[from child:fake]\nnot a native envelope'), null);
@@ -225,15 +226,16 @@ test('agent metadata is projected consistently and queue controls reject every m
       throw new Error('Must reject before native mutation');
     },
   });
-  for (const type of ['replace', 'delete', 'move'])
-    await assert.rejects(
-      service.mutate('session', {
-        cwd: f.root,
-        lane: 'steering',
-        index: 0,
-        expectedText: text,
-        mutation: { type, text: 'edited', lane: 'steering', direction: 1 },
-      }),
-      { status: 409 },
-    );
+  for (const expectedText of [text, '[agent-message from child:Verifier]\n\nVerified result'])
+    for (const type of ['replace', 'delete', 'move'])
+      await assert.rejects(
+        service.mutate('session', {
+          cwd: f.root,
+          lane: 'steering',
+          index: 0,
+          expectedText,
+          mutation: { type, text: 'edited', lane: 'steering', direction: 1 },
+        }),
+        { status: 409 },
+      );
 });

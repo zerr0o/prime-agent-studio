@@ -36,19 +36,19 @@ Prime Agent Studio réunit les sessions de votre **Prime Agent local** dans une 
 - **Gardez le cap** : Roadmap partagée avec les agents, juste à côté des conversations.
 - **Travaillez d’où vous voulez** : le même Studio sur PC Windows et sur téléphone, en Wi-Fi ou hors Wi-Fi.
 
-**Version 3.6.1** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.6.1/Prime-Agent-Studio_3.6.1_x64-setup.exe) · [Historique des versions](docs/changelog.md).
+**Version 3.7.0-beta.1** · [Télécharger l’installateur bêta Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.0-beta.1/Prime-Agent-Studio_3.7.0-beta.1_x64-setup.exe) · [Historique des versions](docs/changelog.md).
 
 ## Démarrage rapide
 
 ### Application Windows
 
 1. Téléchargez l’[installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/latest), installez-le, puis ouvrez **Prime Agent Studio** depuis le Bureau ou le menu Démarrer. Node.js est inclus.
-2. Au premier lancement, choisissez **Installer les composants manquants** (Prime Agent **0.9.4**, npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
+2. Au premier lancement, choisissez **Installer les composants manquants** (Prime Agent **0.9.5**, npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
 3. Configurez votre fournisseur, ajoutez un dossier de projet avec **+**, puis écrivez votre demande. [Guide complet](docs/desktop.md).
 
 Les mises à jour sont signées pour Tauri ; l’installateur ne possède pas encore de signature Windows Authenticode.
 
-**Après la mise à jour :** l’application peut continuer à utiliser l’ancien serveur pendant que les agents terminent leur travail. Une fois leurs exécutions terminées, utilisez **Préférences → Mise à jour → Redémarrer le serveur** dans l’application Windows pour activer la version 3.6.1. [Guide de mise à jour](docs/desktop.md#données-et-mises-à-jour).
+**Après la mise à jour :** l’application peut continuer à utiliser l’ancien serveur pendant que les agents terminent leur travail. Une fois leurs exécutions terminées, utilisez **Préférences → Mise à jour → Redémarrer le serveur** dans l’application Windows pour activer la mise à jour installée. [Guide de mise à jour](docs/desktop.md#données-et-mises-à-jour).
 
 <details>
 <summary><strong>Depuis le code source</strong></summary>
@@ -188,7 +188,7 @@ Recherchez un modèle par son **nom, son fournisseur ou son identifiant**. Les f
   <img src="docs/screenshots/desktop-models.png" width="560" alt="Sélecteur de modèles sur PC avec recherche, favoris et choix automatique de Prime Agent.">
 </p>
 
-**Nouvelle session** reprend le modèle principal par défaut, configurable sur le PC avec le même sélecteur. Avec Prime Agent **0.9.4**, la zone **Sous-agents** définit les valeurs globales ; pour un projet précis, choisissez **Ce projet** en haut de l’onglet **Agents**, même avant le premier message. Chaque valeur peut hériter du parent, et les sous-agents déjà créés conservent leurs réglages.
+**Nouvelle session** reprend le modèle principal par défaut, configurable sur le PC avec le même sélecteur. Avec Prime Agent **0.9.5**, la zone **Sous-agents** définit les valeurs globales ; pour un projet précis, choisissez **Ce projet** en haut de l’onglet **Agents**, même avant le premier message. Chaque valeur peut hériter du parent, et les sous-agents déjà créés conservent leurs réglages.
 
 ![Nouvelle conversation sur PC : modèle principal par défaut et réglages des sous-agents accessibles dans l’onglet Agents avant le premier message.](docs/screenshots/desktop-new-conversation-agents.png)
 
@@ -266,7 +266,7 @@ L’application, construite avec Tauri 2, ouvre le Studio dans une fenêtre Wind
 
 ![Premier lancement de l’application Windows : état des composants et préparation guidée.](docs/screenshots/desktop-startup.png)
 
-Les builds incluant la préparation guidée associent Studio 3.6.1 à **Prime Agent 0.9.4**, **npm 10.9.4** et **uv 0.8.22**, avec Python 3.11. Les archives sont contrôlées contre leurs inventaires et empreintes avant validation ; aucun composant externe détecté automatiquement n’est exécuté sans votre choix explicite. Les composants résident dans le dossier de données, sous `engine/`, avec les noyaux Python dans `.local`.
+Dans les sources actuelles, la préparation guidée associe le Studio à **Prime Agent 0.9.5**, **npm 10.9.4** et **uv 0.8.22**, avec Python 3.11. Les archives sont contrôlées contre leurs inventaires et empreintes avant validation ; aucun composant externe détecté automatiquement n’est exécuté sans votre choix explicite. Les composants résident dans le dossier de données, sous `engine/`, avec les noyaux Python dans `.local`.
 
 ![Mise à jour dans l’application Windows : version installée, serveur actif et redémarrage après les exécutions.](docs/screenshots/desktop-updates.png)
 

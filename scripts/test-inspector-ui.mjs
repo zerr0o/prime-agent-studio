@@ -151,6 +151,9 @@ const app = createApp({
             activity: { kind: 'executing', toolName: 'ipython' },
             model: 'gpt-5.6-luna',
             recap: 'Vérification des composants de navigation.',
+            progressNote: 'Composants de navigation vérifiés.',
+            lastActivityAt: Date.now() - 60000,
+            activityStaleMs: 60000, // Must be ignored while the native activity is executing.
             toolUseCount: 12,
           },
           {
@@ -168,7 +171,7 @@ const app = createApp({
   },
   runtime: {
     async getStatus() {
-      return { available: true, version: '0.9.2' };
+      return { available: true, version: '0.9.5' };
     },
     async getModels() {
       return {
@@ -222,7 +225,10 @@ const gateway = createLanGateway({
 });
 await new Promise((done) => gateway.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${gateway.address().port}`;
-const browser = await chromium.launch({ channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome', headless: true });
+const browser = await chromium.launch({
+  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
+  headless: true,
+});
 let page;
 const errors = [],
   results = [];
@@ -272,6 +278,15 @@ try {
     await page.getByRole('tab', { name: 'Agents', exact: true }).click();
     await expect(page.locator('.inspector-agent')).toHaveCount(3);
     await expect(page.locator(`[data-agent-id="${childId}"]`)).toContainText('Exécute un outil');
+    await expect(page.locator(`[data-agent-id="${childId}"] .inspector-agent-progress`)).toHaveText(
+      'Progression : Composants de navigation vérifiés.',
+    );
+    await expect(page.locator(`[data-agent-id="${childId}"] .inspector-agent-activity`)).toContainText(
+      'Dernière activité :',
+    );
+    await expect(page.locator(`[data-agent-id="${childId}"] .inspector-agent-activity`)).not.toContainText(
+      'il y a',
+    );
     await expect(page.locator(`[data-agent-id="${grandId}"]`)).toContainText('niveau 2');
     const offsets = await page.locator('.inspector-agent').evaluateAll((cards) =>
       cards.map((card) => ({

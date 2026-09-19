@@ -1,6 +1,7 @@
 import { t as tr, translateKnown, translateDOM, onLanguageChange, bindText } from './i18n.js';
 import { createDesktopUpdates } from './desktop-updates.js';
 import { createInteractionSettings } from './interaction-settings.js';
+import { createEngineSettings } from './engine-settings.js';
 import { isDesktopComponentsAvailable, openDesktopComponents } from './desktop-components-action.js';
 
 export function createSettings({
@@ -13,6 +14,7 @@ export function createSettings({
 }) {
   const updates = createDesktopUpdates({ api, getContext });
   const interactions = createInteractionSettings({ api, getContext, onStudioPreferences });
+  const engineSettings = createEngineSettings({ api, getContext });
   const $ = (id) => document.getElementById(id);
   if (isDesktopComponentsAvailable()) {
     $('settings-components-row').hidden = false;
@@ -65,7 +67,10 @@ export function createSettings({
     if (id === 'remote' && !getContext().remote) void refreshNetwork();
     if (id === 'system') void refreshSystem();
     if (id === 'updates') void updates.refresh();
-    if (id === 'models') void interactions.refreshDefault();
+    if (id === 'models') {
+      void interactions.refreshDefault();
+      engineSettings.update();
+    }
     if (id === 'notifications') void interactions.refreshNotifications();
   }
   for (const tab of tabs) tab.onclick = () => select(tab.dataset.settingsTab);

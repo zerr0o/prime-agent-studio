@@ -24,6 +24,7 @@ import { createInspector } from './inspector.js';
 import { fileLinkRenderer, bindFileLinks } from './file-links.js';
 import { createSessionActivity } from './session-activity.js';
 import { parseAgentEnvelope } from './agent-messages.js';
+import { applyRuntimeStatus } from './runtime-status.js';
 import { createProjectSorting } from './project-sorting.js';
 import { createSessionSorting } from './session-sorting.js';
 import { createProjectNavigation, hasPendingQuestion } from './project-navigation.js';
@@ -34,10 +35,7 @@ import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
 import { createQuestions } from './questions.js';
 import { createPushSettings } from './push.js';
-import {
-  isDesktopComponentsAvailable,
-  openDesktopComponents,
-} from './desktop-components-action.js';
+import { isDesktopComponentsAvailable, openDesktopComponents } from './desktop-components-action.js';
 let questionsUI;
 let imageComposer;
 let projectSorting;
@@ -382,8 +380,7 @@ function renderConfigurationWarning() {
   // hidden: no broken invoke. Opening never auto-installs.
   const componentsAction = $('configuration-components-action');
   if (componentsAction)
-    componentsAction.hidden =
-      state.remote || state.readOnly || !isDesktopComponentsAvailable();
+    componentsAction.hidden = state.remote || state.readOnly || !isDesktopComponentsAvailable();
 }
 $('configuration-provider-action').onclick = () => $('open-provider-settings').click();
 $('configuration-model-action').onclick = () => $('model-picker-button').click();
@@ -1321,7 +1318,11 @@ function renderMessage(m, index) {
     signature = JSON.stringify(m),
     old = messageNodes.get(id);
   if (old?.signature === signature) return old.node;
-  const agent = m.agentMessage || (m.role === 'system' ? parseAgentEnvelope(m.text) : null);
+  const agent =
+    m.agentMessage ||
+    (m.role === 'system' && (!m.customType || m.customType === 'agent_message')
+      ? parseAgentEnvelope(m.text)
+      : null);
   if (agent) {
     const card = el('article', 'message system agent-message');
     card.dataset.messageId = id;
@@ -1813,12 +1814,7 @@ function applyRunEvent(run, e) {
     }
     case 'runtime':
     case 'status':
-      run.statusLabel =
-        e.status === 'compacting'
-          ? tr('ui.optimisation_du_contexte')
-          : e.status === 'retrying'
-            ? tr('ui.nouvelle_tentative_en_cours')
-            : tr('ui.l_agent_travaille');
+      applyRuntimeStatus(run, e, tr);
       break;
     case 'replay_truncated':
       if (state.viewRunId === run.id)
@@ -2592,9 +2588,7 @@ function openSessionMenu(id, anchor) {
   bindText($('archive-label'), () => (s.archived ? tr('ui.desarchiver') : tr('ui.archiver')));
   const siblings = (
     (s.cwd ? state.projects.find((p) => samePath(p.cwd, s.cwd))?.sessions : null) || []
-  ).filter(
-    (entry) => Boolean(entry.archived) === Boolean(s.archived) && !!entry.pinned === !!s.pinned,
-  );
+  ).filter((entry) => Boolean(entry.archived) === Boolean(s.archived) && !!entry.pinned === !!s.pinned);
   const index = siblings.findIndex((entry) => entry.id === id);
   for (const [action, direction] of [
     ['up', -1],

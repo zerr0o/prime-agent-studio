@@ -36,19 +36,19 @@ Prime Agent Studio brings your **local Prime Agent sessions** together in a Wind
 - **Stay on course**: a Roadmap shared with agents, right beside conversations.
 - **Work from anywhere**: the same Studio on a Windows PC and on your phone, over Wi-Fi or beyond.
 
-**Version 3.6.1** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.6.1/Prime-Agent-Studio_3.6.1_x64-setup.exe) · [Release history](docs/en/changelog.md).
+**Version 3.7.0-beta.1** · [Download the Windows x64 beta installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.0-beta.1/Prime-Agent-Studio_3.7.0-beta.1_x64-setup.exe) · [Release history](docs/en/changelog.md).
 
 ## Quick start
 
 ### Windows application
 
 1. Download the [Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/latest), install it, then open **Prime Agent Studio** from your desktop or Start menu. Node.js is included.
-2. At first launch, choose **Install missing components** (Prime Agent **0.9.4**, private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
+2. At first launch, choose **Install missing components** (Prime Agent **0.9.5**, private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
 3. Configure your provider, add a project folder with **+**, then write your request. [Full guide](docs/en/desktop.md).
 
 Updates are signed for Tauri; the installer does not yet carry a Windows Authenticode signature.
 
-**After updating:** the application can keep using the previous server while agents finish. Once they have finished, use **Preferences → Updates → Restart server** in the Windows application to activate 3.6.1. [Update guide](docs/en/desktop.md#data-and-updates).
+**After updating:** the application can keep using the previous server while agents finish. Once they have finished, use **Preferences → Updates → Restart server** in the Windows application to activate the installed update. [Update guide](docs/en/desktop.md#data-and-updates).
 
 <details>
 <summary><strong>From source</strong></summary>
@@ -188,7 +188,7 @@ Search for a model by **name, provider or identifier**. Favorites stay at the to
   <img src="docs/screenshots/en/desktop-models.png" width="560" alt="Desktop model selector with search, favorites and Prime Agent automatic choice.">
 </p>
 
-**New session** reuses the default main model, configurable on the PC with the same selector. With Prime Agent **0.9.4**, the **Subagents** area defines global values; for a specific project, choose **This project** at the top of the **Agents** tab, even before the first message. Each value can inherit from its parent, and already-created subagents keep their settings.
+**New session** reuses the default main model, configurable on the PC with the same selector. With Prime Agent **0.9.5**, the **Subagents** area defines global values; for a specific project, choose **This project** at the top of the **Agents** tab, even before the first message. Each value can inherit from its parent, and already-created subagents keep their settings.
 
 ![New desktop conversation: default main model and subagent settings available in the Agents tab before the first message.](docs/screenshots/en/desktop-new-conversation-agents.png)
 
@@ -266,7 +266,7 @@ The application, built with Tauri 2, opens Studio in a dedicated Windows window 
 
 ![Windows application first launch: component status and guided setup.](docs/screenshots/en/desktop-startup.png)
 
-Builds with guided setup pair Studio 3.6.1 with **Prime Agent 0.9.4**, **npm 10.9.4** and **uv 0.8.22**, with Python 3.11. Archives are checked against their inventories and hashes before validation; no automatically detected external component runs without your explicit choice. Components live in the data folder, under `engine/`, with Python kernels in `.local`.
+In the current source tree, guided setup pairs Studio with **Prime Agent 0.9.5**, **npm 10.9.4** and **uv 0.8.22**, with Python 3.11. Archives are checked against their inventories and hashes before validation; no automatically detected external component runs without your explicit choice. Components live in the data folder, under `engine/`, with Python kernels in `.local`.
 
 ![Updates in the Windows application: installed version, active server and restart after runs.](docs/screenshots/en/desktop-updates.png)
 

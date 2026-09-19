@@ -11,9 +11,16 @@ export default function studioKnowledge(pi) {
   if (!configuration) return;
   const config = JSON.parse(configuration);
 
+  function timersFor(ctx) {
+    if (ctx && typeof ctx.setTimeout === 'function' && typeof ctx.clearTimeout === 'function')
+      return { setTimeout: ctx.setTimeout.bind(ctx), clearTimeout: ctx.clearTimeout.bind(ctx) };
+    return { setTimeout, clearTimeout };
+  }
+
   function request(action, params, signal, ctx) {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) return reject(new Error('Knowledge lookup cancelled.'));
+      const timers = timersFor(ctx);
       const child = spawn(process.execPath, [worker], {
         cwd: ctx.cwd,
         // The reader needs only Node and an explicit configuration over stdin.
@@ -29,7 +36,7 @@ export default function studioKnowledge(pi) {
       const finish = (error, result) => {
         if (finished) return;
         finished = true;
-        clearTimeout(timer);
+        timers.clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
         if (error) {
           child.kill();
@@ -37,7 +44,7 @@ export default function studioKnowledge(pi) {
         } else resolve({ content: [{ type: 'text', text: JSON.stringify(result) }], details: { action } });
       };
       const cancel = () => finish(new Error('Knowledge lookup cancelled.'));
-      const timer = setTimeout(() => finish(new Error('Knowledge lookup timed out. Please retry.')), 45000);
+      const timer = timers.setTimeout(() => finish(new Error('Knowledge lookup timed out. Please retry.')), 45000);
       signal?.addEventListener('abort', cancel, { once: true });
       child.on('error', finish);
       child.stdin.on('error', (error) => finish(error));

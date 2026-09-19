@@ -32,7 +32,7 @@ A plan’s notes and short journal provide result context without copying the co
 
 ## Tools available to agents
 
-New Studio runs and their subagents receive six tools through Prime Agent 0.9.4’s native extension mechanism. No engine fork is required.
+New Studio runs and their subagents receive six tools through Prime Agent 0.9.5’s native extension mechanism. No engine fork is required.
 
 | Tool                | Purpose                                                                                                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |

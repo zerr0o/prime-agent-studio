@@ -8,6 +8,8 @@ The panel button at the top right of the chat opens the workspace. It stays besi
 
 Find the project, session status, active runs and conversation export. Tracking distinguishes response generation, tool execution, context compaction and waiting for subagents.
 
+Chat status also distinguishes a usage-limit wait, an unavailable provider and use of the backup model selected in preferences. These indicators follow engine events; they change neither the selected model nor recovery limits.
+
 Usage adds up Prime Agent’s recorded data on the conversation’s current branch: input, output and cached tokens. Estimated cost appears only when the engine provides it; it does not represent your subscription bill. These totals cover the main agent, not all of its delegations.
 
 ## Agents
@@ -18,11 +20,13 @@ At the top of the tab, **Project subagents** uses shared defaults from desktop p
 
 The main agent and its subagents appear in their hierarchy, with their model, **reasoning level**, status and latest available summary. The level comes from the active session or changes recorded on its current branch, never from Studio’s defaults. **Not specified** indicates missing data in an older session. Click a card to read its conversation, then use **Refresh** to retrieve the latest messages.
 
+Notes sent through `rlm.progress_note(...)` appear on the subagent card alongside its last activity when the engine provides these values. Activity age uses the engine’s active-time measurement: putting the PC to sleep does not make agents appear inactive. While a tool executes, Studio does not infer inactivity from its duration. Notes are plain text, not success verdicts.
+
 During a run launched by Studio, the list refreshes every few seconds while the panel is visible. An agent that completed one task may work again: its current activity takes priority over an older “done” status.
 
 Outside a run, Studio displays delegations retained in Prime Agent’s native registry. **History** means exchanges were found but the agent’s current status is unknown. Some older sessions no longer have registered delegations. An unavailable tracking indicator triggers no restart.
 
-Tracking uses Prime Agent **0.9.2**’s protocol. Viewing a card does not resume, stop or detach the agent. The list shows up to 200 subagents and each preview the latest 150 messages; internal reasoning is not expanded in that preview.
+Tracking uses Prime Agent **0.9.5**’s protocol. Viewing a card does not resume, stop or detach the agent. The list shows up to 200 subagents and each preview the latest 150 messages; internal reasoning is not expanded in that preview.
 
 ## Files
 
