@@ -46,7 +46,14 @@ export async function importLegacyData(sourceRoot, dataDir) {
 }
 
 export async function startDesktop(
-  { resourceDir = resources, dataRoot, port = 3088, legacyRoot, env = process.env, allowUnconfigured = false },
+  {
+    resourceDir = resources,
+    dataRoot,
+    port = 3088,
+    legacyRoot,
+    env = process.env,
+    allowUnconfigured = false,
+  },
   deps = {},
 ) {
   port = parsePort(port);
@@ -55,8 +62,20 @@ export async function startDesktop(
   const probe = deps.probe || probeHealth;
   const initial = await probe(port);
   // Reuse even a source-launched Studio: no import, restart, or configuration write while it is active.
-  if (initial.state === 'ready')
-    return { port, reused: true, pid: initial.health.pid, version: initial.health.version };
+  const reused = async (health) => {
+    // Read-only metadata, no engine probe or download on warm reuse.
+    const manifest = await readFile(join(resourceDir, 'desktop-resource.json'), 'utf8')
+      .then(JSON.parse)
+      .catch(() => null);
+    return {
+      port,
+      reused: true,
+      pid: health.pid,
+      version: health.version,
+      ...(manifest?.version && manifest.version !== health.version ? { showUpdates: true } : {}),
+    };
+  };
+  if (initial.state === 'ready') return reused(initial.health);
   if (initial.state !== 'absent')
     throw new Error(
       'Le port du Studio est occupé par un autre service. / Studio port is occupied by another service.',
@@ -74,8 +93,7 @@ export async function startDesktop(
   const release = await acquireLock({ lock: join(dataRoot, 'desktop-setup.lock') });
   try {
     const current = await probe(port);
-    if (current.state === 'ready')
-      return { port, reused: true, pid: current.health.pid, version: current.health.version };
+    if (current.state === 'ready') return reused(current.health);
     if (current.state !== 'absent')
       throw new Error('Le port du Studio est occupé. / Studio port is occupied.');
     const manifest = JSON.parse(await readFile(join(resourceDir, 'desktop-resource.json'), 'utf8'));

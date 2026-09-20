@@ -1,26 +1,53 @@
 import { t as tr } from './i18n.js';
-
-// Shared safe action for opening the desktop application component settings.
-// Contract (coordinated with native sibling): invoke('desktop_components_open')
-// with no arguments. The native side only opens the settings window; it never
-// auto-installs. Installation still needs an explicit user click in app settings.
 export function isDesktopComponentsAvailable() {
+  return window.__PRIME_STUDIO_DESKTOP__ === true && typeof window.__TAURI__?.core?.invoke === 'function';
+}
+export function isNewComponentsBridgeAvailable() {
   return (
+    window.__PRIME_STUDIO_COMPONENTS__ === true &&
     window.__PRIME_STUDIO_DESKTOP__ === true &&
     typeof window.__TAURI__?.core?.invoke === 'function'
   );
 }
-
 let componentsOpening = false;
-
-export async function openDesktopComponents({ toast } = {}) {
-  // Desktop-only native functionality. Browser/mobile fallback stays
-  // explanatory: toast the existing components note, never a broken invoke.
+let updatesOpener = null;
+export function registerDesktopComponentsOpener(fn) {
+  updatesOpener = typeof fn === 'function' ? fn : null;
+}
+export function openUpdatesPane() {
+  if (typeof updatesOpener === 'function') {
+    try {
+      const result = updatesOpener();
+      if (result && typeof result.then === 'function') void result.catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const dialog = document.getElementById('settings-dialog');
+    const tab = document.getElementById('settings-tab-updates');
+    if (!dialog || !tab) return false;
+    if (!dialog.open) dialog.showModal();
+    tab.click();
+    tab.focus({ preventScroll: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+export async function openDesktopComponents(opts) {
+  const toast = opts && opts.toast;
+  if (isNewComponentsBridgeAvailable()) {
+    const opened = openUpdatesPane();
+    if (opened) return true;
+    if (typeof toast === 'function') toast(tr('settings.components_note'));
+    return false;
+  }
   if (!isDesktopComponentsAvailable()) {
     if (typeof toast === 'function') toast(tr('settings.components_note'));
     return false;
   }
-  // Single-flight: rapid clicks share one native open, never concurrent.
   if (componentsOpening) return false;
   componentsOpening = true;
   try {

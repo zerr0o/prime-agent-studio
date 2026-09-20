@@ -2,7 +2,12 @@ import { t as tr, translateKnown, translateDOM, onLanguageChange, bindText } fro
 import { createDesktopUpdates } from './desktop-updates.js';
 import { createInteractionSettings } from './interaction-settings.js';
 import { createEngineSettings } from './engine-settings.js';
-import { isDesktopComponentsAvailable, openDesktopComponents } from './desktop-components-action.js';
+import {
+  isDesktopComponentsAvailable,
+  isNewComponentsBridgeAvailable,
+  openDesktopComponents,
+  registerDesktopComponentsOpener,
+} from './desktop-components-action.js';
 
 export function createSettings({
   api,
@@ -11,12 +16,16 @@ export function createSettings({
   copyText,
   toast,
   onStudioPreferences = () => {},
+  getModels,
+  openModelPicker,
+  icon,
 }) {
   const updates = createDesktopUpdates({ api, getContext });
   const interactions = createInteractionSettings({ api, getContext, onStudioPreferences });
-  const engineSettings = createEngineSettings({ api, getContext });
+  const engineSettings = createEngineSettings({ api, getContext, getModels, openModelPicker, icon });
   const $ = (id) => document.getElementById(id);
-  if (isDesktopComponentsAvailable()) {
+  const showLegacyComponentsRow = isDesktopComponentsAvailable() && !isNewComponentsBridgeAvailable();
+  if (showLegacyComponentsRow) {
     $('settings-components-row').hidden = false;
     $('settings-components').onclick = () => void openDesktopComponents({ toast });
   }
@@ -65,7 +74,10 @@ export function createSettings({
         tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
     if (id === 'remote' && !getContext().remote) void refreshNetwork();
-    if (id === 'system') void refreshSystem();
+    if (id === 'system') {
+      void refreshSystem();
+      void refreshAutostart();
+    }
     if (id === 'updates') void updates.refresh();
     if (id === 'models') {
       void interactions.refreshDefault();
@@ -501,6 +513,57 @@ export function createSettings({
       if (turn === generation) error('settings-system-error', e.message);
     }
   }
+  function isAutostartAvailable() {
+    try {
+      const context = getContext();
+      if (context?.remote === true || context?.readOnly === true) return false;
+    } catch {
+      return false;
+    }
+    return isNewComponentsBridgeAvailable();
+  }
+  async function refreshAutostart() {
+    const row = $('settings-autostart-row');
+    const input = $('settings-autostart');
+    if (!row || !input) return;
+    if (!isAutostartAvailable()) {
+      row.hidden = true;
+      return;
+    }
+    row.hidden = false;
+    input.disabled = true;
+    try {
+      const state = await window.__TAURI__.core.invoke('desktop_state');
+      if (typeof state?.autostart === 'boolean') input.checked = state.autostart;
+      error('settings-system-error');
+    } catch {
+      // Keep last value; a dedicated message appears only on explicit change failure.
+    } finally {
+      input.disabled = false;
+    }
+  }
+  const autostartInput = $('settings-autostart');
+  if (autostartInput) {
+    autostartInput.onchange = async () => {
+      if (!isAutostartAvailable()) {
+        $('settings-autostart').checked = !$('settings-autostart').checked;
+        return;
+      }
+      const input = $('settings-autostart');
+      const wanted = input.checked;
+      input.disabled = true;
+      error('settings-system-error');
+      try {
+        await window.__TAURI__.core.invoke('desktop_autostart', { enabled: wanted });
+        error('settings-system-error');
+      } catch (e) {
+        input.checked = !wanted;
+        error('settings-system-error', e?.message || 'settings.autostart_error');
+      } finally {
+        input.disabled = false;
+      }
+    };
+  }
   $('settings-copy-diagnostics').onclick = async () => {
     await refreshSystem();
     if (system)
@@ -534,6 +597,29 @@ export function createSettings({
     if (dialog.open && selected === 'system') void refreshSystem();
   });
   translateDOM(dialog);
+  const openUpdatesPane = (focus) => {
+    if (!dialog.open) dialog.showModal();
+    select('updates', Boolean(focus));
+  };
+  const openComponentPanel = () => {
+    openUpdatesPane(false);
+    const reveal = () => {
+      try {
+        const panel = document.getElementById('studio-update-components');
+        const heading = document.getElementById('studio-update-components-heading');
+        if (panel && !panel.hidden) panel.scrollIntoView({ block: 'start' });
+        if (heading) heading.focus({ preventScroll: true });
+      } catch {}
+    };
+    // One layout frame after revealing the tab; never steal focus again later.
+    requestAnimationFrame(() => {
+      if (dialog.open && selected === 'updates') reveal();
+    });
+  };
+  registerDesktopComponentsOpener(() => openComponentPanel());
+  try {
+    window.__PRIME_STUDIO_OPEN_UPDATES__ = () => openComponentPanel();
+  } catch {}
   if (new URLSearchParams(location.search).get('settings') === 'updates') {
     selected = 'updates';
     dialog.showModal();
@@ -541,5 +627,7 @@ export function createSettings({
     url.searchParams.delete('settings');
     history.replaceState(null, '', url);
   }
-  return { open: () => dialog.showModal() };
+  // Refresh autostart visibility once context is known, without overriding the system tab state.
+  void refreshAutostart().catch(() => {});
+  return { open: () => dialog.showModal(), openUpdates: () => openUpdatesPane(false), updates };
 }

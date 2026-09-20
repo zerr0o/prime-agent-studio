@@ -228,6 +228,25 @@
             Configurer les composants
           </button>
         </div>
+        <div id="update-banner" class="update-banner" role="status" hidden>
+          <span id="update-banner-text"></span>
+          <button
+            id="update-banner-action"
+            type="button"
+            class="secondary-button"
+            data-i18n="components.banner_action"
+          >
+            Ouvrir les mises à jour
+          </button>
+          <button
+            id="update-banner-dismiss"
+            type="button"
+            class="secondary-button"
+            data-i18n="components.banner_dismiss"
+          >
+            Plus tard
+          </button>
+        </div>
         <div class="workspace-body">
           <section class="conversation-column" aria-label="Conversation">
             <div id="conversation-scroll" class="conversation-scroll" tabindex="-1">
@@ -1513,6 +1532,13 @@
                 Configurer
               </button>
             </div>
+            <div class="settings-row" id="settings-autostart-row" hidden>
+              <div>
+                <label for="settings-autostart" data-i18n="settings.autostart">Démarrer avec Windows</label>
+                <p data-i18n="settings.autostart_note"></p>
+              </div>
+              <input id="settings-autostart" class="switch" type="checkbox" role="switch" />
+            </div>
             <p id="settings-system-error" class="form-error" role="alert" hidden></p>
             <div class="settings-row">
               <div>
@@ -1614,6 +1640,61 @@
                   data-i18n="updates.restart"
                   disabled
                 ></button>
+              </div>
+              <div id="studio-update-components" class="update-components" hidden>
+                <h4 id="studio-update-components-heading" tabindex="-1" data-i18n="components.title">
+                  Composants Prime Agent
+                </h4>
+                <p id="studio-update-components-recommendation" class="settings-footnote"></p>
+                <ul id="studio-update-components-list" class="component-chips" aria-live="polite"></ul>
+                <h5 class="components-subtitle" data-i18n="components.prep_title">Préparation</h5>
+                <p
+                  id="studio-update-components-status"
+                  class="update-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+                <progress id="studio-update-components-progress" max="100" hidden></progress>
+                <p id="studio-update-components-error" class="form-error" role="alert" hidden></p>
+                <div class="update-actions">
+                  <button
+                    id="studio-update-components-check"
+                    class="secondary-button"
+                    data-i18n="components.check"
+                  ></button>
+                  <button
+                    id="studio-update-components-install"
+                    class="primary-button"
+                    data-i18n="components.install"
+                  ></button>
+                  <button
+                    id="studio-update-components-cancel"
+                    class="secondary-button"
+                    data-i18n="components.cancel"
+                    hidden
+                  ></button>
+                  <button
+                    id="studio-update-components-toggle"
+                    class="secondary-button"
+                    data-i18n="components.show_details"
+                    aria-expanded="false"
+                    aria-controls="studio-update-components-details"
+                  ></button>
+                </div>
+                <div id="studio-update-components-details" hidden>
+                  <ul id="studio-update-components-detail-list" class="component-details"></ul>
+                </div>
+                <h5 class="components-subtitle" data-i18n="components.activation_title">Activation</h5>
+                <p id="studio-update-components-activation-note" class="settings-footnote"></p>
+                <p id="studio-update-components-server-note" class="settings-footnote"></p>
+                <div class="update-actions">
+                  <button
+                    id="studio-update-components-apply"
+                    class="secondary-button"
+                    data-i18n="components.apply"
+                    hidden
+                  ></button>
+                </div>
               </div>
             </div>
             <p id="studio-update-error" class="form-error" role="alert" hidden></p>

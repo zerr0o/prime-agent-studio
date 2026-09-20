@@ -145,3 +145,16 @@ test('real detached restart preserves workspace data and changes resource genera
   assert.notEqual((await probeHealth(f.options.port)).health.pid, before.health.pid);
   assert.equal(await readFile(join(dataDir, 'workspace.json'), 'utf8'), workspace);
 });
+
+test('an app upgrade cannot stop the old server before required components are ready', async (t) => {
+  const f = await fixture(t);
+  f.options.allowUnconfigured = false;
+  f.deps.quickReceipt = async () => ({ ok: false, reason: 'version_changed' });
+  const held = await restartDesktop({ ...f.options, force: true }, f.deps);
+  assert.equal(held.restarted, false);
+  assert.equal(held.reason, 'components_required');
+  assert.deepEqual(f.counts(), [0, 0]);
+  f.deps.quickReceipt = async () => ({ ok: true });
+  assert.equal((await restartDesktop(f.options, f.deps)).restarted, true);
+  assert.deepEqual(f.counts(), [1, 1]);
+});

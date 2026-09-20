@@ -1,9 +1,11 @@
 import { t, bindText, onLanguageChange } from './i18n.js';
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
+import { createDesktopComponentsPanel } from './desktop-components.js';
 
 export function createDesktopUpdates({ api, getContext }) {
   const $ = (id) => document.getElementById('studio-update-' + id);
+  const componentsPanel = createDesktopComponentsPanel({ getContext });
   const core = window.__PRIME_STUDIO_DESKTOP__ === true && window.__TAURI__?.core;
   let busy = false,
     snapshot,
@@ -18,6 +20,7 @@ export function createDesktopUpdates({ api, getContext }) {
   const failure = (error) => {
     $('error').hidden = !error;
     const key = [
+      'components_required',
       'server_not_managed',
       'server_port_occupied',
       'server_version_mismatch',
@@ -218,8 +221,10 @@ export function createDesktopUpdates({ api, getContext }) {
     $('native').hidden = !native;
     if (!native) {
       if (getContext().remote) await refreshRemote();
+      else void componentsPanel.refresh().catch(() => {});
       return;
     }
+    void componentsPanel.refresh().catch(() => {});
     try {
       snapshot = await core.invoke('desktop_update_status');
       $('app-version').textContent = snapshot.appVersion;
@@ -333,13 +338,26 @@ export function createDesktopUpdates({ api, getContext }) {
       }
       status('updates.restarting');
       const result = await core.invoke('desktop_server_restart', { force });
-      if (result.reason === 'agents_running') {
+      if (result.reason === 'components_required' || result.activationError === 'components_required') {
+        status('updates.components_required');
+        failure('components_required');
+        void componentsPanel.refresh().catch(() => {});
+        await refresh();
+      } else if (result.reason === 'agents_running') {
         status('updates.agents_changed');
         await refresh();
       } else if (result.restarted) status('updates.restarted');
     } catch (error) {
-      failure(error);
-      status('updates.idle');
+      const code = String(error?.message || error);
+      if (code === 'components_required') {
+        status('updates.components_required');
+        failure('components_required');
+        void componentsPanel.refresh().catch(() => {});
+        await refresh().catch(() => {});
+      } else {
+        failure(error);
+        status('updates.idle');
+      }
     } finally {
       busy = false;
       controls();
@@ -354,5 +372,11 @@ export function createDesktopUpdates({ api, getContext }) {
     if (!$('native').hidden) void refresh().catch(() => {});
     else if (!$('remote').hidden) void refreshRemote().catch(() => {});
   });
-  return { refresh: () => refresh().catch(() => {}) };
+  return {
+    refresh: () => {
+      void refresh().catch(() => {});
+      void componentsPanel.refresh().catch(() => {});
+    },
+    components: componentsPanel,
+  };
 }

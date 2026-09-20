@@ -435,6 +435,10 @@ export const messages = {
     fr: 'Une opération est déjà en cours. Patientez avant de réessayer.',
     en: 'An operation is already in progress. Wait before trying again.',
   },
+  'updates.components_required': {
+    fr: 'La version requise du moteur n’est pas prête. Préparez-la dans le panneau des composants ci-dessous avant de redémarrer.',
+    en: 'The required engine version is not ready. Prepare it in the components panel below before restarting.',
+  },
   'updates.failed': {
     fr: 'L’opération n’a pas abouti. Réessayez ou consultez les journaux de l’application.',
     en: 'The operation did not complete. Try again or check the application logs.',
@@ -5326,7 +5330,10 @@ export const messages = {
     en: 'Choose a .pastudio file, review the preview, then confirm into this project.',
   },
   'archives.import_confirm': { fr: 'Importer', en: 'Import' },
-  'archives.import_done': { fr: 'Archive importée dans ce projet.', en: 'Archive imported into this project.' },
+  'archives.import_done': {
+    fr: 'Archive importée dans ce projet.',
+    en: 'Archive imported into this project.',
+  },
   'archives.import_failed': { fr: 'L’import de l’archive a échoué.', en: 'Archive import failed.' },
   'archives.destination': { fr: 'Destination : {name}', en: 'Destination: {name}' },
   'archives.preview_source': { fr: 'Source : {name}', en: 'Source: {name}' },
@@ -5340,7 +5347,10 @@ export const messages = {
     fr: 'Cette archive est déjà importée dans ce projet. Confirmer ne dupliquera rien.',
     en: 'This archive is already imported into this project. Confirming will not duplicate anything.',
   },
-  'archives.warn_additive': { fr: 'Import additif : rien n’est écrasé.', en: 'Additive import: nothing is overwritten.' },
+  'archives.warn_additive': {
+    fr: 'Import additif : rien n’est écrasé.',
+    en: 'Additive import: nothing is overwritten.',
+  },
   'archives.warn_no_overwrite': {
     fr: 'Les sessions et la Roadmap existantes sont conservées.',
     en: 'Existing sessions and Roadmap are kept.',
@@ -5470,5 +5480,190 @@ export const messages = {
   'server.budget_autonome_invalide': {
     fr: 'Budget autonome invalide : entier positif ou « unlimited ».',
     en: 'Invalid autonomous budget: positive integer or “unlimited”.',
+  },
+  'components.title': { fr: 'Composants Prime Agent', en: 'Prime Agent components' },
+  'components.prep_title': { fr: 'Préparation', en: 'Preparation' },
+  'components.activation_title': { fr: 'Activation', en: 'Activation' },
+  'components.check': { fr: 'Vérifier', en: 'Check' },
+  'components.install': { fr: 'Installer la version requise', en: 'Install required version' },
+  'components.cancel': { fr: 'Annuler', en: 'Cancel' },
+  'components.apply': { fr: 'Activer sans interrompre', en: 'Activate without interrupting' },
+  'components.show_details': { fr: 'Détails', en: 'Details' },
+  'components.hide_details': { fr: 'Masquer les détails', en: 'Hide details' },
+  'components.name_engine': { fr: 'Prime Agent', en: 'Prime Agent' },
+  'components.name_uv': { fr: 'uv', en: 'uv' },
+  'components.name_python': { fr: 'Python', en: 'Python' },
+  'components.name_node': { fr: 'Node (Studio)', en: 'Node (Studio)' },
+  'components.name_npm': { fr: 'npm', en: 'npm' },
+  'components.name_bash': { fr: 'Git Bash', en: 'Git Bash' },
+  'components.name_studio': { fr: 'Studio', en: 'Studio' },
+  'components.recommendation_check': {
+    fr: 'Vérifiez les composants pour voir la version requise.',
+    en: 'Check components to see the required version.',
+  },
+  'components.recommendation_update': {
+    fr: 'Moteur {installed} installé, version {required} requise. Installez la version proposée après accord explicite.',
+    en: 'Engine {installed} installed, version {required} required. Install the proposed version after explicit approval.',
+  },
+  'components.recommendation_required': {
+    fr: 'Cette version du Studio nécessite le moteur {required}. L’installation demande votre accord explicite.',
+    en: 'This Studio version requires engine {required}. Installation needs your explicit approval.',
+  },
+  'components.recommendation_current': {
+    fr: 'Moteur {required} prêt.',
+    en: 'Engine {required} ready.',
+  },
+  'components.status_checking': {
+    fr: 'Lecture de l’état des composants…',
+    en: 'Reading component status…',
+  },
+  'components.status_diagnosing': { fr: 'Vérification des composants…', en: 'Checking components…' },
+  'components.status_installing': { fr: 'Préparation des composants…', en: 'Preparing components…' },
+  'components.status_applying': {
+    fr: 'Activation sans interruption…',
+    en: 'Activating without interruption…',
+  },
+  'components.status_ready': { fr: 'Composants prêts.', en: 'Components ready.' },
+  'components.status_not_ready': {
+    fr: 'Des composants demandent votre attention ci-dessous.',
+    en: 'Some components need your attention below.',
+  },
+  'components.status_idle': {
+    fr: 'Vérifiez les composants pour voir la version requise.',
+    en: 'Check components to see the required version.',
+  },
+  'components.state_ready': { fr: 'Validé', en: 'Validated' },
+  'components.state_missing': { fr: 'Manquant', en: 'Missing' },
+  'components.state_error': { fr: 'À configurer', en: 'Needs setup' },
+  'components.state_pending': { fr: 'À vérifier après le moteur', en: 'Check after engine setup' },
+  'components.state_not_required': { fr: 'Non nécessaire', en: 'Not needed' },
+  'components.stage_download': { fr: 'Téléchargement', en: 'Downloading' },
+  'components.stage_verify': { fr: 'Vérification de l’empreinte', en: 'Verifying checksum' },
+  'components.stage_install': { fr: 'Installation', en: 'Installing' },
+  'components.stage_python': { fr: 'Préparation de Python et des skills', en: 'Preparing Python and skills' },
+  'components.stage_validation': { fr: 'Validation des intégrations', en: 'Validating integrations' },
+  'components.stage_opening': { fr: 'Ouverture du Studio', en: 'Opening Studio' },
+  'components.stage_server_update_pending': {
+    fr: 'Mise à jour du serveur en attente',
+    en: 'Server update pending',
+  },
+  'components.stage_error': { fr: 'Échec', en: 'Failed' },
+  'components.progress_bytes': { fr: 'octets reçus', en: 'bytes received' },
+  'components.activation_hint': {
+    fr: 'La préparation et l’activation sont séparées. L’activation ne force jamais l’arrêt des agents.',
+    en: 'Preparation and activation are separate. Activation never force-stops agents.',
+  },
+  'components.activation_deferred': {
+    fr: 'Préparation enregistrée. Activation différée : attendez la fin des agents puis utilisez Activer sans interrompre. Un serveur externe doit être arrêté depuis son lanceur.',
+    en: 'Preparation saved. Activation deferred: wait for agents to finish, then use Activate without interrupting. Stop an external server through its own launcher.',
+  },
+  'components.activation_active': {
+    fr: 'Activation appliquée. Le serveur utilise la version installée.',
+    en: 'Activation applied. The server is using the installed version.',
+  },
+  'components.activation_failed': { fr: 'L’activation n’a pas abouti.', en: 'Activation did not complete.' },
+  'components.activation_busy': {
+    fr: '{count} exécution en cours. L’activation attendra leur fin et ne les interrompra pas.',
+    en: '{count} active run. Activation will wait and will not interrupt it.',
+  },
+  'components.activation_restart_needed': {
+    fr: 'Un redémarrage doux est nécessaire pour utiliser la version installée. Il n’interrompra pas les agents en cours.',
+    en: 'A gentle restart is needed to use the installed version. It will not interrupt running agents.',
+  },
+  'components.server_version': { fr: 'Serveur Studio : {version}', en: 'Studio server: {version}' },
+  'components.active_engine': { fr: 'Moteur actif : {version}', en: 'Active engine: {version}' },
+  'components.server_busy': { fr: '{count} exécution en cours', en: '{count} active run' },
+  'components.server_idle': { fr: 'Aucune exécution en cours.', en: 'No active runs.' },
+  'components.error_validation_failed': {
+    fr: 'La validation des composants n’a pas abouti. Vérifiez l’état ci-dessus puis réessayez.',
+    en: 'Component validation did not complete. Check the status above, then try again.',
+  },
+  'components.error_server_validation_failed': {
+    fr: 'Le serveur n’a pas pu être vérifié après la préparation. Consultez les journaux du Studio puis réessayez.',
+    en: 'The server could not be verified after preparation. Check the Studio logs, then try again.',
+  },
+  'components.error_version_mismatch': {
+    fr: 'La version active ne correspond pas à la version installée. Utilisez Activer sans interrompre quand les agents auront terminé.',
+    en: 'The running version does not match the installed version. Use Activate without interrupting once agents finish.',
+  },
+  'components.error_not_managed': {
+    fr: 'Ce serveur dépend d’un autre lanceur. Arrêtez-le depuis celui-ci ; aucun processus n’a été arrêté.',
+    en: 'This server belongs to another launcher. Stop it through that launcher; no process was stopped.',
+  },
+  'components.error_port_occupied': {
+    fr: 'Le port du Studio semble occupé. Vérifiez les autres services sur ce PC puis réessayez.',
+    en: 'The Studio port seems busy. Check other services on this PC, then try again.',
+  },
+  'components.error_setup_busy': {
+    fr: 'Une préparation est déjà en cours. Patientez puis réessayez.',
+    en: 'A preparation is already in progress. Wait, then try again.',
+  },
+  'components.error_network': {
+    fr: 'Le téléchargement semble avoir échoué. Vérifiez la connexion réseau puis réessayez ; aucun composant altéré n’est activé.',
+    en: 'The download seems to have failed. Check the network connection, then try again; no altered component is activated.',
+  },
+  'components.error_checksum': {
+    fr: 'L’intégrité du téléchargement n’a pas pu être confirmée. Aucun composant altéré n’est activé ; réessayez.',
+    en: 'The download integrity could not be confirmed. No altered component was activated; try again.',
+  },
+  'components.error_disk': {
+    fr: 'L’espace disque semble insuffisant. Libérez de l’espace dans le dossier de données puis réessayez.',
+    en: 'Disk space seems low. Free space in the data folder, then try again.',
+  },
+  'components.error_write': {
+    fr: 'L’écriture dans le dossier de préparation semble refusée. Vérifiez ses autorisations puis réessayez.',
+    en: 'Writing to the setup folder seems denied. Check its permissions, then try again.',
+  },
+  'components.error_explicit': {
+    fr: 'Le chemin configuré explicitement semble invalide ou incompatible. Corrigez la variable d’environnement ou choisissez une autre installation.',
+    en: 'The explicitly configured path seems invalid or incompatible. Correct the environment variable or choose another installation.',
+  },
+  'components.error_bash': {
+    fr: 'Git Bash semble requis pour les commandes shell. Installez Git pour Windows puis vérifiez à nouveau.',
+    en: 'Git Bash seems required for shell commands. Install Git for Windows, then check again.',
+  },
+  'components.error_unsupported': {
+    fr: 'Cette préparation demande Windows x64 et le Node compatible fourni avec le Studio.',
+    en: 'Setup requires Windows x64 and the compatible Node supplied with Studio.',
+  },
+  'components.error_engine_version': {
+    fr: 'Cette version du Studio demande le moteur indiqué ci-dessus avec ses modules complets. Installez la version proposée ou choisissez un paquet compatible.',
+    en: 'This Studio version requires the engine shown above with its complete modules. Install the proposed version or select a compatible package.',
+  },
+  'components.error_cancelled': {
+    fr: 'Préparation annulée. Vous pouvez réessayer.',
+    en: 'Preparation cancelled. You can try again.',
+  },
+  'components.error_preparation': {
+    fr: 'La préparation n’a pas abouti. Réessayez ; les composants déjà validés sont conservés.',
+    en: 'Preparation did not complete. Try again; already validated components are kept.',
+  },
+  'components.error_components_required': {
+    fr: 'La version requise du moteur n’est pas prête. Préparez-la dans le panneau des composants avant de redémarrer ; aucun serveur en cours n’a été arrêté.',
+    en: 'The required engine version is not ready. Prepare it in the components panel before restarting; no running server was stopped.',
+  },
+  'components.banner_text': {
+    fr: 'Moteur {installed} actif, version {required} requise. Ouvrez les mises à jour pour préparer la version requise.',
+    en: 'Engine {installed} running, version {required} required. Open updates to prepare the required version.',
+  },
+  'components.banner_activate_text': {
+    fr: 'Moteur {required} préparé, activation en attente. Ouvrez les mises à jour pour activer sans interrompre.',
+    en: 'Engine {required} prepared, activation pending. Open updates to activate without interrupting.',
+  },
+  'components.banner_engine_missing': {
+    fr: 'Moteur Prime Agent introuvable. Version {required} requise. Ouvrez les mises à jour pour l’installer.',
+    en: 'Prime Agent engine not found. Version {required} required. Open updates to install it.',
+  },
+  'components.banner_unknown': { fr: 'inconnue', en: 'unknown' },
+  'components.banner_action': { fr: 'Ouvrir les mises à jour', en: 'Open updates' },
+  'components.banner_dismiss': { fr: 'Plus tard', en: 'Later' },
+  'settings.autostart': { fr: 'Démarrer avec Windows', en: 'Start with Windows' },
+  'settings.autostart_note': {
+    fr: 'Disponible dès votre connexion, sans ouvrir de fenêtre. Géré depuis le Studio ; le lanceur n’a plus de réglage séparé.',
+    en: 'Ready when you sign in, without opening a window. Managed from Studio; the launcher has no separate setting.',
+  },
+  'settings.autostart_error': {
+    fr: 'Le démarrage avec Windows n’a pas pu être modifié. Réessayez.',
+    en: 'Could not change the start with Windows setting. Try again.',
   },
 };

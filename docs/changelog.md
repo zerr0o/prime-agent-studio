@@ -4,6 +4,16 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.7.0-beta.2
+
+- Composants intégrés aux Préférences, indication du moteur requis et guide après mise à jour de l’application. Secours natif conservé pour un serveur arrêté ou ancien.
+- Préparation et activation distinguées ; composants validés conservés, erreurs d’activation explicites et journalisées, reprise sans retéléchargement.
+- Préparation, mise à jour de l’application et redémarrage sérialisés ; aucun arrêt automatique des agents actifs.
+- Installations externes explicitement validées réactivables sans faux reçu de téléchargement ; contrôles des installations gérées préservés.
+- Modèles avancés unifiés avec le sélecteur commun : recherche, fournisseurs et choix « Défaut du moteur », sans changer le modèle de la conversation.
+- Migration expliquée une seule fois pour les utilisateurs venant d’une version < 3.7.0 : explication FR/EN, préparation puis activation de la version 0.9.5, sans installation ni redémarrage automatiques, comptes et sessions conservés.
+- Conversation : en-tête du message utilisateur en miroir de l’assistant — heure à gauche, « Vous » avec avatar à droite, au-dessus de la carte.
+
 ## 3.7.0-beta.1
 
 - **Packaging guidé** : politique épinglée sur Prime Agent **0.9.5** (npm 10.9.4 et uv 0.8.22 inchangés), avec les trois dépendances `@earendil-works` vérifiées contre le même inventaire officiel.

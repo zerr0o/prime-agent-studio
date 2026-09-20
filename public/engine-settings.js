@@ -1,4 +1,4 @@
-import { t as tr, bindText, translateKnown, onLanguageChange } from './i18n.js';
+import { t as tr, bindText, bindAttribute, translateKnown, onLanguageChange } from './i18n.js';
 
 const AUTONOMOUS_FIELDS = ['maxContinuations', 'maxTurns', 'maxTokens', 'timeoutMs'];
 const MODEL_FIELDS = ['auxiliaryModel', 'providerBackupModel', 'nativeSubagentDefaultModel'];
@@ -22,7 +22,14 @@ function budgetLabel(field) {
   return 'engine.timeout_ms';
 }
 
-export function createEngineSettings({ api, getContext = () => ({}) }) {
+// Advanced engine models use the shared Studio model picker (#model-dialog
+// with search, providers and model info), exactly like the subagent and
+// main-model selectors. There is no native <select> fallback: the host
+// (app.js via settings.js) always wires getModels/openModelPicker/icon.
+// Empty ("Défaut du moteur") means native engine default and is sent as
+// null on save; drafts are never auto-filled and no autonomous mode is
+// implied.
+export function createEngineSettings({ api, getContext = () => ({}), getModels, openModelPicker, icon }) {
   const root = document.getElementById('engine-settings');
   if (!root) return { open: async () => {}, update: () => {} };
   let data = null;
@@ -30,6 +37,8 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
   let busy = false;
   let generation = 0;
   let needsLoad = true;
+  // Unsaved model choices. '' stays '' (clear = native engine default).
+  const drafts = { auxiliaryModel: '', providerBackupModel: '', nativeSubagentDefaultModel: '' };
 
   root.innerHTML = `
     <div class="model-defaults-heading">
@@ -55,9 +64,85 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
   const modelGrid = $('.engine-model-grid');
   const budgetGrid = $('.engine-budget-grid');
 
-  const selects = new Map();
+  const pickerButtons = new Map();
   const budgetInputs = new Map();
   const budgetChecks = new Map();
+
+  function liveModels() {
+    try {
+      const next = typeof getModels === 'function' ? getModels() : null;
+      if (Array.isArray(next) && next.length) return next;
+    } catch {}
+    return catalog.length ? catalog : [];
+  }
+
+  function pickerDisplay(field, models) {
+    const draft = drafts[field] || '';
+    const model = models.find((entry) => entry?.id === draft);
+    const name =
+      model?.name || (draft ? tr('common.unavailable', { value1: draft }) : tr('ui.defaut_du_moteur'));
+    const provider =
+      model?.provider || (draft ? tr('ui.modele_indisponible') : tr('engine.advanced_models_note'));
+    return { draft, model, name, provider };
+  }
+
+  function renderPickerModels() {
+    const models = liveModels();
+    for (const field of MODEL_FIELDS) {
+      const entry = pickerButtons.get(field);
+      if (!entry) continue;
+      const { draft, model, name, provider } = pickerDisplay(field, models);
+      entry.button.value = draft;
+      bindText(entry.nameEl, () => pickerDisplay(field, liveModels()).name);
+      bindText(entry.providerEl, () => pickerDisplay(field, liveModels()).provider);
+      // Immediate text for the current language (bindText refreshes later
+      // language changes without touching drafts).
+      entry.nameEl.textContent = name;
+      entry.providerEl.textContent = provider;
+      bindAttribute(entry.button, 'title', () => draft || tr(fieldNote(field)));
+      bindAttribute(
+        entry.button,
+        'aria-label',
+        () =>
+          `${tr(fieldLabel(field))}: ${pickerDisplay(field, liveModels()).name}${
+            pickerDisplay(field, liveModels()).model ? `, ${draft}` : ''
+          }`,
+      );
+      entry.button.setAttribute('title', draft || tr(fieldNote(field)));
+      entry.button.setAttribute(
+        'aria-label',
+        `${tr(fieldLabel(field))}: ${name}${model ? `, ${draft}` : ''}`,
+      );
+    }
+  }
+
+  function openPicker(field) {
+    if (busy || !data || readOnly()) return;
+    if (typeof openModelPicker !== 'function') return;
+    renderPickerModels();
+    const turn = generation;
+    const entry = pickerButtons.get(field);
+    if (!entry) return;
+    openModelPicker({
+      button: entry.button,
+      value: drafts[field] || '',
+      get title() {
+        return tr(fieldLabel(field));
+      },
+      get defaultLabel() {
+        return tr('ui.defaut_du_moteur');
+      },
+      get defaultDetail() {
+        return tr('engine.advanced_models_note');
+      },
+      onSelect(model) {
+        if (turn !== generation || busy || !data) return;
+        drafts[field] = model || '';
+        renderPickerModels();
+        refreshSave();
+      },
+    });
+  }
 
   for (const field of MODEL_FIELDS) {
     const wrap = document.createElement('div');
@@ -65,18 +150,49 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
     const label = document.createElement('label');
     label.htmlFor = `engine-${field}`;
     label.dataset.i18n = fieldLabel(field);
-    const select = document.createElement('select');
-    select.id = `engine-${field}`;
-    select.dataset.engineModel = field;
+    label.textContent = tr(fieldLabel(field));
+    const button = document.createElement('button');
+    button.id = `engine-${field}`;
+    button.type = 'button';
+    button.className = 'model-picker-button';
+    button.dataset.engineModel = field;
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-controls', 'model-dialog');
+    button.setAttribute('aria-expanded', 'false');
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'subagent-model-icon';
+    iconWrap.setAttribute('aria-hidden', 'true');
+    if (typeof icon === 'function') {
+      try {
+        iconWrap.append(icon('model'));
+      } catch {}
+    }
+    const selection = document.createElement('span');
+    selection.className = 'model-picker-selection';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'model-picker-name';
+    const providerEl = document.createElement('span');
+    providerEl.className = 'model-picker-provider';
+    selection.append(nameEl, providerEl);
+    const chevron = document.createElement('span');
+    chevron.className = 'model-picker-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    if (typeof icon === 'function') {
+      try {
+        chevron.append(icon('chevron'));
+      } catch {}
+    } else {
+      chevron.textContent = '›';
+    }
+    button.append(iconWrap, selection, chevron);
     const note = document.createElement('p');
     note.className = 'model-defaults-note';
     note.dataset.i18n = fieldNote(field);
-    wrap.append(label, select, note);
+    note.textContent = tr(fieldNote(field));
+    wrap.append(label, button, note);
     modelGrid.append(wrap);
-    selects.set(field, select);
-    select.onchange = () => {
-      refreshSave();
-    };
+    pickerButtons.set(field, { button, nameEl, providerEl });
+    button.onclick = () => openPicker(field);
   }
 
   for (const field of AUTONOMOUS_FIELDS) {
@@ -150,7 +266,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
     return data?.[field] || '';
   }
   function modelDirty(field) {
-    return (selects.get(field).value || '') !== storedModel(field);
+    return (drafts[field] || '') !== storedModel(field);
   }
   function budgetDraft(field) {
     if (budgetChecks.get(field).checked) return 'unlimited';
@@ -172,7 +288,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
 
   function applyReadOnly() {
     const locked = readOnly() || busy || !data;
-    for (const select of selects.values()) select.disabled = locked;
+    for (const entry of pickerButtons.values()) entry.button.disabled = locked;
     for (const field of AUTONOMOUS_FIELDS) {
       budgetInputs.get(field).disabled = locked || budgetChecks.get(field).checked;
       budgetChecks.get(field).disabled = locked;
@@ -182,38 +298,8 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
     if (readOnly() && data) status('engine.disabled_remote');
   }
 
-  function fillModelOptions() {
-    const usable = catalog.filter((model) => model?.id && model.availability !== 'unavailable');
-    usable.sort(
-      (a, b) =>
-        (a.provider || '').localeCompare(b.provider || '') || (a.name || '').localeCompare(b.name || ''),
-    );
-    for (const [field, select] of selects) {
-      const current = data?.[field] || '';
-      select.replaceChildren();
-      const empty = document.createElement('option');
-      empty.value = '';
-      bindText(empty, () => tr('engine.automatic_choice'));
-      // bindText replaces textContent on language change; keep value stable.
-      select.append(empty);
-      for (const model of usable) {
-        const option = document.createElement('option');
-        option.value = model.id;
-        option.textContent = `${model.name || model.id} · ${model.provider || ''} (${model.id})`;
-        if (model.id === current) option.selected = true;
-        select.append(option);
-      }
-      // Preserve a stored value missing from the usable catalog (stale auth).
-      if (current && ![...select.options].some((option) => option.value === current)) {
-        const missing = document.createElement('option');
-        missing.value = current;
-        missing.textContent = current;
-        missing.disabled = true;
-        missing.selected = true;
-        select.append(missing);
-      }
-      select.value = current;
-    }
+  function syncDraftsFromData() {
+    for (const field of MODEL_FIELDS) drafts[field] = data?.[field] || '';
   }
 
   function fillBudgets() {
@@ -243,7 +329,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
 
   function render() {
     if (!data) return;
-    fillModelOptions();
+    renderPickerModels();
     fillBudgets();
     applyReadOnly();
   }
@@ -256,22 +342,22 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
     status('engine.loading_engine');
     applyReadOnly();
     try {
-      // Settings and catalog load independently: budgets stay editable when
-      // the catalog is down; model selectors then offer the automatic choice
-      // plus any stored value.
-      const [settingsResult, modelsResult] = await Promise.allSettled([
-        api('/api/engine-settings'),
-        api('/api/models'),
-      ]);
+      // Shared catalog lives in the host (app.js state.models, refreshed
+      // when the picker dialog opens). Only engine settings are fetched
+      // here so a down catalog never blocks budgets; buttons fall back to
+      // automatic + stored stale value with an "unavailable" label.
+      const settings = await api('/api/engine-settings');
       if (turn !== generation) return;
-      if (settingsResult.status === 'rejected') throw settingsResult.reason;
-      data = settingsResult.value;
-      catalog =
-        modelsResult.status === 'fulfilled' && Array.isArray(modelsResult.value?.models)
-          ? modelsResult.value.models
-          : [];
+      data = settings;
+      try {
+        const shared = typeof getModels === 'function' ? getModels() : null;
+        catalog = Array.isArray(shared) ? shared : [];
+      } catch {
+        catalog = [];
+      }
       status(catalog.length ? '' : 'engine.models_unavailable');
       error();
+      syncDraftsFromData();
       render();
       if (readOnly()) status('engine.disabled_remote');
     } catch (e) {
@@ -305,7 +391,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
       return;
     }
     const body = { revision: data.revision };
-    for (const field of MODEL_FIELDS) if (modelDirty(field)) body[field] = selects.get(field).value || null;
+    for (const field of MODEL_FIELDS) if (modelDirty(field)) body[field] = drafts[field] || null;
     const autonomous = {};
     try {
       for (const field of AUTONOMOUS_FIELDS) {
@@ -339,6 +425,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
       const saved = await api('/api/engine-settings', { method: 'POST', body });
       if (turn !== generation) return;
       data = saved;
+      syncDraftsFromData();
       render();
       status('engine.saved_engine');
       error();
@@ -361,7 +448,7 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
   saveButton.onclick = () => void save();
   reloadButton.onclick = () => void load();
 
-  // The model-config dialog is owned by app.js (untouched here).
+  // The model-config dialog is owned by app.js.
   // Strategy: closing abandons the unsaved draft; every opening reloads
   // fresh settings (also picking up other tabs' saves). In-flight loads are
   // never cancelled on close: cancelling would skip the busy reset and wedge
@@ -379,16 +466,43 @@ export function createEngineSettings({ api, getContext = () => ({}) }) {
     if (dialog.open && needsLoad) void load();
   }
 
+  // Shared catalog can refresh while the picker dialog is open (app.js
+  // refreshModelCatalog). Re-render button labels on dialog close so a stale
+  // draft that just became available shows its real name; drafts are kept.
+  // Engine drafts never touch the conversation model: picking only edits the
+  // local draft; only an explicit engine save POSTs.
+  const modelDialog = document.getElementById('model-dialog');
+  if (modelDialog) {
+    modelDialog.addEventListener('close', () => {
+      if (data && !busy) {
+        try {
+          const shared = typeof getModels === 'function' ? getModels() : null;
+          catalog = Array.isArray(shared) ? shared : catalog;
+        } catch {}
+        renderPickerModels();
+        refreshSave();
+      }
+    });
+  }
+
   onLanguageChange(() => {
     translateStatic();
-    // Draft-preserving: bound texts (labels, notes, empty options, hints)
-    // refresh through bindText automatically; control values are never
-    // refilled here so unsaved budgets and model choices survive FR<->EN.
+    // Draft-preserving: bound texts refresh through bindText automatically;
+    // control values are never refilled here so unsaved budgets and picker
+    // drafts survive FR<->EN. Picker labels re-render from drafts.
+    if (data) renderPickerModels();
   });
 
   return {
     open: load,
     update: () => {
+      if (data) {
+        try {
+          const shared = typeof getModels === 'function' ? getModels() : null;
+          if (Array.isArray(shared)) catalog = shared;
+        } catch {}
+        renderPickerModels();
+      }
       applyReadOnly();
     },
   };

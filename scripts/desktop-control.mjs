@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { probeHealth, isDirectInvocation, readJson } from './launcher-common.mjs';
 import { stopServer } from './stop-server.mjs';
 import { startDesktop } from './desktop-start.mjs';
+import { quickComponentReceipt } from '../lib/desktop-components.mjs';
 
 async function activity(port) {
   const response = await fetch(`http://127.0.0.1:${port}/api/runs`, { signal: AbortSignal.timeout(4000) });
@@ -46,6 +47,13 @@ export async function restartDesktop(options, deps = {}) {
   const before = await desktopServerStatus(options, deps);
   if (!before.managed) throw new Error('server_not_managed');
   if (before.activeRuns && !options.force) return { ...before, restarted: false, reason: 'agents_running' };
+  // Never stop a working server before the newly installed backend has its
+  // required engine/Python receipt. In particular, an app update can require a
+  // newer engine that has not been prepared yet. Explicit Later remains allowed.
+  if (before.running && !options.allowUnconfigured) {
+    const receipt = await (deps.quickReceipt || quickComponentReceipt)(options);
+    if (!receipt.ok) return { ...before, restarted: false, reason: 'components_required' };
+  }
   const dataDir = join(resolve(options.dataRoot), 'data');
   if (before.running) {
     try {

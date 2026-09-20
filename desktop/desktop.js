@@ -5,7 +5,23 @@ const messages = {
     componentsHideDetails: 'Masquer les détails',
     componentsNote:
       'Cette version de Studio utilise Prime Agent 0.9.5. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
-    componentsInstall: 'Installer les composants manquants',
+    componentsInstall: 'Mettre à jour les composants',
+    componentsApply: 'Activer les composants et redémarrer',
+    componentsActivationFailed:
+      'Les composants sont prêts, mais leur activation a échoué. Réessayez l’activation ; aucun téléchargement supplémentaire n’est nécessaire.',
+    componentsValidation:
+      'La validation du composant a échoué. Vérifiez les détails et les journaux avant de réessayer.',
+    componentsServerMismatch:
+      'Le serveur utilise encore une autre version. Les composants sont conservés ; réessayez leur activation.',
+    componentsPort: 'Le port est occupé par un autre service. Libérez-le sans arrêter les agents du Studio.',
+    updateGuideTitle: 'Terminer la mise à jour du Studio',
+    updateGuideNote:
+      'L’application a été mise à jour, mais l’ancien serveur est encore actif. Vérifiez Prime Agent {version}, puis activez les composants. Les agents en cours ne seront pas interrompus automatiquement.',
+    migrationTitle: 'Prime Agent 0.9.5 : terminez la mise à jour',
+    migrationDesc:
+      'La mise à jour de l’application seule ne suffit pas. Préparez Prime Agent 0.9.5 avec « Mettre à jour les composants », puis activez-le quand les agents sont inactifs. Les éléments déjà validés sont conservés, vos comptes et sessions aussi. Inutile de redémarrer vous-même dans le flux normal.',
+    migrationContinue: 'Voir les composants',
+    migrationLater: 'Plus tard',
     componentsDiagnose: 'Vérifier à nouveau',
     componentsExisting: 'Choisir une installation existante',
     componentsExistingNote:
@@ -45,7 +61,8 @@ const messages = {
       install: 'Installation',
       python: 'Préparation de Python et des skills',
       validation: 'Validation des intégrations',
-      opening: 'Ouverture du Studio',
+      opening: 'Activation dans le serveur',
+      server_update_pending: 'Ancien serveur conservé jusqu’à l’activation',
       error: 'Échec',
     },
     restartAfter: 'Redémarrer le serveur après l’installation',
@@ -78,8 +95,8 @@ const messages = {
     progress: 'Préparation du Studio…',
     retry: 'Réessayer',
     logs: 'Ouvrir les journaux',
-    settingsTitle: 'Réglages de l’application.',
-    settingsNote: 'Choisissez comment le Studio vous accompagne sur ce PC.',
+    settingsTitle: 'Démarrage et récupération.',
+    settingsNote: 'Accès de secours lorsque le Studio est arrêté ou utilise encore une ancienne version.',
     connectingTitle: 'Votre espace se prépare.',
     connectingNote: 'Nous retrouvons le serveur actif ou le démarrons pour vous.',
     connectingProbe: 'Connexion au serveur…',
@@ -114,7 +131,22 @@ const messages = {
     componentsHideDetails: 'Hide details',
     componentsNote:
       'This Studio version uses Prime Agent 0.9.5. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
-    componentsInstall: 'Install missing components',
+    componentsInstall: 'Update components',
+    componentsApply: 'Activate components and restart',
+    componentsActivationFailed:
+      'Components are ready, but activation failed. Retry activation; no further download is needed.',
+    componentsValidation: 'Component validation failed. Check the details and logs before trying again.',
+    componentsServerMismatch:
+      'The server is still using another version. Components are preserved; retry activation.',
+    componentsPort: 'Another service is using the port. Free it without stopping Studio agents.',
+    updateGuideTitle: 'Finish the Studio update',
+    updateGuideNote:
+      'The app was updated, but the previous server is still running. Check Prime Agent {version}, then activate components. Running agents will not be interrupted automatically.',
+    migrationTitle: 'Prime Agent 0.9.5: finish the update',
+    migrationDesc:
+      'Updating the app alone is not enough. Prepare Prime Agent 0.9.5 with “Update components”, then activate it when agents are idle. Validated parts are kept, and so are your accounts and sessions. No need to restart manually in the normal flow.',
+    migrationContinue: 'Show components',
+    migrationLater: 'Later',
     componentsDiagnose: 'Check again',
     componentsExisting: 'Choose an existing installation',
     componentsExistingNote:
@@ -152,7 +184,8 @@ const messages = {
       install: 'Installing',
       python: 'Preparing Python and skills',
       validation: 'Validating integrations',
-      opening: 'Opening Studio',
+      opening: 'Activating in the server',
+      server_update_pending: 'Previous server kept until activation',
       error: 'Failed',
     },
     restartAfter: 'Restart the server after installation',
@@ -184,8 +217,8 @@ const messages = {
     progress: 'Preparing Studio…',
     retry: 'Try again',
     logs: 'Open logs',
-    settingsTitle: 'Application settings.',
-    settingsNote: 'Choose how Studio accompanies you on this PC.',
+    settingsTitle: 'Startup and recovery.',
+    settingsNote: 'Recovery controls when Studio is stopped or still running an older version.',
     connectingTitle: 'Preparing your workspace.',
     connectingNote: 'We are finding the running server or starting it for you.',
     connectingProbe: 'Connecting to server…',
@@ -232,6 +265,7 @@ for (const [id, key] of Object.entries({
   'components-heading': 'componentsHeading',
   'components-note': 'componentsNote',
   'components-install': 'componentsInstall',
+  'components-apply': 'componentsApply',
   'components-diagnose': 'componentsDiagnose',
   'components-existing': 'componentsExisting',
   'components-existing-note': 'componentsExistingNote',
@@ -256,11 +290,117 @@ for (const [id, key] of Object.entries({
   'restart-confirm-note': 'restartNote',
   'restart-cancel': 'restartCancel',
   'restart-proceed': 'restartProceed',
+  'migration-title': 'migrationTitle',
+  'migration-desc': 'migrationDesc',
+  'migration-continue': 'migrationContinue',
+  'migration-later': 'migrationLater',
 }))
   $(id).textContent = t[key];
 const invoke = window.__TAURI__?.core?.invoke;
 let componentsBusy = false;
 let latestComponents;
+let updatePending = false;
+// One-time 0.9.5/3.7 family migration notice: narrow dialog in this window
+// only, never another settings window and never engine code.
+const MIGRATION_STORAGE_KEY = 'prime-studio.migration-095-dismissed';
+let migrationDismissedMemory = false;
+function migrationDismissed() {
+  if (migrationDismissedMemory) return true;
+  try {
+    return localStorage.getItem(MIGRATION_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function rememberMigrationDismissed() {
+  // Memory first so a storage failure still shows the notice once per page.
+  migrationDismissedMemory = true;
+  try {
+    localStorage.setItem(MIGRATION_STORAGE_KEY, '1');
+  } catch {}
+}
+function versionTriple(value) {
+  const match = String(value || '')
+    .trim()
+    .replace(/^v/i, '')
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function tripleLess(a, b) {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+}
+function tripleEqual(a, b) {
+  return Boolean(a && b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]);
+}
+// Numeric major/minor/patch below 3.7.0. A 3.7.0 prerelease (beta) already
+// belongs to the 3.7 family, so its suffix alone never counts as legacy.
+function isLegacyStudioVersion(value) {
+  const triple = versionTriple(value);
+  return triple ? tripleLess(triple, [3, 7, 0]) : false;
+}
+function isOlderEngineVersion(installed, required) {
+  const current = versionTriple(installed),
+    wanted = versionTriple(required);
+  return Boolean(current && wanted && tripleLess(current, wanted));
+}
+function shouldShowMigrationNotice(result) {
+  if (!result || backgroundParam) return false;
+  if (migrationDismissed()) return false;
+  // Current migration only: never present a stale 0.9.5 notice for a future engine.
+  if (!tripleEqual(versionTriple(result.requiredEngine), [0, 9, 5])) return false;
+  const legacyServer =
+    Boolean(result.server && result.server.running) && isLegacyStudioVersion(result.server.version);
+  const legacyEngine = isOlderEngineVersion(result.installedEngine, result.requiredEngine);
+  if (!legacyServer && !legacyEngine) return false;
+  // No notice once the migration is already satisfied.
+  if (!(result.needsUpdate || result.needsRestart || result.serverUpdatePending || !result.ready))
+    return false;
+  return true;
+}
+function focusMigrationTarget() {
+  // Reveal/focus only: never install, apply, or restart from the notice itself.
+  if ($('components')) $('components').hidden = false;
+  for (const id of ['components-apply', 'components-install', 'components-toggle']) {
+    const el = $(id);
+    if (el && !el.hidden && !el.disabled) {
+      el.focus();
+      return id;
+    }
+  }
+  return null;
+}
+function showMigrationNotice() {
+  const dialog = $('migration-dialog');
+  if (!dialog || dialog.open) return;
+  try {
+    dialog.showModal();
+  } catch {
+    dialog.setAttribute('open', '');
+  }
+  $('migration-continue').focus();
+}
+$('migration-continue').onclick = () => {
+  rememberMigrationDismissed();
+  const dialog = $('migration-dialog');
+  if (dialog && dialog.open) dialog.close();
+  if (dialog) dialog.removeAttribute('open');
+  focusMigrationTarget();
+};
+$('migration-later').onclick = () => {
+  rememberMigrationDismissed();
+  const dialog = $('migration-dialog');
+  if (dialog && dialog.open) dialog.close();
+  if (dialog) dialog.removeAttribute('open');
+};
+$('migration-dialog').addEventListener('cancel', () => {
+  rememberMigrationDismissed();
+});
+$('migration-dialog').addEventListener('close', () => {
+  rememberMigrationDismissed();
+  $('migration-dialog').removeAttribute('open');
+});
 // Warm-first helpers: connecting-first UI, never silent frozen.
 function isComponentsRequired(error) {
   return String(error || '').includes('components_required');
@@ -312,7 +452,14 @@ function componentError(code) {
   if (['architecture_unsupported', 'node_incompatible'].includes(code)) return t.componentsUnsupported;
   if (['checksum_mismatch', 'checksum_missing', 'unsafe_archive'].includes(code)) return t.componentsChecksum;
   if (code === 'cancelled') return t.componentsCancelled;
-  if (code === 'setup_busy') return t.componentsBusy;
+  if (['setup_busy', 'update_busy'].includes(code)) return t.componentsBusy;
+  if (['server_validation_failed', 'server_version_mismatch'].includes(code))
+    return t.componentsServerMismatch;
+  if (code === 'server_not_managed') return t.serverUnmanaged;
+  if (code === 'server_port_occupied') return t.componentsPort;
+  if (code === 'validation_failed') return t.componentsValidation;
+  if (['server_activation_failed', 'server_status_failed', 'server_restart_failed'].includes(code))
+    return t.componentsActivationFailed;
   return t.componentsFailed;
 }
 function renderComponents(result) {
@@ -358,20 +505,27 @@ function renderComponents(result) {
     $('components-detail-list').append(row);
   }
   $('components-status').textContent =
-    result.activation === 'deferred'
-      ? t.componentsDeferred
-      : result.ready
-        ? t.componentsReady
-        : Object.entries(result.components || {})
-            .filter(([, info]) => info.error && info.error !== 'missing')
-            .map(
-              ([key, info]) =>
-                `${componentNames[key] || key} : ${componentError(info.explicit ? 'explicit_invalid' : info.error)}`,
-            )
-            .join(' ');
+    result.activation === 'failed'
+      ? `${t.componentsActivationFailed} ${componentError(result.activationError)}`
+      : result.activation === 'deferred'
+        ? t.componentsDeferred
+        : result.ready
+          ? t.componentsReady
+          : Object.entries(result.components || {})
+              .filter(([, info]) => info.error && info.error !== 'missing')
+              .map(
+                ([key, info]) =>
+                  `${componentNames[key] || key} : ${componentError(info.explicit ? 'explicit_invalid' : info.error)}`,
+              )
+              .join(' ');
   $('components-install').hidden = result.ready;
-  $('components-actions').hidden = result.ready;
-  $('start').textContent = result.ready ? t.start : t.componentsLater;
+  const needsActivation =
+    result.ready && (result.needsRestart || ['failed', 'deferred'].includes(result.activation));
+  $('components-apply').hidden = !needsActivation;
+  $('components-apply').disabled = result.server?.managed === false;
+  $('components-actions').hidden = result.ready && !needsActivation;
+  $('start').textContent = updatePending || !result.ready ? t.componentsLater : t.start;
+  if (result.activation === 'failed') $('logs').hidden = false;
 }
 $('components-toggle').textContent = t.componentsDetails;
 $('components-toggle').onclick = () => {
@@ -398,7 +552,7 @@ async function componentsAction(action, component) {
   try {
     result = await invoke('desktop_components', { action, component: component || null });
     renderComponents(result);
-    if (action === 'install' && result.ready && result.activation === 'active')
+    if (['install', 'apply'].includes(action) && result.ready && result.activation === 'active')
       await start({ allowUnconfigured: true, background: backgroundParam });
     return result;
   } catch (error) {
@@ -409,11 +563,13 @@ async function componentsAction(action, component) {
   } finally {
     componentsBusy = false;
     for (const el of $('components').querySelectorAll('button')) el.disabled = false;
+    $('components-apply').disabled = latestComponents?.server?.managed === false;
     $('components-cancel').hidden = true;
     $('start').disabled = false;
   }
 }
 $('components-install').onclick = () => componentsAction('install');
+$('components-apply').onclick = () => componentsAction('apply');
 $('components-diagnose').onclick = () => componentsAction('diagnose');
 $('components-cancel').onclick = () => invoke('desktop_components_cancel');
 for (const name of ['engine', 'uv', 'python'])
@@ -644,7 +800,21 @@ async function start(options = {}) {
     // ready, so explicit paths survive to installation.json before strict start.
     if (latestComponents?.ready) await invoke('desktop_components', { action: 'activate', component: null });
     setPhase(t.startingServer);
-    await invoke('desktop_start', { allowUnconfigured, background });
+    const started = await invoke('desktop_start', { allowUnconfigured, background });
+    if (started?.showUpdates && !allowUnconfigured && !background) {
+      updatePending = true;
+      showLauncher();
+      $('title').textContent = t.updateGuideTitle;
+      const components = await componentsAction('diagnose');
+      $('description').textContent = t.updateGuideNote.replace(
+        '{version}',
+        components?.requiredEngine || '0.9.5',
+      );
+      $('progress').hidden = true;
+      $('start').textContent = t.componentsLater;
+      if (shouldShowMigrationNotice(components)) showMigrationNotice();
+      return;
+    }
     if (settings) {
       $('progress').hidden = true;
       $('start').disabled = false;
@@ -669,7 +839,7 @@ async function start(options = {}) {
 }
 $('start').onclick = () => {
   // Later (not ready) explicitly opens Studio anyway; otherwise strict warm-first.
-  const later = latestComponents && latestComponents.ready === false;
+  const later = updatePending || (latestComponents && latestComponents.ready === false);
   return start({ allowUnconfigured: Boolean(later), background: backgroundParam });
 };
 $('logs').onclick = async () => {
@@ -737,7 +907,10 @@ $('import').onclick = async () => {
       // read-only diagnose so components can be configured here; installs
       // still require an explicit click and never start automatically.
       showLauncher();
-      await componentsAction('diagnose');
+      const diagnosed = await componentsAction('diagnose');
+      // Explicit recovery surface: explain the 0.9.5 step when legacy
+      // evidence is present. Fresh installs have none, so stay silent.
+      if (shouldShowMigrationNotice(diagnosed || latestComponents)) showMigrationNotice();
       return;
     }
     if (background) {
@@ -771,8 +944,15 @@ $('import').onclick = async () => {
         } catch (retryError) {
           if (!isComponentsRequired(retryError)) throw retryError;
           $('components').hidden = false;
+          if (shouldShowMigrationNotice(latestComponents)) showMigrationNotice();
         }
-      } else $('components').hidden = false;
+      } else {
+        $('components').hidden = false;
+        // Cold foreground with a known older engine receipt and no running
+        // server: explain the 0.9.5 step. Empty fresh installs carry no
+        // legacy evidence, so the predicate stays silent there.
+        if (shouldShowMigrationNotice(latestComponents)) showMigrationNotice();
+      }
     }
   } catch (error) {
     document.body.classList.remove('boot-connecting');

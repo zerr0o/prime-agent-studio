@@ -4,6 +4,16 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.7.0-beta.2
+
+- Components integrated into Preferences, required-engine notice and guidance after application updates. Native recovery retained for stopped or older servers.
+- Preparation and activation separated; validated components preserved, explicit logged activation failures and retry without downloading again.
+- Component preparation, application updates and restarts serialized; no automatic interruption of active agents.
+- Explicitly validated external installations can activate without fabricated download receipts; managed installation checks remain intact.
+- Advanced models use the shared picker with search, providers and the engine default choice, without changing the conversation model.
+- One-time migration explanation for users coming from a version < 3.7.0: FR/EN notice, prepare then activate 0.9.5, no automatic install or restart, accounts and sessions preserved.
+- Conversation: mirrored user message heading — time on the left, “You” with avatar on the right, above the card.
+
 ## 3.7.0-beta.1
 
 - **Guided packaging**: policy pinned to Prime Agent **0.9.5** (npm 10.9.4 and uv 0.8.22 unchanged), with the three `@earendil-works` dependencies checked against the same official inventory.

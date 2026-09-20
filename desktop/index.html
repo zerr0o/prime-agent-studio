@@ -43,6 +43,7 @@
         <p id="components-status" role="status" aria-live="polite"></p>
         <div id="components-actions" class="update-actions">
           <button id="components-install" class="primary"></button>
+          <button id="components-apply" class="primary" hidden></button>
           <button id="components-cancel" class="text-button" hidden></button>
         </div>
         <div id="components-details" hidden>
@@ -110,6 +111,18 @@
       <div class="update-actions">
         <button id="restart-cancel" class="text-button" autofocus></button>
         <button id="restart-proceed" class="primary"></button>
+      </div>
+    </dialog>
+    <dialog
+      id="migration-dialog"
+      aria-labelledby="migration-title"
+      aria-describedby="migration-desc"
+    >
+      <h2 id="migration-title"></h2>
+      <p id="migration-desc"></p>
+      <div class="update-actions">
+        <button id="migration-continue" class="primary" autofocus></button>
+        <button id="migration-later" class="text-button"></button>
       </div>
     </dialog>
   </body>

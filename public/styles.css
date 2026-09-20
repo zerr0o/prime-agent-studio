@@ -1551,6 +1551,14 @@ kbd {
   width: 16px;
   height: 16px;
 }
+.message.user .message-heading {
+  flex-direction: row-reverse;
+  margin-left: 34px;
+}
+.message.user .message-time {
+  margin-left: 0;
+  margin-right: auto;
+}
 .message.user .message-avatar {
   background: var(--surface-hover);
   color: var(--muted);
@@ -2698,7 +2706,8 @@ kbd {
     font-size: 12px;
     padding-left: 0;
   }
-  .message.user .message-body {
+  .message.user .message-body,
+  .message.user .message-heading {
     margin-left: 0;
   }
   .message-actions {
@@ -3708,7 +3717,8 @@ kbd {
   color: var(--muted);
   font-size: 11px;
 }
-.subagent-controls .model-picker-button {
+.subagent-controls .model-picker-button,
+.engine-field .model-picker-button {
   display: flex;
   width: 100%;
   max-width: none;
@@ -3792,6 +3802,20 @@ kbd {
   border-radius: 8px;
   background: var(--surface);
   font-size: 12px;
+}
+.engine-field .model-picker-button {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  min-height: 43px;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  align-items: center;
+  text-align: left;
 }
 .engine-budget-grid {
   display: grid;
@@ -4260,4 +4284,138 @@ kbd {
   color: var(--text);
   background: var(--surface);
   font: inherit;
+}
+
+/* Unified components update UX: own small non-modal banner (global error keeps priority). */
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 11px;
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  padding: 10px 27px;
+  border-bottom: 1px solid var(--line);
+  line-height: 1.6;
+}
+.update-banner > span {
+  flex: 1 1 240px;
+}
+.update-banner button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 11px;
+  min-height: 32px;
+}
+.update-banner button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.update-banner button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Compact Prime Agent components panel inside Preferences > Updates. */
+.update-components {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding-top: 22px;
+}
+.update-components h4 {
+  font-size: 13px;
+  font-weight: 550;
+  margin: 0 0 8px;
+}
+.update-components .components-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+.component-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.component-chip {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.component-chip[data-state='ready'] {
+  border-color: var(--green);
+}
+.component-chip[data-state='error'] {
+  border-color: var(--red);
+}
+.component-chip[data-state='missing'],
+.component-chip[data-state='pending'] {
+  border-style: dashed;
+}
+.component-details {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.component-details li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.component-details small {
+  display: block;
+  color: var(--muted);
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.component-details .component-detail-error {
+  color: var(--red);
+  font-family: inherit;
+  font-size: 11px;
+}
+#studio-update-components-progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent);
+  margin-top: 10px;
+}
+#studio-update-components-details {
+  margin-top: 12px;
+}
+.update-components .update-actions {
+  margin-top: 14px;
+}
+@media (max-width: 700px) {
+  .update-banner {
+    padding: 10px 19px;
+    font-size: 11px;
+  }
+  .update-banner button {
+    min-height: 36px;
+    flex: 1 1 auto;
+  }
+  .update-components {
+    margin-top: 24px;
+    padding-top: 18px;
+  }
 }

@@ -18,6 +18,7 @@ import {
   releaseOrigin,
   checkNode,
   inspectEngineStatic,
+  quickComponentReceipt,
 } from '../lib/desktop-components.mjs';
 import { acquireLock } from '../scripts/launcher-common.mjs';
 
@@ -256,3 +257,71 @@ test('a living installation lock cannot expire; an abandoned lock is recovered',
   await release();
   await assert.rejects(stat(lock), { code: 'ENOENT' });
 });
+
+test(
+  'fully validated explicit engine/uv can activate without fabricated archive receipts',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const root = await fixture(t),
+      packageDir = join(root, 'external');
+    await mkdir(join(packageDir, 'dist/bundle'), { recursive: true });
+    await writeFile(
+      join(packageDir, 'package.json'),
+      JSON.stringify({
+        name: 'prime-agent',
+        version: COMPONENT_POLICY.engine,
+        engines: { node: '>=22.8.0' },
+        bin: { 'prime-agent': 'dist/bundle/cli.js' },
+      }),
+    );
+    const cli = join(packageDir, 'dist/bundle/cli.js'),
+      python = join(root, 'python.exe'),
+      uv = join(root, 'uv.exe');
+    await writeFile(cli, '#!/usr/bin/env node\n');
+    await writeFile(join(packageDir, 'dist/bundle/cli-node.js'), '#!/usr/bin/env node\n');
+    await writeFile(python, 'external validated interpreter fixture');
+    const pe = Buffer.alloc(96);
+    pe.writeUInt32LE(64, 60);
+    pe.writeUInt32LE(0x4550, 64);
+    pe.writeUInt16LE(0x8664, 68);
+    await writeFile(uv, pe);
+    const receipt = {
+      schema: 1,
+      validatedAt: new Date().toISOString(),
+      shellValidated: true,
+      components: {
+        engine: { path: cli, version: COMPONENT_POLICY.engine, source: 'explicit' },
+        python: { path: python, source: 'explicit' },
+        uv: { path: uv, version: COMPONENT_POLICY.uv, source: 'explicit' },
+      },
+    };
+    const env = { PRIME_AGENT_CLI: cli, PRIME_AGENT_KERNEL_PYTHON: python, PRIME_GUI_UV: uv };
+    await atomicJson(join(root, 'engine/installation.json'), receipt);
+    assert.equal((await quickComponentReceipt({ dataRoot: root, env })).ok, true);
+    assert.equal(
+      (
+        await quickComponentReceipt({
+          dataRoot: root,
+          env: { ...env, PRIME_AGENT_CLI: join(root, 'other.js') },
+        })
+      ).reason,
+      'explicit_changed',
+    );
+    // Never infer user consent merely from an old explicit source marker.
+    assert.equal(
+      (await quickComponentReceipt({ dataRoot: root, env: { PRIME_AGENT_KERNEL_PYTHON: python } })).reason,
+      'receipt_changed',
+    );
+    receipt.components.engine.source = 'managed';
+    await atomicJson(join(root, 'engine/installation.json'), receipt);
+    assert.equal((await quickComponentReceipt({ dataRoot: root, env })).reason, 'receipt_changed');
+    receipt.components.engine.source = 'explicit';
+    receipt.components.uv.source = 'managed';
+    await atomicJson(join(root, 'engine/installation.json'), receipt);
+    assert.equal((await quickComponentReceipt({ dataRoot: root, env })).reason, 'receipt_changed');
+    receipt.components.uv.source = 'explicit';
+    receipt.shellValidated = false;
+    await atomicJson(join(root, 'engine/installation.json'), receipt);
+    assert.equal((await quickComponentReceipt({ dataRoot: root, env })).reason, 'not_validated');
+  },
+);

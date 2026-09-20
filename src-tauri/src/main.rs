@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod directory_picker;
 mod components;
+mod directory_picker;
 mod notifications;
 #[cfg(test)]
 mod update_tests;
@@ -67,6 +67,9 @@ fn is_studio_url(url: &tauri::Url, port: u16) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
 }
+fn is_update_origin(label: &str, url: &tauri::Url, port: u16) -> bool {
+    is_launcher_url(url) || (label == "main" && is_studio_url(url, port))
+}
 fn update_window_only(window: &WebviewWindow, app: &tauri::AppHandle) -> Result<(), String> {
     let url = window.url().map_err(|e| e.to_string())?;
     if is_launcher_url(&url) {
@@ -77,7 +80,7 @@ fn update_window_only(window: &WebviewWindow, app: &tauri::AppHandle) -> Result<
         .try_state::<Desktop>()
         .map(|state| state.port)
         .ok_or_else(|| "This action is reserved for the Studio desktop application.".to_string())?;
-    if window.label() == "main" && is_studio_url(&url, port) {
+    if is_update_origin(window.label(), &url, port) {
         Ok(())
     } else {
         Err("This action is reserved for the Studio desktop application.".into())
@@ -102,6 +105,20 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 fn show_settings(app: &tauri::AppHandle) -> Result<(), String> {
+    if let (Some(main), Some(state)) = (app.get_webview_window("main"), app.try_state::<Desktop>())
+    {
+        if main.url().is_ok_and(|url| is_studio_url(&url, state.port)) {
+            // Fixed DOM IDs work with the previous Studio too. No reload or
+            // navigation: unsent drafts and ongoing agents stay intact.
+            main.eval("(() => { const dialog = document.getElementById('settings-dialog'); const tab = document.getElementById('settings-tab-updates'); if (window.__PRIME_STUDIO_COMPONENTS_PANEL__ === true && dialog && tab) { tab.click(); if (!dialog.open) dialog.showModal(); } else { window.__TAURI__?.core?.invoke('desktop_components_open', { recovery: true }); } })()")
+                .map_err(|_| "settings_unavailable".to_string())?;
+            show_main(app);
+            return Ok(());
+        }
+    }
+    show_recovery_settings(app)
+}
+fn show_recovery_settings(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("desktop-settings") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -176,7 +193,7 @@ fn desktop_state(
     app: tauri::AppHandle,
     state: tauri::State<Desktop>,
 ) -> Result<serde_json::Value, String> {
-    native_only(&window)?;
+    update_window_only(&window, &app)?;
     let prefs = state.prefs.lock().map_err(|e| e.to_string())?.clone();
     Ok(
         serde_json::json!({"version":app.package_info().version.to_string(),"started":prefs.started,"legacyRoot":prefs.legacy_root,"imported":state.root.join("data").exists(),"autostart":app.autolaunch().is_enabled().map_err(|e| e.to_string())?}),
@@ -188,7 +205,7 @@ fn desktop_autostart(
     app: tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    native_only(&window)?;
+    update_window_only(&window, &app)?;
     if enabled {
         app.autolaunch().enable()
     } else {
@@ -260,6 +277,8 @@ async fn desktop_start(
         )
     };
     let state = app.state::<Desktop>();
+    let updates = app.state::<updates::Updates>();
+    let _operation = updates::begin(&updates)?;
     if state.starting.swap(true, Ordering::SeqCst) {
         return Err("Le démarrage est déjà en cours. / Startup is already in progress.".into());
     }
@@ -298,7 +317,16 @@ async fn desktop_start(
             let mut prefs = state.prefs.lock().map_err(|e| e.to_string())?;
             prefs.started = true;
             save_preferences(&state, &prefs)?;
+            drop(prefs);
             let _ = fs::write(state.root.join("backend.json"), result.to_string());
+            // Startup is complete before navigation bootstraps native status
+            // reads. Do not hold either lock across that document transition.
+            drop(_operation);
+            if result["showUpdates"] == true && !allow_unconfigured && !background {
+                // Show the packaged update guide in MAIN first. An older server
+                // cannot serve the newly installed components UI yet.
+                return Ok(result);
+            }
             if let Some(main) = app.get_webview_window("main") {
                 main.navigate(
                     tauri::Url::parse(&format!(
@@ -317,11 +345,8 @@ async fn desktop_start(
                     show_main(&app);
                 }
             }
-            // An older running server may not yet contain the new Preferences UI.
-            // Keep the bundled restart controls reachable immediately after updating.
-            if result["showUpdates"] == true {
-                let _ = show_settings(&app);
-            }
+            // ?settings=updates opens the existing main Preferences panel once
+            // its page is ready. Do not also open a duplicate launcher window.
             Ok(result)
         }
         Err(error) => {
@@ -385,9 +410,8 @@ async fn desktop_server_restart(
     force: bool,
 ) -> Result<serde_json::Value, String> {
     update_window_only(&window, &app)?;
-    if app.state::<updates::Updates>().is_busy() {
-        return Err("update_busy".into());
-    }
+    let updates = app.state::<updates::Updates>();
+    let _operation = updates::begin(&updates)?;
     let state = app.state::<Desktop>();
     if state.starting.swap(true, Ordering::SeqCst) {
         return Err("update_busy".into());
@@ -488,6 +512,10 @@ fn main() {
                     .remote(format!("http://127.0.0.1:{port}/*"))
                     .permission("allow-desktop-update-status")
                     .permission("allow-desktop-components-open")
+                    .permission("allow-desktop-components")
+                    .permission("allow-desktop-components-cancel")
+                    .permission("allow-desktop-state")
+                    .permission("allow-desktop-autostart")
                     .permission("allow-desktop-server-restart")
                     .permission("allow-desktop-pick-directory")
                     .permission("allow-desktop-notification-preferences")
@@ -530,7 +558,7 @@ fn main() {
             // Otherwise Windows consumes file drops before the HTML composer.
             .disable_drag_drop_handler()
             .initialization_script(
-                "Object.defineProperty(window, '__PRIME_STUDIO_DESKTOP__', { value: true }); Object.defineProperty(window, '__PRIME_STUDIO_DIRECTORY_PICKER__', { value: true }); Object.defineProperty(window, '__PRIME_STUDIO_NOTIFICATIONS__', { value: true });",
+                "Object.defineProperty(window, '__PRIME_STUDIO_DESKTOP__', { value: true }); Object.defineProperty(window, '__PRIME_STUDIO_DIRECTORY_PICKER__', { value: true }); Object.defineProperty(window, '__PRIME_STUDIO_NOTIFICATIONS__', { value: true }); Object.defineProperty(window, '__PRIME_STUDIO_COMPONENTS__', { value: true });",
             )
             .on_new_window(move |url, _| {
                 open_external_link(&links_app, &url);
@@ -563,9 +591,9 @@ fn main() {
                 app,
                 "settings",
                 if french {
-                    "Réglages de l’application"
+                    "Préférences du Studio"
                 } else {
-                    "App settings"
+                    "Studio preferences"
                 },
                 true,
                 None::<&str>,

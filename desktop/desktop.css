@@ -331,6 +331,10 @@ footer svg {
   footer {
     margin-top: 32px;
   }
+  #migration-dialog {
+    width: calc(100% - 48px);
+    padding: 20px;
+  }
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -432,6 +436,31 @@ footer svg {
   line-height: 1.7;
   font-size: 14px;
 }
+/* One-time 0.9.5/3.7 migration notice: narrow dialog in this window only. */
+#migration-dialog {
+  max-width: 430px;
+  width: calc(100% - 64px);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  background: #242529;
+  color: #eee;
+  border: 1px solid #484951;
+  border-radius: 12px;
+  padding: 26px;
+}
+#migration-dialog::backdrop {
+  background: #0009;
+}
+#migration-dialog h2 {
+  font-size: 19px;
+  margin-top: 0;
+}
+#migration-dialog p {
+  color: #b0b1b9;
+  line-height: 1.7;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
 @media (prefers-color-scheme: light) {
   .server-update {
     border-color: #d4d2d9;
@@ -442,6 +471,14 @@ footer svg {
     border-color: #d4d2d9;
   }
   #restart-confirm p {
+    color: #666874;
+  }
+  #migration-dialog {
+    background: #faf9fc;
+    color: #22232a;
+    border-color: #d4d2d9;
+  }
+  #migration-dialog p {
     color: #666874;
   }
   .restart-option input {

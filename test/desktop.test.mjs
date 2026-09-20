@@ -70,10 +70,7 @@ test('desktop refuses an occupied port before changing data', async (t) => {
 });
 test('desktop cold start without receipt requires diagnose unless explicitly allowed', async (t) => {
   const f = await fixture(t);
-  await assert.rejects(
-    startDesktop(f, { probe: async () => ({ state: 'absent' }) }),
-    /components_required/,
-  );
+  await assert.rejects(startDesktop(f, { probe: async () => ({ state: 'absent' }) }), /components_required/);
   let options;
   const allowed = await startDesktop(
     { ...f, allowUnconfigured: true, env: { PATH: 'original' } },
@@ -114,13 +111,16 @@ test('desktop cold start preserves migration data and separates persistent data,
   const firstRoot = options.root;
   await writeFile(join(f.dataRoot, 'data', 'workspace.json'), 'new user data');
   await writeFile(join(f.resourceDir, 'desktop-resource.json'), JSON.stringify({ identity: 'b'.repeat(64) }));
-  await startDesktop({ ...f, allowUnconfigured: true }, {
-    probe: async () => ({ state: 'absent' }),
-    start: async (args) => {
-      options = args;
-      return {};
+  await startDesktop(
+    { ...f, allowUnconfigured: true },
+    {
+      probe: async () => ({ state: 'absent' }),
+      start: async (args) => {
+        options = args;
+        return {};
+      },
     },
-  });
+  );
   assert.notEqual(firstRoot, options.root);
   assert.equal(await readFile(join(firstRoot, 'server.mjs'), 'utf8'), '// fake server');
   assert.equal(await readFile(join(f.dataRoot, 'data', 'workspace.json'), 'utf8'), 'new user data');
@@ -156,4 +156,31 @@ test('invalid generation names cannot escape the persistent runtime directory', 
     /manifest/,
   );
   assert.equal(pathsFor('C:/installation', f.dataRoot).ownership, join(f.dataRoot, 'server.json'));
+});
+
+test('manual app update exposes a version-aware guide without restarting a warm server', async (t) => {
+  const f = await fixture(t);
+  await writeFile(
+    join(f.resourceDir, 'desktop-resource.json'),
+    JSON.stringify({ identity: 'a'.repeat(64), version: '3.7.0-beta.1' }),
+  );
+  const deps = {
+    probe: async () => ({ state: 'ready', health: { pid: 42, version: '3.6.2' } }),
+    quickReceipt: () => {
+      throw new Error('no heavy setup on warm reuse');
+    },
+    start: () => {
+      throw new Error('must not restart');
+    },
+  };
+  const result = await startDesktop(f, deps);
+  assert.equal(result.reused, true);
+  assert.equal(result.showUpdates, true);
+  assert.equal(result.version, '3.6.2');
+  await assert.rejects(readdir(f.dataRoot), { code: 'ENOENT' });
+  const current = await startDesktop(f, {
+    ...deps,
+    probe: async () => ({ state: 'ready', health: { pid: 42, version: '3.7.0-beta.1' } }),
+  });
+  assert.equal(current.showUpdates, undefined);
 });

@@ -35,7 +35,16 @@ import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
 import { createQuestions } from './questions.js';
 import { createPushSettings } from './push.js';
-import { isDesktopComponentsAvailable, openDesktopComponents } from './desktop-components-action.js';
+import {
+  isDesktopComponentsAvailable,
+  isNewComponentsBridgeAvailable,
+  openDesktopComponents,
+} from './desktop-components-action.js';
+import {
+  normalizeComponentsResult,
+  needsComponentsUpdate,
+  readComponentsStatus,
+} from './desktop-components.js';
 let questionsUI;
 let imageComposer;
 let projectSorting;
@@ -388,6 +397,9 @@ if ($('configuration-components-action'))
   $('configuration-components-action').onclick = () => void openDesktopComponents({ toast });
 if ($('global-banner-components'))
   $('global-banner-components').onclick = () => void openDesktopComponents({ toast });
+if ($('update-banner-action'))
+  $('update-banner-action').onclick = () => void openDesktopComponents({ toast });
+if ($('update-banner-dismiss')) $('update-banner-dismiss').onclick = () => hideComponentsUpdateBanner();
 function modelRow(model, favorite = false) {
   const id = model.id || '',
     defaultChoice = !id,
@@ -613,12 +625,105 @@ function toast(message, error = false) {
   $('toasts').append(n);
   setTimeout(() => n.remove(), error ? 6500 : 3200);
 }
-function banner(message, error = false) {
+let globalBannerTag = null;
+function banner(message, error = false, tag) {
   const text = $('global-banner-text') || $('global-banner');
   bindText(text, () => translateKnown(message || ''));
   $('global-banner').hidden = !message;
   $('global-banner').classList.toggle('error', error);
+  if (!message) globalBannerTag = null;
+  else if (tag === 'engine-setup') globalBannerTag = 'engine-setup';
+  else globalBannerTag = 'other';
   renderEngineComponentsAction();
+  if (message && $('update-banner') && !$('update-banner').hidden) hideComponentsUpdateBanner();
+}
+let componentsBannerState = null;
+function hideComponentsUpdateBanner() {
+  const bannerNode = $('update-banner');
+  if (bannerNode) bannerNode.hidden = true;
+  componentsBannerState = null;
+}
+function showComponentsUpdateBanner(result, kind) {
+  const bannerNode = $('update-banner');
+  const text = $('update-banner-text');
+  if (!bannerNode || !text) return;
+  if ($('global-banner') && !$('global-banner').hidden) return;
+  const required =
+    result.requiredEngine ||
+    (result.components && result.components.engine && result.components.engine.version);
+  const installed =
+    result.installedEngine !== undefined && result.installedEngine !== null
+      ? result.installedEngine
+      : result.components && result.components.engine && result.components.engine.version;
+  const mode = kind === 'activate' ? 'activate' : 'install';
+  componentsBannerState = {
+    required: required ? String(required) : '',
+    installed: installed ? String(installed) : '',
+    mode,
+  };
+  bindText(text, () => {
+    if (!componentsBannerState) return '';
+    if (componentsBannerState.mode === 'activate') {
+      return tr('components.banner_activate_text', {
+        required: componentsBannerState.required || tr('components.banner_unknown'),
+      });
+    }
+    return tr('components.banner_text', {
+      installed: componentsBannerState.installed || tr('components.banner_unknown'),
+      required: componentsBannerState.required || tr('components.banner_unknown'),
+    });
+  });
+  bannerNode.hidden = false;
+}
+function enrichEngineSetupBanner(requiredEngine) {
+  const text = $('global-banner-text');
+  const bannerNode = $('global-banner');
+  if (!bannerNode || !text || !requiredEngine) return false;
+  bindText(text, () => tr('components.banner_engine_missing', { required: String(requiredEngine) }));
+  bannerNode.hidden = false;
+  bannerNode.classList.add('error');
+  renderEngineComponentsAction();
+  hideComponentsUpdateBanner();
+  return true;
+}
+async function checkComponentsUpdateBanner() {
+  const bannerNode = $('update-banner');
+  if (!bannerNode) return;
+  bannerNode.hidden = true;
+  componentsBannerState = null;
+  try {
+    if (state.remote || state.readOnly) return;
+    if (!isNewComponentsBridgeAvailable()) return;
+    const globalVisible = $('global-banner') && !$('global-banner').hidden;
+    const isEngineSetup = globalBannerTag === 'engine-setup';
+    if (globalVisible && !isEngineSetup) return;
+    const result = await readComponentsStatus();
+    if (!result || result.cancelled) return;
+    if (result.failure) return;
+    const required = result.requiredEngine;
+    const updateNeeded = needsComponentsUpdate(result);
+    const restartNeeded =
+      result.needsRestart === true ||
+      result.serverUpdatePending === true ||
+      result.activation === 'deferred' ||
+      result.activation === 'failed';
+    if (!result.ready || updateNeeded) {
+      if (isEngineSetup && required) {
+        enrichEngineSetupBanner(required);
+        return;
+      }
+      if (globalVisible) return;
+      showComponentsUpdateBanner(result, 'install');
+      return;
+    }
+    if (restartNeeded) {
+      if (globalVisible) return;
+      showComponentsUpdateBanner(result, 'activate');
+      return;
+    }
+  } catch {
+    // Lightweight read-only probe; never surface errors as a banner.
+  }
 }
 function renderEngineComponentsAction() {
   const action = $('global-banner-components');
@@ -2333,7 +2438,11 @@ async function bootstrap() {
         : tr('ui.prime_agent_sessions_natives_conservees', { value1: state.version.version || '' }),
     );
     if (state.version.available === false) {
-      banner(() => tr('ui.prime_agent_est_introuvable_installez_ou_configurez_le_cli_puis_r'), true);
+      banner(
+        () => tr('ui.prime_agent_est_introuvable_installez_ou_configurez_le_cli_puis_r'),
+        true,
+        'engine-setup',
+      );
       $('global-banner').dataset.persistent = 'true';
     }
     renderNavigation();
@@ -2347,6 +2456,10 @@ async function bootstrap() {
     }
     saveSelection();
     void syncSessionActivity();
+    void checkComponentsUpdateBanner();
+    try {
+      if (document.getElementById('settings-dialog')?.open) settingsUI?.updates?.refresh?.();
+    } catch {}
   } catch (e) {
     setConnection(false);
     banner(() => tr('ui.impossible_de_joindre_le_serveur', { value1: translateKnown(e.message) }), true);
@@ -3317,6 +3430,8 @@ onLanguageChange(() => {
   if (!state.initialized) return;
   applyAccessMode();
   applyPreferences();
+  if ($('update-banner') && !$('update-banner').hidden && $('global-banner') && !$('global-banner').hidden)
+    hideComponentsUpdateBanner();
   setConnection(state.online);
   renderNavigation();
   setSelectedModel($('model-select').value);
@@ -3349,7 +3464,7 @@ createProviderSettings({
     updateModelsAfterConfiguration({ catalog });
   },
 });
-createSettings({
+const settingsUI = createSettings({
   api,
   onStudioPreferences: applyStudioPreferences,
   getContext: () => ({
@@ -3361,6 +3476,9 @@ createSettings({
   openResources: (source) => commandsUI.open(source),
   copyText,
   toast,
+  getModels: () => state.models,
+  openModelPicker,
+  icon,
 });
 const pushSettings = createPushSettings();
 pushSettings.listenMessages((sessionId) => selectSession(sessionId));

@@ -187,3 +187,54 @@ fn updater_verifies_signed_downloads_and_rejects_tampering() {
         }
     });
 }
+
+#[test]
+fn component_bridge_rejects_lan_browser_like_origins_and_other_windows() {
+    assert!(super::is_update_origin(
+        "main",
+        &"http://127.0.0.1:3088/".parse().unwrap(),
+        3088
+    ));
+    assert!(super::is_update_origin(
+        "desktop-settings",
+        &"tauri://localhost/index.html?settings".parse().unwrap(),
+        3088
+    ));
+    for raw in [
+        "http://192.168.1.20:3088/",
+        "http://localhost:3088/",
+        "http://127.0.0.1:3089/",
+        "https://127.0.0.1:3088/",
+        "http://user@127.0.0.1:3088/",
+        "http://127.0.0.1.evil.test:3088/",
+    ] {
+        assert!(
+            !super::is_update_origin("main", &raw.parse().unwrap(), 3088),
+            "{raw}"
+        );
+    }
+    assert!(!super::is_update_origin(
+        "desktop-settings",
+        &"http://127.0.0.1:3088/".parse().unwrap(),
+        3088
+    ));
+    assert!(!super::is_update_origin(
+        "other",
+        &"http://127.0.0.1:3088/".parse().unwrap(),
+        3088
+    ));
+}
+
+#[test]
+fn component_preparation_app_updates_and_restarts_share_one_operation() {
+    let state = super::updates::Updates::default();
+    let preparation = super::updates::begin(&state).unwrap();
+    assert!(state.is_busy());
+    assert!(matches!(super::updates::begin(&state), Err(code) if code == "update_busy"));
+    drop(preparation);
+    assert!(!state.is_busy());
+    let restart = super::updates::begin(&state).unwrap();
+    assert!(super::updates::begin(&state).is_err());
+    drop(restart);
+    assert!(!state.is_busy());
+}

@@ -20,13 +20,13 @@ impl Updates {
         self.busy.load(Ordering::SeqCst)
     }
 }
-struct Operation<'a>(&'a AtomicBool);
+pub(super) struct Operation<'a>(&'a AtomicBool);
 impl Drop for Operation<'_> {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
     }
 }
-fn begin(state: &Updates) -> Result<Operation<'_>, String> {
+pub(super) fn begin(state: &Updates) -> Result<Operation<'_>, String> {
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("update_busy".into());
     }
@@ -222,11 +222,7 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let mp = (5 * doy + 2) / 153;
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    (
-        if month <= 2 { year + 1 } else { year },
-        month,
-        day,
-    )
+    (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
 /// Minimal RFC 3339 reader for timestamps written as `Date.toISOString()`.
@@ -414,10 +410,7 @@ fn update_lock_is_stale(root: &Path) -> bool {
     std::fs::metadata(&path)
         .and_then(|meta| meta.modified())
         .map(|mtime| {
-            SystemTime::now()
-                .duration_since(mtime)
-                .unwrap_or_default()
-                > Duration::from_secs(5)
+            SystemTime::now().duration_since(mtime).unwrap_or_default() > Duration::from_secs(5)
         })
         .unwrap_or(false)
 }
@@ -479,10 +472,7 @@ fn unique_tmp_path(path: &Path) -> PathBuf {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "tmp".to_string());
-    path.with_file_name(format!(
-        "{file}.{}.{nanos}.{count}.tmp",
-        std::process::id()
-    ))
+    path.with_file_name(format!("{file}.{}.{nanos}.{count}.tmp", std::process::id()))
 }
 
 /// Atomic write mirroring `writeJsonAtomic`: refuse symlink targets (never
@@ -550,7 +540,12 @@ fn read_intent_file(root: &Path) -> Option<serde_json::Value> {
     if !valid_intent_version(version) {
         return None;
     }
-    if value.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         return None;
     }
     let status = value.get("status").and_then(|v| v.as_str()).unwrap_or("");
@@ -586,7 +581,10 @@ async fn cas_set_status(
     obj.insert("rev".to_string(), serde_json::json!(fresh_rev + 1));
     obj.insert("status".to_string(), serde_json::json!(status));
     obj.insert("statusAt".to_string(), serde_json::json!(now_iso()));
-    obj.insert("detail".to_string(), serde_json::json!(clamp_detail(detail)));
+    obj.insert(
+        "detail".to_string(),
+        serde_json::json!(clamp_detail(detail)),
+    );
     let text = serde_json::to_string(&next).ok()?;
     if !atomic_write_file(&intent_path(root), text.as_bytes()) {
         return None;
@@ -619,7 +617,10 @@ fn refresh_phase(root: &Path, id: &str, expected: &str, status: &str, detail: &s
     obj.insert("rev".to_string(), serde_json::json!(rev + 1));
     obj.insert("status".to_string(), serde_json::json!(status));
     obj.insert("statusAt".to_string(), serde_json::json!(now_iso()));
-    obj.insert("detail".to_string(), serde_json::json!(clamp_detail(detail)));
+    obj.insert(
+        "detail".to_string(),
+        serde_json::json!(clamp_detail(detail)),
+    );
     let Ok(text) = serde_json::to_string(&next) else {
         return false;
     };
@@ -678,7 +679,10 @@ impl Pick {
         if fresh.get("id").and_then(|v| v.as_str()).unwrap_or("") != self.id {
             return false;
         }
-        self.rev = fresh.get("rev").and_then(|v| v.as_u64()).unwrap_or(self.rev);
+        self.rev = fresh
+            .get("rev")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(self.rev);
         self.status = fresh
             .get("status")
             .and_then(|v| v.as_str())
@@ -723,15 +727,19 @@ async fn query_server_status(app: &AppHandle) -> Result<serde_json::Value, Strin
         )
     };
     let options = serde_json::json!({"action": "status", "dataRoot": root, "port": port});
-    let result =
-        tauri::async_runtime::spawn_blocking(move || super::run_desktop_control(&resources, &options))
-            .await
-            .map_err(|_| "server_status_failed".to_string())?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        super::run_desktop_control(&resources, &options)
+    })
+    .await
+    .map_err(|_| "server_status_failed".to_string())?;
     result
 }
 
 fn server_active_runs(status: &serde_json::Value) -> u64 {
-    status.get("activeRuns").and_then(|v| v.as_u64()).unwrap_or(0)
+    status
+        .get("activeRuns")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
 }
 
 async fn poll_update_intent_once(app: &AppHandle) {
@@ -785,7 +793,13 @@ async fn poll_update_intent_once(app: &AppHandle) {
             if server_version == app_version {
                 let _ = pick.set(&root, "installed", "").await;
             } else {
-                let _ = pick.set(&root, "installed_pending_restart", "server_restart_required").await;
+                let _ = pick
+                    .set(
+                        &root,
+                        "installed_pending_restart",
+                        "server_restart_required",
+                    )
+                    .await;
             }
         } else if pick.older_than(now, STALE_ACTIVE_AFTER) {
             let _ = failure(app, "install_unconfirmed", "install_unconfirmed");
@@ -796,7 +810,10 @@ async fn poll_update_intent_once(app: &AppHandle) {
     }
 
     // Crash recovery: in-flight phases never survive 30 minutes.
-    if matches!(pick.status.as_str(), "checking" | "downloading" | "verifying") {
+    if matches!(
+        pick.status.as_str(),
+        "checking" | "downloading" | "verifying"
+    ) {
         if pick.older_than(now, STALE_ACTIVE_AFTER) {
             let _ = failure(app, "interrupted", "interrupted");
             let _ = pick.set(&root, "failed", "interrupted").await;
@@ -826,11 +843,19 @@ async fn poll_update_intent_once(app: &AppHandle) {
         Ok(status) => status,
         Err(_) => return,
     };
-    if !server.get("managed").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !server
+        .get("managed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         let _ = pick.set(&root, "refused", "server_not_managed").await;
         return;
     }
-    if !server.get("running").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !server
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         let _ = pick.set(&root, "refused", "server_stopped").await;
         return;
     }
@@ -912,7 +937,8 @@ async fn poll_update_intent_once(app: &AppHandle) {
                 if percent != last_percent {
                     last_percent = percent;
                     let detail = percent.map(|value| format!("{value}%")).unwrap_or_default();
-                    let _ = refresh_phase(&root_dl, &intent_id, "downloading", "downloading", &detail);
+                    let _ =
+                        refresh_phase(&root_dl, &intent_id, "downloading", "downloading", &detail);
                 }
             },
             || {

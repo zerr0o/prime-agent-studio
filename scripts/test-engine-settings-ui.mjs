@@ -53,9 +53,19 @@ const app = createApp({
 });
 await new Promise((done) => app.server.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${app.server.address().port}`;
+await mkdir(resolve('test-results'), { recursive: true });
 let browser;
+const buttonValue = (locator) => locator.evaluate((el) => el.value ?? '');
+async function pickEngineModel(page, engine, field, modelId) {
+  await engine.locator(`#engine-${field}`).click();
+  await expect(page.locator('#model-dialog')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#model-search')).toBeFocused();
+  await page.locator('.model-choice[data-model-id="' + modelId + '"]').click();
+  await expect(page.locator('#model-dialog')).toBeHidden({ timeout: 10000 });
+}
 try {
-  browser = await chromium.launch({ headless: true });
+  const channel = process.env.PRIME_STUDIO_TEST_BROWSER || undefined;
+  browser = await chromium.launch(channel ? { headless: true, channel } : { headless: true });
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   const errors = [];
@@ -68,23 +78,57 @@ try {
   const engine = page.locator('#engine-settings');
   await expect(engine).toBeVisible({ timeout: 15000 });
   await expect(engine.locator('#engine-auxiliaryModel')).toBeEnabled();
-  // Authenticated catalog: unavailable models are not offered as choices.
-  const auxOptions = await engine.locator('#engine-auxiliaryModel option').allInnerTexts();
-  assert.ok(auxOptions.some((text) => text.includes('openai/gpt-5.4')));
-  assert.ok(auxOptions.some((text) => text.includes('anthropic/claude-opus-4-7')));
-  assert.ok(
-    !auxOptions.some((text) => text.includes('Old model')),
-    'unavailable catalog models must not be offered',
+  // Conversation-selected model must not move until an explicit engine save.
+  const initialConversationModel = await page.locator('#model-select').inputValue();
+  const initialConversationPicker = await page.locator('#model-picker-button').textContent();
+  // Shared picker, not native selects: same UX/a11y as other Studio selectors.
+  assert.equal(await engine.locator('select[data-engine-model]').count(), 0);
+  assert.equal(await engine.locator('button[data-engine-model]').count(), 3);
+  for (const field of ['auxiliaryModel', 'providerBackupModel', 'nativeSubagentDefaultModel']) {
+    const button = engine.locator(`#engine-${field}`);
+    await expect(button).toHaveClass(/model-picker-button/);
+    await expect(button).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(button).toHaveAttribute('aria-controls', 'model-dialog');
+    await expect(button.locator('.model-picker-name')).toBeVisible();
+    await expect(button.locator('.model-picker-provider')).toBeVisible();
+  }
+  // Stale stored value resolves to its catalog name; empty fields read as engine default.
+  await expect(engine.locator('#engine-auxiliaryModel .model-picker-name')).toContainText(/Old model|stale/i);
+  await expect(engine.locator('#engine-providerBackupModel .model-picker-name')).toContainText(
+    /Défaut du moteur/,
   );
-  assert.ok(
-    auxOptions.some((text) => text.trim() === 'stale/old-model'),
-    'the stored stale value stays visible as a disabled entry',
+  await expect(engine.locator('#engine-nativeSubagentDefaultModel .model-picker-name')).toContainText(
+    /Défaut du moteur/,
   );
-  // The stale stored value is shown (disabled) and the form starts pristine.
-  assert.equal(await engine.locator('#engine-auxiliaryModel').inputValue(), 'stale/old-model');
+  assert.equal(await buttonValue(engine.locator('#engine-auxiliaryModel')), 'stale/old-model');
+  assert.equal(await buttonValue(engine.locator('#engine-providerBackupModel')), '');
   await expect(engine.locator('#save-engine-settings')).toBeDisabled();
-  // Studio subagent empty choice now reads as engine default, not parent.
+  // Studio subagent empty choice still reads as engine default, not parent.
   await expect(page.locator('#subagent-settings .model-picker-name')).toContainText('Défaut du moteur');
+  // Shared dialog: search, providers, model info, unavailable disabled, engine default row.
+  await engine.locator('#engine-auxiliaryModel').click();
+  await expect(page.locator('#model-dialog')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#model-search')).toBeFocused();
+  await expect(page.locator('#model-dialog-title')).not.toBeEmpty();
+  await page.locator('#model-search').fill('gpt');
+  await expect(page.locator('#model-list')).toContainText('GPT 5.4');
+  await page.locator('#model-search').fill('');
+  await expect(page.locator('#model-list')).toContainText('openai');
+  await expect(page.locator('#model-list')).toContainText('anthropic');
+  const staleChoice = page.locator('.model-row[data-model-id="stale/old-model"] .model-choice');
+  await expect(staleChoice).toBeDisabled();
+  await expect(page.locator('.model-row[data-model-id="stale/old-model"]')).toContainText(/Indisponible/i);
+  await page.locator('#model-search').fill('Défaut');
+  await expect(page.locator('#model-list')).toContainText(/Défaut du moteur/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#model-dialog')).toBeHidden();
+  // Escape abandons the dialog without touching the draft.
+  assert.equal(await buttonValue(engine.locator('#engine-auxiliaryModel')), 'stale/old-model');
+  await expect(engine.locator('#save-engine-settings')).toBeDisabled();
+  await page.screenshot({
+    path: resolve('test-results/engine-picker-buttons-fr.png'),
+    animations: 'disabled',
+  });
   // Partial save: only the budget is sent, the stale model is preserved.
   await engine.locator('#engine-maxContinuations').fill('5');
   await expect(engine.locator('#save-engine-settings')).toBeEnabled();
@@ -94,16 +138,24 @@ try {
   assert.equal(partial.auxiliaryModel, 'stale/old-model');
   assert.equal(partial.autonomous.maxContinuations, 5);
   await expect(engine.locator('#save-engine-settings')).toBeDisabled();
-  // Full save with authenticated models.
-  await engine.locator('#engine-auxiliaryModel').selectOption('openai/gpt-5.4');
-  await engine.locator('#engine-providerBackupModel').selectOption('anthropic/claude-opus-4-7');
-  await engine.locator('#engine-nativeSubagentDefaultModel').selectOption('openrouter/moonshotai/kimi-k2.6');
+  // Full save with authenticated models via the shared picker.
+  await pickEngineModel(page, engine, 'auxiliaryModel', 'openai/gpt-5.4');
+  await expect(engine.locator('#engine-auxiliaryModel .model-picker-name')).toContainText('GPT 5.4');
+  await pickEngineModel(page, engine, 'providerBackupModel', 'anthropic/claude-opus-4-7');
+  await pickEngineModel(page, engine, 'nativeSubagentDefaultModel', 'openrouter/moonshotai/kimi-k2.6');
+  await expect(engine.locator('#engine-nativeSubagentDefaultModel .model-picker-name')).toContainText('Kimi');
   await engine.locator('#engine-maxTurns').fill('');
   await engine.locator('[data-engine-unlimited="maxTokens"]').check();
   await engine.locator('#engine-timeoutMs').fill('60000');
+  await page.screenshot({
+    path: resolve('test-results/engine-picker-selected-fr.png'),
+    animations: 'disabled',
+  });
   await engine.locator('#save-engine-settings').click();
   await expect(engine.locator('.engine-status')).toContainText(/enregistr|saved/i, { timeout: 10000 });
   const saved = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
+  assert.equal(await page.locator('#model-select').inputValue(), initialConversationModel);
+  assert.equal(await page.locator('#model-picker-button').textContent(), initialConversationPicker);
   assert.equal(saved.auxiliaryModel, 'openai/gpt-5.4');
   assert.equal(saved.providerBackupModel, 'anthropic/claude-opus-4-7');
   assert.equal(saved.subagentDefaultModel, 'openrouter/moonshotai/kimi-k2.6');
@@ -118,9 +170,9 @@ try {
   const untouched = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
   assert.equal('maxTurns' in (untouched.autonomous || {}), false);
   await engine.locator('#engine-maxTurns').fill('');
-  // Draft preservation: unsaved model+budget edits survive a FR->EN switch
+  // Draft preservation: unsaved picker + budget edits survive a FR->EN switch
   // issued from a peer tab (same origin storage sync), labels localize.
-  await engine.locator('#engine-providerBackupModel').selectOption('openrouter/moonshotai/kimi-k2.6');
+  await pickEngineModel(page, engine, 'providerBackupModel', 'openrouter/moonshotai/kimi-k2.6');
   await engine.locator('#engine-maxTurns').fill('7');
   const peer = await context.newPage();
   await peer.goto(url);
@@ -132,11 +184,12 @@ try {
     timeout: 10000,
   });
   assert.equal(
-    await engine.locator('#engine-providerBackupModel').inputValue(),
+    await buttonValue(engine.locator('#engine-providerBackupModel')),
     'openrouter/moonshotai/kimi-k2.6',
   );
   assert.equal(await engine.locator('#engine-maxTurns').inputValue(), '7');
-  assert.equal(await engine.locator('#engine-auxiliaryModel').inputValue(), 'openai/gpt-5.4');
+  assert.equal(await buttonValue(engine.locator('#engine-auxiliaryModel')), 'openai/gpt-5.4');
+  await expect(engine.locator('#engine-providerBackupModel .model-picker-name')).toContainText('Kimi');
   await peer.locator('#language-select').selectOption('fr');
   await expect(
     engine.getByRole('heading', { name: 'Modèles avancés (Prime Agent 0.9.5)', exact: true }),
@@ -150,6 +203,23 @@ try {
   const drafted = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
   assert.equal(drafted.providerBackupModel, 'openrouter/moonshotai/kimi-k2.6');
   assert.equal(drafted.autonomous.maxTurns, 7);
+  // Clear means native engine default (null): picking the default row clears the field.
+  await engine.locator('#engine-auxiliaryModel').click();
+  await expect(page.locator('#model-dialog')).toBeVisible({ timeout: 10000 });
+  await page.locator('#model-search').fill('Défaut');
+  await page.locator('.model-choice[data-model-id=""]').click();
+  await expect(page.locator('#model-dialog')).toBeHidden();
+  assert.equal(await buttonValue(engine.locator('#engine-auxiliaryModel')), '');
+  await expect(engine.locator('#engine-auxiliaryModel .model-picker-name')).toContainText(/Défaut du moteur/);
+  await engine.locator('#save-engine-settings').click();
+  await expect(engine.locator('.engine-status')).toContainText(/enregistr/i, { timeout: 10000 });
+  const cleared = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
+  assert.equal(await page.locator('#model-select').inputValue(), initialConversationModel);
+  assert.equal('auxiliaryModel' in cleared, false);
+  // Restore auxiliary for the reload checks below.
+  await pickEngineModel(page, engine, 'auxiliaryModel', 'openai/gpt-5.4');
+  await engine.locator('#save-engine-settings').click();
+  await expect(engine.locator('.engine-status')).toContainText(/enregistr/i, { timeout: 10000 });
   // Closing abandons nothing saved, reopening reloads fresh (needsLoad strategy).
   await page.keyboard.press('Escape');
   await expect(page.locator('#model-config-dialog')).toBeHidden();
@@ -163,7 +233,7 @@ try {
   await expect(reopened).toBeVisible({ timeout: 15000 });
   assert.equal(await reopened.locator('#engine-maxTurns').inputValue(), '7');
   assert.equal(
-    await reopened.locator('#engine-providerBackupModel').inputValue(),
+    await buttonValue(reopened.locator('#engine-providerBackupModel')),
     'openrouter/moonshotai/kimi-k2.6',
   );
   await page.keyboard.press('Escape');
@@ -187,6 +257,13 @@ try {
     await saveBtn.scrollIntoViewIfNeeded();
     await expect(saveBtn).toBeVisible();
     await engineReopened.locator('#engine-maxTurns').fill('7');
+    if (width === 390) {
+      await engineReopened.locator('#engine-auxiliaryModel').scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: resolve('test-results/engine-picker-mobile-390.png'),
+        animations: 'disabled',
+      });
+    }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   // 409 contract: a stale revision is rejected and the server serializes the
@@ -249,7 +326,11 @@ try {
     await expect(outageEngine.locator('.engine-status')).toContainText(/indisponible|unavailable/i, {
       timeout: 15000,
     });
-    assert.equal(await outageEngine.locator('#engine-auxiliaryModel option').count(), 1);
+    // Picker buttons stay usable with engine defaults when the catalog is down.
+    assert.equal(await outageEngine.locator('button[data-engine-model]').count(), 3);
+    await expect(outageEngine.locator('#engine-auxiliaryModel .model-picker-name')).toContainText(
+      /Défaut du moteur/,
+    );
     await outageEngine.locator('#engine-maxTurns').fill('4');
     await outageEngine.locator('#save-engine-settings').click();
     await expect(outageEngine.locator('.engine-status')).toContainText(/enregistr|saved/i, {
@@ -266,7 +347,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(
-    'Engine settings UI passed: stale preservation, partial save, validation, draft i18n, subagent labels, reload, mobile, 409 contract, catalog outage, no page errors.',
+    'Engine settings UI passed: shared picker (search/providers/unavailable/default), stale preservation, partial save, validation, draft i18n, clear-to-default, reload, mobile, 409 contract, catalog outage, no page errors.',
   );
 } finally {
   await browser?.close();

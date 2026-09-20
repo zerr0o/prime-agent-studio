@@ -1,5 +1,15 @@
-use std::{io::{BufRead, BufReader, Write}, process::{Command, Stdio, ChildStdin}, sync::{Mutex, atomic::{AtomicBool, Ordering}}};
-use tauri::{Emitter, Manager, WebviewWindow};
+use std::{
+    io::{BufRead, BufReader, Write},
+    process::{ChildStdin, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+};
+use tauri::{
+    ipc::{Channel, JavaScriptChannelId},
+    Emitter, Manager, WebviewWindow,
+};
 
 #[derive(Default)]
 pub struct Components {
@@ -10,34 +20,87 @@ pub struct Components {
 // Async (thread-pool) on purpose: opening/focusing the settings window from inside
 // the Studio WebView IPC callback must not run re-entrantly on the WebView2 thread.
 // The tray opener runs outside that callback, which is why it stayed working.
-// This only opens the launcher settings window; it never navigates main and never
-// touches the server, so agents keep running.
+// Focus the main Preferences panel when available, otherwise the native recovery
+// window. Opening settings never touches the server, so agents keep running.
 #[tauri::command]
-pub async fn desktop_components_open(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn desktop_components_open(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    recovery: Option<bool>,
+) -> Result<(), String> {
     super::update_window_only(&window, &app)?;
-    super::show_settings(&app)?;
+    if recovery.unwrap_or(false) {
+        super::show_recovery_settings(&app)?;
+    } else {
+        super::show_settings(&app)?;
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub fn desktop_components_cancel(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
-    super::native_only(&window)?;
-    if let Some(input) = app.state::<Components>().input.lock().map_err(|_| "preparation_failed")?.as_mut() {
-        input.write_all(b"cancel\n").map_err(|_| "preparation_failed")?;
+pub fn desktop_components_cancel(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    super::update_window_only(&window, &app)?;
+    if let Some(input) = app
+        .state::<Components>()
+        .input
+        .lock()
+        .map_err(|_| "preparation_failed")?
+        .as_mut()
+    {
+        input
+            .write_all(b"cancel\n")
+            .map_err(|_| "preparation_failed")?;
     }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn desktop_components(
-    window: WebviewWindow, app: tauri::AppHandle, action: String, component: Option<String>,
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    action: String,
+    component: Option<String>,
+    on_progress: Option<JavaScriptChannelId>,
 ) -> Result<serde_json::Value, String> {
-    // No download, path, command, or URL can be supplied by a remote Studio/LAN page.
-    super::native_only(&window)?;
-    if !["diagnose", "install", "select", "activate"].contains(&action.as_str()) { return Err("action_invalid".into()); }
+    // Only the bundled launcher or the main WebView at its exact owned loopback
+    // origin may use this bridge. LAN, browsers and other ports are denied.
+    // The page supplies no path, command or URL: downloads use the pinned policy;
+    // explicit paths still come only from the native user-initiated file picker.
+    super::update_window_only(&window, &app)?;
+    if ![
+        "status", "diagnose", "install", "select", "activate", "apply",
+    ]
+    .contains(&action.as_str())
+    {
+        return Err("action_invalid".into());
+    }
+    let updates = app.state::<super::updates::Updates>();
+    let _operation = super::updates::begin(&updates)?;
+    if app
+        .state::<super::Desktop>()
+        .starting
+        .load(Ordering::SeqCst)
+    {
+        return Err("setup_busy".into());
+    }
     let state = app.state::<Components>();
-    if state.busy.swap(true, Ordering::SeqCst) { return Err("setup_busy".into()); }
+    if state.busy.swap(true, Ordering::SeqCst) {
+        return Err("setup_busy".into());
+    }
+    let on_progress: Option<Channel<serde_json::Value>> =
+        on_progress.map(|id| id.channel_on(window.as_ref().clone()));
     let worker_app = app.clone();
+    let initiator = window.clone();
+    // The launcher already calls desktop_start after activation. Only the
+    // served Studio page needs native navigation; otherwise two starts race.
+    let from_studio = window.label() == "main"
+        && window
+            .url()
+            .map(|url| super::is_studio_url(&url, app.state::<super::Desktop>().port))
+            .unwrap_or(false);
     let result = tauri::async_runtime::spawn_blocking(move || {
         let desktop = worker_app.state::<super::Desktop>();
         let resources = desktop.resources.clone();
@@ -64,7 +127,10 @@ pub async fn desktop_components(
             let line = line.map_err(|_| "preparation_failed")?;
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else { continue; };
             match value["type"].as_str() {
-                Some("progress") => { let _ = window.emit("components-progress", &value); },
+                Some("progress") => {
+                    if let Some(channel) = &on_progress { let _ = channel.send(value.clone()); }
+                    let _ = window.emit("components-progress", &value);
+                },
                 Some("result") => { result = Ok(value["result"].clone()); },
                 Some("failure") => { result = Ok(serde_json::json!({"failure":value})); },
                 _ => {}
@@ -79,5 +145,16 @@ pub async fn desktop_components(
         *input = None;
     }
     state.busy.store(false, Ordering::SeqCst);
+    // All helper work is finished. A freshly navigated page must be able to
+    // read status immediately, without racing the previous operation's guard.
+    drop(_operation);
+    if let Ok(value) = &result {
+        if value["activation"] == "active" && from_studio {
+            let port = app.state::<super::Desktop>().port;
+            if let Ok(url) = format!("http://127.0.0.1:{port}/?settings=updates").parse() {
+                let _ = initiator.navigate(url);
+            }
+        }
+    }
     result
 }
