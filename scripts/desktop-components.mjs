@@ -57,7 +57,7 @@ async function describe(options, result, deps) {
 }
 
 export async function runComponents(options, { signal, onProgress = () => {} } = {}, deps = {}) {
-  if (!['status', 'diagnose', 'install', 'select', 'activate', 'apply'].includes(options.action))
+  if (!['status', 'diagnose', 'install', 'prepare', 'select', 'activate', 'apply'].includes(options.action))
     throw new Error('action_invalid');
   if (options.action === 'status') {
     const installed = await readJson(join(options.dataRoot, 'engine/installation.json'));
@@ -84,14 +84,13 @@ export async function runComponents(options, { signal, onProgress = () => {} } =
   }
   // Inspect the live server before a long preparation, without stopping it.
   // This snapshot is only explanatory: activation rechecks ownership and activity.
-  const before = ['install', 'apply'].includes(options.action)
+  const before = ['install', 'prepare', 'apply'].includes(options.action)
     ? await describe(options, { ready: false }, deps)
     : null;
   if (before?.serverUpdatePending) onProgress({ component: 'studio', stage: 'server_update_pending' });
-  const result =
-    options.action === 'install'
-      ? await (deps.prepare || prepareComponents)({ ...options, signal, onProgress })
-      : await (deps.diagnose || diagnoseComponents)({ ...options, signal, onProgress });
+  const result = ['install', 'prepare'].includes(options.action)
+    ? await (deps.prepare || prepareComponents)({ ...options, signal, onProgress })
+    : await (deps.diagnose || diagnoseComponents)({ ...options, signal, onProgress });
   // Legacy launcher activation only records an already validated explicit choice.
   // It MUST NOT restart a warm server just because the launcher is opened.
   if (['activate', 'apply'].includes(options.action) && result.ready) {
@@ -194,7 +193,8 @@ if (isDirectInvocation(import.meta.url)) {
     }
   };
   try {
-    if (options.action === 'install') await mkdir(join(options.dataRoot, 'engine/logs'), { recursive: true });
+    if (['install', 'prepare'].includes(options.action))
+      await mkdir(join(options.dataRoot, 'engine/logs'), { recursive: true });
     const result = await runComponents(options, { signal: abort.signal, onProgress });
     if (result.activationError)
       await recordComponentFailure(options.dataRoot, {

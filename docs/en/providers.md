@@ -18,6 +18,16 @@ In ordinary use, Prime Inference uses `PRIME_API_KEY` then the `auth.json` entry
 
 Azure and Cloudflare require additional environment settings. Bedrock and Vertex use their existing cloud settings; guidance in each card explains where to configure them. Custom providers must first be defined in **Models and defaults**.
 
+## Meta Model API (Muse Spark)
+
+The **Meta** provider (`meta`) connects Prime Agent directly to [Meta Model API](https://dev.meta.ai/docs/overview), without installing or launching the Muse Code CLI. Tools and subagents remain managed by Prime Agent.
+
+In **Manage connections**, search for **Meta**, choose **Add an API key**, and enter your Meta Model API key. You can also use `MODEL_API_KEY` in the server environment. Do not paste your key into a conversation.
+
+After connecting, select **Muse Spark 1.3** (`meta/muse-spark-1.3`) or **Muse Spark 1.3 Contributor** (`meta/muse-spark-1.3-contributor`). The official API endpoint is `https://api.meta.ai/v1`. Meta manages access, quotas, and billing. **The Contributor variant allows Meta to use prompts and responses for training.** Choose the Standard variant if you do not want this use. A configured connection does not guarantee that generation is authorized.
+
+Muse Spark always reasons: available levels range from `minimal` to `max` for Standard, and up to `xhigh` for Contributor. A saved `off` preference is clamped to `minimal`. The Responses protocol preserves encrypted reasoning between turns. Studio exposes text and image inputs.
+
 ## Catalog and availability
 
 With Prime Agent **0.9.4**, the model picker uses the native registry of available models for configured providers. Refreshing includes public models and private Prime Inference models accessible to your account. If the engine is older or this registry is unavailable, Studio uses the catalog bundled with the installation and custom models. With Prime Agent **0.9.5**, ordinary resolution no longer reads the Prime CLI configuration and the catalog no longer watches it; a CLI team snapshot is reused only during an explicit upstream login, then kept by the Agent without tracking later CLI changes.

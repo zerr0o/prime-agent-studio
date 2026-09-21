@@ -643,3 +643,50 @@
     transition: none;
   }
 }
+
+/* One update surface, with technical details outside the normal decision path. */
+.update-overview .update-status {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.update-overview .settings-footnote {
+  margin: 6px 0;
+}
+.update-operation {
+  padding: 12px 0;
+}
+.update-operation progress {
+  width: 100%;
+}
+.update-operation .settings-footnote:empty {
+  display: none;
+}
+.update-diagnostic {
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.update-confirm #studio-update-confirm-note {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+#studio-update-details {
+  margin-top: 20px;
+}
+#studio-update-details > summary {
+  cursor: pointer;
+}
+#studio-update-details .update-versions {
+  margin-top: 14px;
+}
+#studio-update-native .update-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  #studio-update-native .update-actions > button {
+    flex: 1 1 160px;
+  }
+}

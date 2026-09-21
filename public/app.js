@@ -655,7 +655,9 @@ function showComponentsUpdateBanner(result, kind) {
     result.installedEngine !== undefined && result.installedEngine !== null
       ? result.installedEngine
       : result.components && result.components.engine && result.components.engine.version;
-  const mode = kind === 'activate' ? 'activate' : 'install';
+  const mode = kind === 'activate'
+    ? result.server?.running && result.server?.canRestart === false ? 'unverified' : 'activate'
+    : 'install';
   componentsBannerState = {
     required: required ? String(required) : '',
     installed: installed ? String(installed) : '',
@@ -663,6 +665,7 @@ function showComponentsUpdateBanner(result, kind) {
   };
   bindText(text, () => {
     if (!componentsBannerState) return '';
+    if (componentsBannerState.mode === 'unverified') return tr('updates.banner_unverified');
     if (componentsBannerState.mode === 'activate') {
       return tr('components.banner_activate_text', {
         required: componentsBannerState.required || tr('components.banner_unknown'),

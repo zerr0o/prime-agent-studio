@@ -4,6 +4,16 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.8.0
+
+- **One desktop window**: Preferences, updates and recovery now share the main window, including when the server is stopped or still uses an older interface.
+- **Clear update controls**: check for updates, update Studio, repair missing components and restart the server have distinct actions. Repair does not restart the server implicitly.
+- **Real progress and cancellation**: operation stages, received bytes, known totals, elapsed time and errors remain available when the panel is reopened. Interrupted operations no longer leave the interface permanently busy.
+- **Explicit server restart**: confirm the interruption of active agents and cancellable work. Restart waits for cancellation to finish, verifies the server identity and refuses to stop unrelated processes. Installer handoff cannot be cancelled.
+- **Quit stops the server**: Quit application from the system tray stops the verified Studio server before closing. Closing the window with X still hides it and leaves agents running.
+- **Meta Model API**: connect Muse Spark with an API key, without the Muse Code CLI. Custom provider settings are preserved. The Contributor model displays a warning that prompts and responses may be used for training; access and billing remain managed by Meta.
+- **French and English interface**: clearer confirmations, recovery messages and responsive update panels on desktop and mobile. Projects, accounts and conversation history are preserved.
+
 ## 3.7.1
 
 - **Continuation after tools**: backport Prime Agent upstream fix #2372 into new Studio-managed Python environments. Consuming a `bash()` result withdraws its notification before the cell ends, to prevent interrupted continuation. Dedicated fingerprint, compatibility checks and protocol validation before use. In-use environments and external Python installations are not modified.

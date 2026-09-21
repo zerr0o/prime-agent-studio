@@ -29,7 +29,11 @@ async function writeInstallation(dataRoot, opts) {
     validatedAt: new Date().toISOString(),
     shellValidated,
     components: {
-      engine: { path: enginePath, packageDir: join(dataRoot, 'engine', 'prime-agent'), version: engineVersion },
+      engine: {
+        path: enginePath,
+        packageDir: join(dataRoot, 'engine', 'prime-agent'),
+        version: engineVersion,
+      },
       python: { path: pythonPath },
     },
   };
@@ -50,7 +54,12 @@ function readyDiagnose(dataRoot, engineVersion) {
   return {
     ready: true,
     components: {
-      engine: { status: 'ready', path: enginePath, packageDir: join(dataRoot, 'engine', 'prime-agent'), version: v },
+      engine: {
+        status: 'ready',
+        path: enginePath,
+        packageDir: join(dataRoot, 'engine', 'prime-agent'),
+        version: v,
+      },
       python: { status: 'ready', path: pythonPath },
       bash: { status: 'ready', path: 'C:\\Program Files\\Git\\bin\\bash.exe' },
     },
@@ -79,8 +88,14 @@ test('status is read-only: quickReceipt plus disk plus server plus version only,
   const calls = { prepare: 0, diagnose: 0, fetches: [] };
   const serverStatusCalls = [];
   const deps = {
-    prepare: async () => { calls.prepare++; throw new Error('must_not_prepare'); },
-    diagnose: async () => { calls.diagnose++; throw new Error('must_not_diagnose'); },
+    prepare: async () => {
+      calls.prepare++;
+      throw new Error('must_not_prepare');
+    },
+    diagnose: async () => {
+      calls.diagnose++;
+      throw new Error('must_not_diagnose');
+    },
     quickReceipt: async (options) => {
       assert.equal(options.dataRoot, f.dataRoot);
       return { ok: true };
@@ -120,11 +135,18 @@ test('status reports pending plus needsUpdate when the receipt is stale; no vers
   await writeResource(f.resourceDir, { version: '9.9.9' });
   let fetches = 0;
   const deps = {
-    prepare: async () => { throw new Error('must_not_prepare'); },
-    diagnose: async () => { throw new Error('must_not_diagnose'); },
+    prepare: async () => {
+      throw new Error('must_not_prepare');
+    },
+    diagnose: async () => {
+      throw new Error('must_not_diagnose');
+    },
     quickReceipt: async () => ({ ok: false, reason: 'version_changed' }),
     serverStatus: async () => ({ running: false, managed: true, activeRuns: 0 }),
-    fetch: async () => { fetches++; throw new Error('must_not_fetch_when_down'); },
+    fetch: async () => {
+      fetches++;
+      throw new Error('must_not_fetch_when_down');
+    },
   };
   const result = await runComponents(
     { action: 'status', dataRoot: f.dataRoot, resourceDir: f.resourceDir, port: 32102 },
@@ -150,7 +172,9 @@ test('install with old live runtime engine fails activation and keeps ready comp
   let restarts = 0;
   const deps = {
     prepare: async () => readyDiagnose(f.dataRoot),
-    diagnose: async () => { throw new Error('install_must_use_prepare'); },
+    diagnose: async () => {
+      throw new Error('install_must_use_prepare');
+    },
     serverStatus: seqServerStatus(
       [
         { running: true, managed: true, activeRuns: 0, version: '9.9.9' },
@@ -176,7 +200,11 @@ test('install with old live runtime engine fails activation and keeps ready comp
   assert.ok(result.components.engine, 'validated details preserved');
   assert.equal(result.activation, 'failed');
   assert.equal(result.activationError, 'server_validation_failed');
-  assert.ok(progress.some((e) => e.component === 'studio' && e.stage === 'error' && e.error === 'server_validation_failed'));
+  assert.ok(
+    progress.some(
+      (e) => e.component === 'studio' && e.stage === 'error' && e.error === 'server_validation_failed',
+    ),
+  );
   assert.equal(restarts, 1);
   assert.ok(serverStatusCalls.length >= 3, 'server rechecked around activation');
 });
@@ -227,7 +255,9 @@ test('restart version mismatch returns failed activation, never a masked install
   const deps = {
     prepare: async () => readyDiagnose(f.dataRoot),
     serverStatus: async () => ({ running: true, managed: true, activeRuns: 0, version: '9.9.8' }),
-    restart: async () => { throw new Error('server_version_mismatch'); },
+    restart: async () => {
+      throw new Error('server_version_mismatch');
+    },
     fetch: fetchRuntime(COMPONENT_POLICY.engine, true),
   };
   const result = await runComponents(
@@ -256,7 +286,10 @@ test('agents starting between prepare and activation defer without stopping the 
   const deps = {
     prepare: async () => readyDiagnose(f.dataRoot),
     serverStatus: seqServerStatus(queue, serverStatusCalls),
-    restart: async () => { restarts++; return { restarted: true }; },
+    restart: async () => {
+      restarts++;
+      return { restarted: true };
+    },
     fetch: fetchRuntime(COMPONENT_POLICY.engine, true),
   };
   const result = await runComponents(
@@ -299,7 +332,10 @@ test('unmanaged live server defers activation and never restarts', async (t) => 
   const deps = {
     prepare: async () => readyDiagnose(f.dataRoot),
     serverStatus: async () => ({ running: true, managed: false, activeRuns: 0, version: '9.9.9' }),
-    restart: async () => { restarts++; return { restarted: true }; },
+    restart: async () => {
+      restarts++;
+      return { restarted: true };
+    },
     fetch: fetchRuntime(COMPONENT_POLICY.engine, true),
   };
   const result = await runComponents(
@@ -343,10 +379,19 @@ test('install preparation failure throws unmasked with no restart', async (t) =>
   await writeResource(f.resourceDir, { version: '9.9.9' });
   let restarts = 0;
   const deps = {
-    prepare: async () => { throw new Error('disk_full'); },
-    serverStatus: async () => { throw new Error('must_not_check_server_after_prepare_throw'); },
-    restart: async () => { restarts++; return { restarted: true }; },
-    fetch: async () => { throw new Error('must_not_validate_after_prepare_throw'); },
+    prepare: async () => {
+      throw new Error('disk_full');
+    },
+    serverStatus: async () => {
+      throw new Error('must_not_check_server_after_prepare_throw');
+    },
+    restart: async () => {
+      restarts++;
+      return { restarted: true };
+    },
+    fetch: async () => {
+      throw new Error('must_not_validate_after_prepare_throw');
+    },
   };
   await assert.rejects(
     runComponents(
@@ -374,9 +419,14 @@ test('legacy activate records a validated choice and never restarts, even with a
   let restarts = 0;
   const deps = {
     diagnose: async () => ({ ...fresh }),
-    prepare: async () => { throw new Error('activate_must_not_prepare'); },
+    prepare: async () => {
+      throw new Error('activate_must_not_prepare');
+    },
     serverStatus: async () => ({ running: true, managed: true, activeRuns: 0, version: '9.9.8' }),
-    restart: async () => { restarts++; return { restarted: true }; },
+    restart: async () => {
+      restarts++;
+      return { restarted: true };
+    },
     fetch: fetchRuntime('0.9.4', true),
   };
   const result = await runComponents(
@@ -415,8 +465,12 @@ test('activate skips the receipt rewrite when the recorded choice already matche
   const deps = {
     diagnose: async () => ({ ...fresh }),
     serverStatus: async () => ({ running: false, managed: true, activeRuns: 0 }),
-    restart: async () => { throw new Error('activate_must_not_restart'); },
-    fetch: async () => { throw new Error('must_not_fetch_when_down'); },
+    restart: async () => {
+      throw new Error('activate_must_not_restart');
+    },
+    fetch: async () => {
+      throw new Error('must_not_fetch_when_down');
+    },
   };
   const before = await readFile(join(f.dataRoot, 'engine', 'installation.json'), 'utf8');
   const result = await runComponents(
@@ -436,8 +490,14 @@ test('apply retries validation without redownload, then activates', async (t) =>
   let prepares = 0;
   let diagnoses = 0;
   const deps = {
-    prepare: async () => { prepares++; throw new Error('apply_must_not_redownload'); },
-    diagnose: async () => { diagnoses++; return readyDiagnose(f.dataRoot); },
+    prepare: async () => {
+      prepares++;
+      throw new Error('apply_must_not_redownload');
+    },
+    diagnose: async () => {
+      diagnoses++;
+      return readyDiagnose(f.dataRoot);
+    },
     serverStatus: async () => ({ running: true, managed: true, activeRuns: 0, version: '9.9.9' }),
     restart: async (options) => {
       assert.equal(options.force, false);
@@ -501,9 +561,19 @@ test('unreadable version endpoint degrades the server detail instead of failing 
 test('recordComponentFailure persists only allowlisted fields and never leaks stacks or secrets', async (t) => {
   const f = await fixture(t);
   await recordComponentFailure(f.dataRoot, { component: 'engine', error: 'disk_full', phase: 'preparation' });
-  await recordComponentFailure(f.dataRoot, { component: 'evil;rm -rf', error: 'BOOM!! not-snake', phase: 'weird' });
-  await recordComponentFailure(f.dataRoot, { component: 'studio', error: 'server_validation_failed', phase: 'activation' });
-  const lines = (await readFile(join(f.dataRoot, 'engine/logs/components.log'), 'utf8')).split('\n').filter(Boolean);
+  await recordComponentFailure(f.dataRoot, {
+    component: 'evil;rm -rf',
+    error: 'BOOM!! not-snake',
+    phase: 'weird',
+  });
+  await recordComponentFailure(f.dataRoot, {
+    component: 'studio',
+    error: 'server_validation_failed',
+    phase: 'activation',
+  });
+  const lines = (await readFile(join(f.dataRoot, 'engine/logs/components.log'), 'utf8'))
+    .split('\n')
+    .filter(Boolean);
   assert.equal(lines.length, 3);
   const parsed = lines.map((line) => JSON.parse(line));
   const first = parsed[0];
@@ -522,4 +592,40 @@ test('recordComponentFailure persists only allowlisted fields and never leaks st
   assert.equal(third.error, 'server_validation_failed');
   const raw = lines.join('\n');
   assert.ok(!/Error:|secret|token|Bearer|PATH=/i.test(raw));
+});
+
+test('prepare repairs components but never implicitly restarts or stops an active server', async (t) => {
+  const f = await fixture(t);
+  await writeInstallation(f.dataRoot, {});
+  await writeResource(f.resourceDir, { version: '9.9.9' });
+  let prepares = 0;
+  const result = await runComponents(
+    { ...f, action: 'prepare', port: 32199 },
+    {},
+    {
+      prepare: async () => {
+        prepares++;
+        return readyDiagnose(f.dataRoot);
+      },
+      diagnose: async () => {
+        throw new Error('must_prepare');
+      },
+      restart: async () => {
+        throw new Error('prepare_must_not_restart');
+      },
+      serverStatus: async () => ({
+        running: true,
+        managed: false,
+        canRestart: true,
+        ownership: 'recoverable',
+        activeRuns: 3,
+        version: '9.9.8',
+      }),
+      fetch: fetchRuntime(COMPONENT_POLICY.engine, true),
+    },
+  );
+  assert.equal(prepares, 1);
+  assert.equal(result.ready, true);
+  assert.equal(result.activation, undefined);
+  assert.equal(result.needsRestart, true);
 });

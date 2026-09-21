@@ -2,6 +2,12 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  META_PROVIDER_ID,
+  META_REAL_AUTH_SOURCES,
+  ensureMetaProvider,
+  hasUserMetaConfig,
+} from '../lib/meta-provider.mjs';
 
 const REFRESH_TTL = 5 * 60_000;
 const OBSERVATION_WINDOW = 12_000;
@@ -59,7 +65,20 @@ async function fingerprint() {
   );
 }
 
-function snapshot(registry) {
+function snapshot(registry, { metaCanonical = false } = {}) {
+  // Canonical Meta models must only reach the picker with a real credential.
+  // The registration placeholder alone (models_json_key without stored key or
+  // MODEL_API_KEY env) is pruned here; the provider still lists in manage
+  // connections via the provider-auth overlay. User meta overrides are kept.
+  let pruneMeta = false;
+  if (metaCanonical) {
+    try {
+      const source = registry.getProviderAuthStatus?.(META_PROVIDER_ID)?.source;
+      pruneMeta = !META_REAL_AUTH_SOURCES.has(source) && !process.env.MODEL_API_KEY;
+    } catch {
+      pruneMeta = false;
+    }
+  }
   const models = new Map();
   // getAll() includes unauthorized private models. Only this native availability filter may supply UI rows.
   for (const model of registry.getAvailable()) {
@@ -67,6 +86,7 @@ function snapshot(registry) {
     const id = text(model.id);
     const provider = text(model.provider, 128);
     if (!id || !provider) continue;
+    if (pruneMeta && provider === META_PROVIDER_ID) continue;
     const levels = thinkingLevels(model);
     models.set(`${provider}/${id}`, {
       id,
@@ -97,7 +117,7 @@ function snapshot(registry) {
 
 function publish(current) {
   if (state !== current) return;
-  current.catalog = snapshot(current.registry);
+  current.catalog = snapshot(current.registry, { metaCanonical: current.metaCanonical === true });
 }
 
 function beginRefresh(current) {
@@ -140,7 +160,16 @@ async function read(message) {
     if (auth.drainErrors?.().length) throw new Error('Native auth could not be read');
     // A previous in-flight refresh keeps its own registry, so its result cannot restore an old team.
     const registry = native.ModelRegistry.create(auth, modelsPath);
-    const current = { registry, stamp, refreshing: false, lastRefresh: 0 };
+    // Canonical Meta overlay: picker availability without manual custom setup.
+    // ANY user models.json meta entry (JSONC-aware) wins; malformed content
+    // fails closed and skips the canonical registration.
+    let metaCanonical = false;
+    try {
+      metaCanonical = ensureMetaProvider(registry, { hasUserConfig: hasUserMetaConfig(modelsPath) });
+    } catch {
+      metaCanonical = false;
+    }
+    const current = { registry, stamp, refreshing: false, lastRefresh: 0, metaCanonical };
     state = current;
     publish(current);
   }

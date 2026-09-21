@@ -112,6 +112,24 @@ try {
   await page.getByRole('button', { name: 'Confirmer la déconnexion' }).click();
   await expect(page.locator('[data-provider="deepseek"]')).toContainText('Non configuré');
   assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
+  // Meta is available without a custom models.json entry. Use only a dummy key.
+  await search.fill('Meta');
+  const metaCard = page.locator('[data-provider="meta"]');
+  await expect(metaCard).toBeVisible();
+  await expect(metaCard).toContainText('Non configuré');
+  await expect(metaCard.getByRole('button', { name: 'Connecter un compte', exact: true })).toHaveCount(0);
+  await metaCard.getByRole('button', { name: 'Ajouter une clé API', exact: true }).click();
+  await page.getByLabel('Clé API', { exact: true }).fill('private-fixture-meta');
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
+  await expect(metaCard).toContainText('Configuré');
+  assert.equal(JSON.parse(await readFile(authPath)).meta.key, 'private-fixture-meta');
+  assert.doesNotMatch(await page.locator('#providers-dialog').innerHTML(), /private-fixture-meta/);
+  assert.doesNotMatch(await page.evaluate(() => JSON.stringify(localStorage)), /private-fixture-meta/);
+  await metaCard.getByRole('button', { name: 'Déconnecter', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirmer la déconnexion' }).click();
+  await expect(metaCard).toContainText('Non configuré');
+  assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
+  assert.equal(await readFile(join(agentHome, 'models.json'), 'utf8'), '{"providers":{}}');
   // OAuth form events are replayed without connecting any real account.
   let job = {
     id: '12345678-abcd-1234-abcd-123456789012',

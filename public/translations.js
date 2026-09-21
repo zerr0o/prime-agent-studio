@@ -5,6 +5,187 @@ export const languages = [
   { id: 'en', label: 'English' },
 ];
 export const messages = {
+  'updates.operation_interrupted': {
+    fr: 'L’opération précédente a été interrompue. Vérifiez les versions avant de réessayer.',
+    en: 'The previous operation was interrupted. Check the versions before retrying.',
+  },
+  'providers.meta_guidance': {
+    fr: 'Ajoutez votre clé Meta Model API ou définissez MODEL_API_KEY dans l’environnement du Studio. Les requêtes utilisent https://api.meta.ai/v1. Attention : la variante Contributor autorise l’entraînement sur vos prompts et réponses. Choisissez la variante Standard si vous ne souhaitez pas cet usage.',
+    en: 'Add your Meta Model API key or set MODEL_API_KEY in the Studio environment. Requests use https://api.meta.ai/v1. Warning: the Contributor variant allows training on your prompts and responses. Choose the Standard variant if you do not want this use.',
+  },
+  'updates.update_studio': { fr: 'Mettre à jour Studio', en: 'Update Studio' },
+  'updates.repair_studio': { fr: 'Réparer Studio', en: 'Repair Studio' },
+  'updates.restart_now': { fr: 'Redémarrer maintenant', en: 'Restart now' },
+  'updates.start_now': { fr: 'Démarrer le serveur', en: 'Start server' },
+  'updates.details': { fr: 'Détails techniques', en: 'Technical details' },
+  'updates.cancel_operation': { fr: 'Annuler l’opération', en: 'Cancel operation' },
+  'updates.state_unknown': { fr: 'Vérification de l’état du Studio…', en: 'Checking Studio status…' },
+  'updates.state_running': {
+    fr: 'Studio fonctionne. Recherchez les nouvelles versions si besoin.',
+    en: 'Studio is running. Check for new versions when needed.',
+  },
+  'updates.state_stopped': {
+    fr: 'Le serveur Studio est arrêté. Vous pouvez le démarrer ici.',
+    en: 'The Studio server is stopped. You can start it here.',
+  },
+  'updates.state_repair': {
+    fr: 'Des composants nécessaires manquent ou doivent être mis à jour.',
+    en: 'Required components are missing or need an update.',
+  },
+  'updates.state_restart': {
+    fr: 'Un redémarrage est nécessaire pour utiliser les changements installés.',
+    en: 'Restart to use the installed changes.',
+  },
+  'updates.identity_unverified': {
+    fr: 'L’identité du serveur n’a pas pu être vérifiée. Aucun processus ne sera arrêté. Consultez les détails et réessayez la vérification.',
+    en: 'The server identity could not be verified. No process will be stopped. Check the details and retry the check.',
+  },
+  'updates.identity_recoverable': {
+    fr: 'Le serveur Studio a été reconnu. Son contrôle sera rétabli lors du redémarrage.',
+    en: 'The Studio server was identified. Its control will be restored on restart.',
+  },
+  'updates.restart_versions': {
+    fr: 'L’application installée et le serveur actif ne sont pas encore synchronisés. Redémarrer applique les changements prêts.',
+    en: 'The installed application and running server are not yet in sync. Restarting applies ready changes.',
+  },
+  'updates.restart_scope': {
+    fr: 'Redémarrer arrête complètement le serveur Studio, puis le relance. Vos projets et votre historique enregistré restent conservés.',
+    en: 'Restart fully stops the Studio server, then starts it again. Your projects and saved history are kept.',
+  },
+  'updates.action_note': {
+    fr: 'La mise à jour installe une nouvelle version. Le redémarrage relance le serveur avec ce qui est déjà installé.',
+    en: 'Update installs a new version. Restart starts the server again with what is already installed.',
+  },
+  'updates.busy_restart_available': {
+    fr: 'Vous pouvez fermer ce panneau sans interrompre l’opération. Un redémarrage demandé vous fera confirmer son interruption.',
+    en: 'You can close this panel without interrupting the operation. A restart request will ask you to confirm the interruption.',
+  },
+  'updates.bytes_total': {
+    fr: '{received} / {total} octets reçus',
+    en: '{received} / {total} bytes received',
+  },
+  'updates.bytes_received': {
+    fr: '{received} octets reçus, taille totale inconnue',
+    en: '{received} bytes received, total size unknown',
+  },
+  'updates.elapsed': { fr: '{seconds} s écoulées', en: '{seconds} s elapsed' },
+  'updates.progress_wait': {
+    fr: 'Aucun nouveau progrès depuis 15 s. L’opération est toujours en cours. Vous pouvez annuler si cette action est disponible.',
+    en: 'No new progress for 15 s. The operation is still running. You can cancel if that action is available.',
+  },
+  'updates.cancelling': {
+    fr: 'Annulation demandée. Attente de l’arrêt effectif…',
+    en: 'Cancellation requested. Waiting for the operation to stop…',
+  },
+  'updates.operation_cancelled': {
+    fr: 'Opération annulée. Les fichiers déjà validés sont conservés.',
+    en: 'Operation cancelled. Already validated files are kept.',
+  },
+  'updates.operation_failed': {
+    fr: 'L’opération a échoué. Consultez l’erreur ci-dessous.',
+    en: 'The operation failed. See the error below.',
+  },
+  'updates.operation_done': { fr: 'Opération terminée.', en: 'Operation completed.' },
+  'updates.working': { fr: 'Opération en cours…', en: 'Operation in progress…' },
+  'updates.operation_check': { fr: 'Recherche des mises à jour…', en: 'Checking for updates…' },
+  'updates.operation_install': { fr: 'Mise à jour de Studio…', en: 'Updating Studio…' },
+  'updates.operation_restart': {
+    fr: 'Redémarrage complet du serveur Studio…',
+    en: 'Fully restarting the Studio server…',
+  },
+  'updates.operation_quit': {
+    fr: 'Arrêt du serveur avant de quitter Studio…',
+    en: 'Stopping the server before quitting Studio…',
+  },
+  'updates.operation_prepare': {
+    fr: 'Installation et vérification des composants nécessaires…',
+    en: 'Installing and checking required components…',
+  },
+  'updates.operation_components': { fr: 'Vérification des composants…', en: 'Checking components…' },
+  'updates.operation_start': { fr: 'Démarrage du serveur Studio…', en: 'Starting the Studio server…' },
+  'updates.phase_checking': {
+    fr: 'Vérification du serveur et de son identité…',
+    en: 'Checking the server and its identity…',
+  },
+  'updates.phase_stopping': { fr: 'Arrêt du serveur Studio…', en: 'Stopping the Studio server…' },
+  'updates.phase_starting': { fr: 'Démarrage du serveur Studio…', en: 'Starting the Studio server…' },
+  'updates.phase_ready': { fr: 'Le nouveau serveur répond.', en: 'The new server is responding.' },
+  'updates.confirm_restart_title': {
+    fr: 'Redémarrer complètement le serveur ?',
+    en: 'Fully restart the server?',
+  },
+  'updates.confirm_restart_note': {
+    fr: 'Le serveur sera arrêté puis relancé. Les appareils seront temporairement déconnectés. Les projets et l’historique enregistré seront conservés.',
+    en: 'The server will stop and start again. Devices will disconnect briefly. Projects and saved history will be kept.',
+  },
+  'updates.confirm_quit_title': {
+    fr: 'Arrêter le serveur et quitter Studio ?',
+    en: 'Stop the server and quit Studio?',
+  },
+  'updates.confirm_quit_note': {
+    fr: 'Le serveur et l’application seront arrêtés. Vos appareils seront déconnectés. Les projets et l’historique enregistré seront conservés.',
+    en: 'The server and application will stop. Your devices will disconnect. Projects and saved history will be kept.',
+  },
+  'updates.confirm_install_title': { fr: 'Mettre à jour Studio ?', en: 'Update Studio?' },
+  'updates.confirm_install_note': {
+    fr: 'La mise à jour sera téléchargée, sa signature vérifiée, puis l’application sera relancée. Le serveur redémarrera s’il est libre. Si des agents travaillent encore, une nouvelle confirmation sera nécessaire.',
+    en: 'The update will download, its signature will be checked, and the application will relaunch. The server will restart if idle. If agents are still working, another confirmation will be required.',
+  },
+  'updates.confirm_agents': {
+    fr: '{count} exécution(s) en cours. Un arrêt ou un redémarrage les interrompra.',
+    en: '{count} active run(s). Stopping or restarting will interrupt them.',
+  },
+  'updates.confirm_pending': {
+    fr: 'L’opération en cours sera annulée. Son arrêt effectif sera attendu avant de toucher au serveur.',
+    en: 'The current operation will be cancelled. Studio will wait for it to stop before changing the server.',
+  },
+  'updates.quit_confirm': { fr: 'Arrêter le serveur et quitter', en: 'Stop server and quit' },
+  'updates.quitting': { fr: 'Serveur arrêté. Fermeture de Studio…', en: 'Server stopped. Closing Studio…' },
+  'updates.repair_ready': {
+    fr: 'Les composants sont prêts. Redémarrez maintenant pour les utiliser.',
+    en: 'Components are ready. Restart now to use them.',
+  },
+  'updates.download_timed_out': {
+    fr: 'Le téléchargement a dépassé le délai autorisé. Aucune mise à jour n’a été installée. Réessayez.',
+    en: 'The download timed out. No update was installed. Try again.',
+  },
+  'updates.download_cancelled': {
+    fr: 'Le téléchargement a été annulé. Vous pouvez le relancer.',
+    en: 'The download was cancelled. You can try again.',
+  },
+  'updates.install_noncancellable': {
+    fr: 'L’installateur a pris la main. Cette phase ne peut plus être annulée. Réessayez le redémarrage ou la fermeture après sa fin.',
+    en: 'The installer has taken over. This phase can no longer be cancelled. Retry restart or quit once it finishes.',
+  },
+  'updates.cancel_timeout': {
+    fr: 'L’opération n’a pas encore confirmé son arrêt. Le serveur n’a pas été touché. Réessayez dans quelques instants.',
+    en: 'The operation has not confirmed it stopped. The server was not changed. Try again shortly.',
+  },
+  'updates.cancel_not_supported': {
+    fr: 'Cette opération ne peut pas être annulée maintenant. Attendez sa fin puis réessayez.',
+    en: 'This operation cannot be cancelled now. Wait for it to finish, then retry.',
+  },
+  'updates.server_stop_failed': {
+    fr: 'L’arrêt du serveur n’a pas été confirmé. Studio reste ouvert. Consultez les détails et réessayez.',
+    en: 'The server stop was not confirmed. Studio remains open. Check the details and retry.',
+  },
+  'updates.server_start_failed': {
+    fr: 'Le serveur n’a pas pu démarrer. Réessayez depuis cette fenêtre.',
+    en: 'The server could not start. Retry from this window.',
+  },
+  'updates.agents_running': {
+    fr: 'Une exécution a démarré entre-temps. Aucun arrêt effectué. Réessayez pour confirmer son interruption.',
+    en: 'A run started in the meantime. Nothing was stopped. Retry to confirm its interruption.',
+  },
+  'updates.setup_busy': {
+    fr: 'Une opération est encore en cours. Annulez-la ou confirmez un redémarrage pour l’interrompre.',
+    en: 'An operation is still running. Cancel it or confirm a restart to interrupt it.',
+  },
+  'updates.banner_unverified': {
+    fr: 'Le redémarrage du Studio nécessite une vérification. Ouvrez Mises à jour.',
+    en: 'Studio restart requires verification. Open Updates.',
+  },
+
   'configuration.connect': { fr: 'Configurer un fournisseur', en: 'Configure a provider' },
   'configuration.choose': { fr: 'Choisir un modèle', en: 'Choose a model' },
   'configuration.components': { fr: 'Configurer les composants', en: 'Set up components' },
@@ -334,8 +515,8 @@ export const messages = {
     en: 'The server is using the installed application version.',
   },
   'updates.unmanaged': {
-    fr: 'Ce serveur a été lancé depuis une autre installation. Arrêtez-le depuis son lanceur avant de démarrer celui de l’application.',
-    en: 'This server was started by another installation. Stop it through its launcher before starting the application’s server.',
+    fr: 'L’identité du serveur n’a pas pu être vérifiée. Consultez les détails avant de réessayer.',
+    en: 'The server identity could not be verified. Check the details before retrying.',
   },
   'updates.agents': {
     fr: {
@@ -420,8 +601,8 @@ export const messages = {
     en: 'The installer could not start. Try again.',
   },
   'updates.server_not_managed': {
-    fr: 'Ce serveur appartient à un autre lanceur. Aucun processus n’a été arrêté.',
-    en: 'This server belongs to another launcher. No process was stopped.',
+    fr: 'L’identité du serveur n’a pas pu être vérifiée. Aucun processus n’a été arrêté.',
+    en: 'The server identity could not be verified. No process was stopped.',
   },
   'updates.server_port_occupied': {
     fr: 'Le port du Studio est occupé par un autre service.',
@@ -436,8 +617,8 @@ export const messages = {
     en: 'An operation is already in progress. Wait before trying again.',
   },
   'updates.components_required': {
-    fr: 'La version requise du moteur n’est pas prête. Préparez-la dans le panneau des composants ci-dessous avant de redémarrer.',
-    en: 'The required engine version is not ready. Prepare it in the components panel below before restarting.',
+    fr: 'Des composants nécessaires ne sont pas prêts. Utilisez Réparer Studio avant de redémarrer.',
+    en: 'Required components are not ready. Use Repair Studio before restarting.',
   },
   'updates.failed': {
     fr: 'L’opération n’a pas abouti. Réessayez ou consultez les journaux de l’application.',

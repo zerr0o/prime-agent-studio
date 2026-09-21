@@ -436,6 +436,32 @@ footer svg {
   line-height: 1.7;
   font-size: 14px;
 }
+/* Single-window operation + quit confirmation reuse the same narrow dialog style. */
+#quit-confirm,
+#operation-status {
+  overflow-wrap: anywhere;
+}
+#quit-confirm {
+  max-width: 430px;
+  width: calc(100% - 64px);
+  background: #242529;
+  color: #eee;
+  border: 1px solid #484951;
+  border-radius: 12px;
+  padding: 26px;
+}
+#quit-confirm::backdrop {
+  background: #0009;
+}
+#quit-confirm h2 {
+  font-size: 19px;
+  margin-top: 0;
+}
+#quit-confirm p {
+  color: #b0b1b9;
+  line-height: 1.7;
+  font-size: 14px;
+}
 /* One-time 0.9.5/3.7 migration notice: narrow dialog in this window only. */
 #migration-dialog {
   max-width: 430px;
@@ -465,7 +491,8 @@ footer svg {
   .server-update {
     border-color: #d4d2d9;
   }
-  #restart-confirm {
+  #restart-confirm,
+  #quit-confirm {
     background: #faf9fc;
     color: #22232a;
     border-color: #d4d2d9;

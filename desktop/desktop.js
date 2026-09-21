@@ -5,31 +5,23 @@ const messages = {
     componentsHideDetails: 'Masquer les détails',
     componentsNote:
       'Cette version de Studio utilise Prime Agent 0.9.5. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
-    componentsInstall: 'Mettre à jour les composants',
-    componentsApply: 'Activer les composants et redémarrer',
+    componentsInstall: 'Réparer Studio',
     componentsActivationFailed:
-      'Les composants sont prêts, mais leur activation a échoué. Réessayez l’activation ; aucun téléchargement supplémentaire n’est nécessaire.',
+      'Les composants sont prêts, mais le redémarrage a échoué. Réessayez Redémarrer maintenant ; aucun téléchargement supplémentaire n’est nécessaire.',
     componentsValidation:
       'La validation du composant a échoué. Vérifiez les détails et les journaux avant de réessayer.',
     componentsServerMismatch:
-      'Le serveur utilise encore une autre version. Les composants sont conservés ; réessayez leur activation.',
+      'Le serveur utilise encore une autre version. Les composants sont conservés ; réessayez Redémarrer maintenant.',
     componentsPort: 'Le port est occupé par un autre service. Libérez-le sans arrêter les agents du Studio.',
     updateGuideTitle: 'Terminer la mise à jour du Studio',
     updateGuideNote:
-      'L’application a été mise à jour, mais l’ancien serveur est encore actif. Vérifiez Prime Agent {version}, puis activez les composants. Les agents en cours ne seront pas interrompus automatiquement.',
-    migrationTitle: 'Prime Agent 0.9.5 : terminez la mise à jour',
-    migrationDesc:
-      'La mise à jour de l’application seule ne suffit pas. Préparez Prime Agent 0.9.5 avec « Mettre à jour les composants », puis activez-le quand les agents sont inactifs. Les éléments déjà validés sont conservés, vos comptes et sessions aussi. Inutile de redémarrer vous-même dans le flux normal.',
-    migrationContinue: 'Voir les composants',
-    migrationLater: 'Plus tard',
+      'L’application a été mise à jour, mais l’ancien serveur est encore actif. Réparez si besoin, puis redémarrez. Les agents en cours ne seront pas interrompus sans confirmation.',
     componentsDiagnose: 'Vérifier à nouveau',
     componentsExisting: 'Choisir une installation existante',
     componentsExistingNote:
       'Sélectionnez la racine du paquet Prime Agent (avec package.json), uv.exe ou python.exe. Les chemins définis dans les variables d’environnement restent prioritaires.',
-    componentsLater: 'Plus tard — ouvrir le Studio',
+    componentsLater: 'Plus tard : ouvrir le Studio',
     componentsReady: 'Tous les composants sont prêts.',
-    componentsDeferred:
-      'Préparation enregistrée. Activation différée : attendez la fin des agents puis utilisez Redémarrer le serveur. Un serveur externe doit être arrêté depuis son lanceur.',
     componentsBusy: 'Une préparation est déjà en cours. Réessayez après sa fin.',
     componentsFailed: 'La préparation a échoué. Réessayez ; les composants déjà validés sont conservés.',
     componentsExplicit:
@@ -61,18 +53,17 @@ const messages = {
       install: 'Installation',
       python: 'Préparation de Python et des skills',
       validation: 'Validation des intégrations',
-      opening: 'Activation dans le serveur',
-      server_update_pending: 'Ancien serveur conservé jusqu’à l’activation',
+      opening: 'Mise en route dans le serveur',
+      server_update_pending: 'Ancien serveur conservé jusqu’au redémarrage',
       error: 'Échec',
     },
-    restartAfter: 'Redémarrer le serveur après l’installation',
     serverHeading: 'Serveur du Studio',
     serverVersion: 'Version active : {version}',
     serverStopped: 'Le serveur est arrêté.',
     serverIdle: 'Aucune exécution en cours.',
     serverBusy: 'Des agents travaillent. Le redémarrage demandera confirmation.',
-    serverUnmanaged: 'Ce serveur dépend d’un autre lanceur. Arrêtez-le depuis celui-ci.',
-    restart: 'Redémarrer le serveur',
+    serverUnmanaged: 'L’identité du serveur n’a pas pu être vérifiée. Aucun processus ne sera arrêté. Consultez les détails et réessayez la vérification.',
+    restart: 'Redémarrer maintenant',
     restarting: 'Redémarrage du serveur…',
     restarted: 'Le serveur utilise maintenant la version installée.',
     restartFailed: 'Impossible de redémarrer le serveur. Réessayez ou consultez les journaux.',
@@ -81,6 +72,15 @@ const messages = {
       'Le redémarrage peut interrompre les agents et déconnectera temporairement vos appareils. Vos projets et l’historique enregistré seront conservés.',
     restartCancel: 'Annuler',
     restartProceed: 'Redémarrer quand même',
+    operationHeading: 'Opération en cours',
+    operationCancel: 'Annuler l’opération',
+    backStudio: 'Retour au Studio',
+    quitTitle: 'Quitter le Studio ?',
+    quitNote: 'Le serveur sera arrêté avant de fermer. Les agents en cours peuvent être interrompus.',
+    quitCancel: 'Annuler',
+    quitProceed: 'Arrêter et quitter',
+    repairDone: 'Les composants sont prêts. Redémarrez maintenant pour les utiliser.',
+    noOperation: 'Aucune opération en cours.',
     eyebrow: 'VOTRE APPLICATION DE BUREAU',
     title: 'Votre espace de travail, prêt à vous suivre.',
     description:
@@ -112,7 +112,7 @@ const messages = {
     updateChecking: 'Recherche d’une nouvelle version…',
     updateCurrent: 'Vous utilisez la dernière version publiée.',
     updateAvailable: 'La version {version} est disponible.',
-    updateInstall: 'Installer et relancer',
+    updateInstall: 'Mettre à jour Studio',
     updateNotes: 'Nouveautés de cette version',
     updateImpact:
       'L’application se relancera. Le redémarrage optionnel du serveur est automatique s’il est libre ; sinon, une confirmation sera nécessaire.',
@@ -131,30 +131,22 @@ const messages = {
     componentsHideDetails: 'Hide details',
     componentsNote:
       'This Studio version uses Prime Agent 0.9.5. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
-    componentsInstall: 'Update components',
-    componentsApply: 'Activate components and restart',
+    componentsInstall: 'Repair Studio',
     componentsActivationFailed:
-      'Components are ready, but activation failed. Retry activation; no further download is needed.',
+      'Components are ready, but restart failed. Retry Restart now; no further download is needed.',
     componentsValidation: 'Component validation failed. Check the details and logs before trying again.',
     componentsServerMismatch:
-      'The server is still using another version. Components are preserved; retry activation.',
+      'The server is still using another version. Components are kept; retry Restart now.',
     componentsPort: 'Another service is using the port. Free it without stopping Studio agents.',
     updateGuideTitle: 'Finish the Studio update',
     updateGuideNote:
-      'The app was updated, but the previous server is still running. Check Prime Agent {version}, then activate components. Running agents will not be interrupted automatically.',
-    migrationTitle: 'Prime Agent 0.9.5: finish the update',
-    migrationDesc:
-      'Updating the app alone is not enough. Prepare Prime Agent 0.9.5 with “Update components”, then activate it when agents are idle. Validated parts are kept, and so are your accounts and sessions. No need to restart manually in the normal flow.',
-    migrationContinue: 'Show components',
-    migrationLater: 'Later',
+      'The app was updated, but the previous server is still running. Repair if needed, then restart. Running agents will not be interrupted without confirmation.',
     componentsDiagnose: 'Check again',
     componentsExisting: 'Choose an existing installation',
     componentsExistingNote:
       'Select the Prime Agent package root (with package.json), uv.exe or python.exe. Environment variable paths take precedence.',
-    componentsLater: 'Later — open Studio',
+    componentsLater: 'Later: open Studio',
     componentsReady: 'All components are ready.',
-    componentsDeferred:
-      'Preparation saved. Activation deferred: wait for agents to finish, then use Restart server. Stop an external server through its own launcher.',
     componentsBusy: 'Another preparation is in progress. Try again when it finishes.',
     componentsFailed: 'Preparation failed. Try again; validated components are preserved.',
     componentsExplicit:
@@ -184,18 +176,17 @@ const messages = {
       install: 'Installing',
       python: 'Preparing Python and skills',
       validation: 'Validating integrations',
-      opening: 'Activating in the server',
-      server_update_pending: 'Previous server kept until activation',
+      opening: 'Starting in the server',
+      server_update_pending: 'Previous server kept until restart',
       error: 'Failed',
     },
-    restartAfter: 'Restart the server after installation',
     serverHeading: 'Studio server',
     serverVersion: 'Running version: {version}',
     serverStopped: 'The server is stopped.',
     serverIdle: 'No active runs.',
     serverBusy: 'Agents are working. Restarting will require confirmation.',
-    serverUnmanaged: 'This server belongs to another launcher. Stop it through that launcher.',
-    restart: 'Restart server',
+    serverUnmanaged: 'The server identity could not be verified. No process will be stopped. Check the details and retry the check.',
+    restart: 'Restart now',
     restarting: 'Restarting the server…',
     restarted: 'The server is now using the installed version.',
     restartFailed: 'Could not restart the server. Try again or check the logs.',
@@ -204,6 +195,15 @@ const messages = {
       'Restarting may interrupt agents and will temporarily disconnect your devices. Your projects and saved history will be preserved.',
     restartCancel: 'Cancel',
     restartProceed: 'Restart anyway',
+    operationHeading: 'Current operation',
+    operationCancel: 'Cancel operation',
+    backStudio: 'Back to Studio',
+    quitTitle: 'Quit Studio?',
+    quitNote: 'The server will be stopped before closing. Running agents may be interrupted.',
+    quitCancel: 'Cancel',
+    quitProceed: 'Stop and quit',
+    repairDone: 'Components are ready. Restart now to use them.',
+    noOperation: 'No operation running.',
     eyebrow: 'YOUR DESKTOP APPLICATION',
     title: 'Your workspace, ready when you are.',
     description: 'Your projects and agents in a dedicated window. Studio starts for you, in the background.',
@@ -234,7 +234,7 @@ const messages = {
     updateChecking: 'Checking for a new version…',
     updateCurrent: 'You are using the latest published version.',
     updateAvailable: 'Version {version} is available.',
-    updateInstall: 'Install and restart',
+    updateInstall: 'Update Studio',
     updateNotes: 'What’s new',
     updateImpact:
       'The app will relaunch. The optional server restart is automatic when idle; otherwise, confirmation will be required.',
@@ -250,6 +250,10 @@ const language = navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'en'
   t = messages[language],
   $ = (id) => document.getElementById(id);
 document.documentElement.lang = language;
+// Quit handshake flag: native request_quit_confirmation only dispatches
+// studio:quit-request when this is true, otherwise it navigates here itself.
+// An old server page without this flag falls back to the local quit shell.
+window.__PRIME_STUDIO_QUIT_READY__ = true;
 const settings = new URLSearchParams(location.search).has('settings');
 const backgroundParam = new URLSearchParams(location.search).has('background');
 document.body.classList.toggle('app-settings', settings);
@@ -258,6 +262,12 @@ document.body.classList.toggle('app-settings', settings);
 document.body.classList.add('boot');
 document.body.classList.add('boot-connecting');
 for (const [id, key] of Object.entries({
+  'update-cancel': 'operationCancel',
+  'back-studio': 'backStudio',
+  'quit-confirm-title': 'quitTitle',
+  'quit-confirm-note': 'quitNote',
+  'quit-cancel': 'quitCancel',
+  'quit-proceed': 'quitProceed',
   eyebrow: 'eyebrow',
   title: settings ? 'settingsTitle' : 'title',
   description: settings ? 'settingsNote' : 'description',
@@ -265,7 +275,6 @@ for (const [id, key] of Object.entries({
   'components-heading': 'componentsHeading',
   'components-note': 'componentsNote',
   'components-install': 'componentsInstall',
-  'components-apply': 'componentsApply',
   'components-diagnose': 'componentsDiagnose',
   'components-existing': 'componentsExisting',
   'components-existing-note': 'componentsExistingNote',
@@ -283,124 +292,20 @@ for (const [id, key] of Object.entries({
   'update-install': 'updateInstall',
   'update-notes-label': 'updateNotes',
   'update-impact': 'updateImpact',
-  'update-restart-label': 'restartAfter',
   'server-heading': 'serverHeading',
   'server-restart': 'restart',
   'restart-confirm-title': 'restartTitle',
   'restart-confirm-note': 'restartNote',
   'restart-cancel': 'restartCancel',
   'restart-proceed': 'restartProceed',
-  'migration-title': 'migrationTitle',
-  'migration-desc': 'migrationDesc',
-  'migration-continue': 'migrationContinue',
-  'migration-later': 'migrationLater',
 }))
   $(id).textContent = t[key];
 const invoke = window.__TAURI__?.core?.invoke;
 let componentsBusy = false;
 let latestComponents;
 let updatePending = false;
-// One-time 0.9.5/3.7 family migration notice: narrow dialog in this window
-// only, never another settings window and never engine code.
-const MIGRATION_STORAGE_KEY = 'prime-studio.migration-095-dismissed';
-let migrationDismissedMemory = false;
-function migrationDismissed() {
-  if (migrationDismissedMemory) return true;
-  try {
-    return localStorage.getItem(MIGRATION_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-function rememberMigrationDismissed() {
-  // Memory first so a storage failure still shows the notice once per page.
-  migrationDismissedMemory = true;
-  try {
-    localStorage.setItem(MIGRATION_STORAGE_KEY, '1');
-  } catch {}
-}
-function versionTriple(value) {
-  const match = String(value || '')
-    .trim()
-    .replace(/^v/i, '')
-    .match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function tripleLess(a, b) {
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
-  return false;
-}
-function tripleEqual(a, b) {
-  return Boolean(a && b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]);
-}
-// Numeric major/minor/patch below 3.7.0. A 3.7.0 prerelease (beta) already
-// belongs to the 3.7 family, so its suffix alone never counts as legacy.
-function isLegacyStudioVersion(value) {
-  const triple = versionTriple(value);
-  return triple ? tripleLess(triple, [3, 7, 0]) : false;
-}
-function isOlderEngineVersion(installed, required) {
-  const current = versionTriple(installed),
-    wanted = versionTriple(required);
-  return Boolean(current && wanted && tripleLess(current, wanted));
-}
-function shouldShowMigrationNotice(result) {
-  if (!result || backgroundParam) return false;
-  if (migrationDismissed()) return false;
-  // Current migration only: never present a stale 0.9.5 notice for a future engine.
-  if (!tripleEqual(versionTriple(result.requiredEngine), [0, 9, 5])) return false;
-  const legacyServer =
-    Boolean(result.server && result.server.running) && isLegacyStudioVersion(result.server.version);
-  const legacyEngine = isOlderEngineVersion(result.installedEngine, result.requiredEngine);
-  if (!legacyServer && !legacyEngine) return false;
-  // No notice once the migration is already satisfied.
-  if (!(result.needsUpdate || result.needsRestart || result.serverUpdatePending || !result.ready))
-    return false;
-  return true;
-}
-function focusMigrationTarget() {
-  // Reveal/focus only: never install, apply, or restart from the notice itself.
-  if ($('components')) $('components').hidden = false;
-  for (const id of ['components-apply', 'components-install', 'components-toggle']) {
-    const el = $(id);
-    if (el && !el.hidden && !el.disabled) {
-      el.focus();
-      return id;
-    }
-  }
-  return null;
-}
-function showMigrationNotice() {
-  const dialog = $('migration-dialog');
-  if (!dialog || dialog.open) return;
-  try {
-    dialog.showModal();
-  } catch {
-    dialog.setAttribute('open', '');
-  }
-  $('migration-continue').focus();
-}
-$('migration-continue').onclick = () => {
-  rememberMigrationDismissed();
-  const dialog = $('migration-dialog');
-  if (dialog && dialog.open) dialog.close();
-  if (dialog) dialog.removeAttribute('open');
-  focusMigrationTarget();
-};
-$('migration-later').onclick = () => {
-  rememberMigrationDismissed();
-  const dialog = $('migration-dialog');
-  if (dialog && dialog.open) dialog.close();
-  if (dialog) dialog.removeAttribute('open');
-};
-$('migration-dialog').addEventListener('cancel', () => {
-  rememberMigrationDismissed();
-});
-$('migration-dialog').addEventListener('close', () => {
-  rememberMigrationDismissed();
-  $('migration-dialog').removeAttribute('open');
-});
+// Migration notice removed: single clear flow (Check / Update or Repair / Restart + Back).
+
 // Warm-first helpers: connecting-first UI, never silent frozen.
 function isComponentsRequired(error) {
   return String(error || '').includes('components_required');
@@ -483,10 +388,10 @@ function renderComponents(result) {
     chip.dataset.state = info.status;
     chip.textContent = `${componentNames[key] || key}${info.version ? ` ${info.version}` : ''}${info.status !== 'ready' ? ` · ${stateLabel}` : ''}`;
     chip.title = stateLabel;
-    chip.setAttribute('aria-label', `${chip.textContent} — ${stateLabel}`);
+    chip.setAttribute('aria-label', `${chip.textContent}, ${stateLabel}`);
     $('components-list').append(chip);
     const row = document.createElement('li');
-    row.textContent = `${componentNames[key] || key} — ${t.componentStates[info.status] || info.status}${info.version ? ` · ${info.version}` : ''}`;
+    row.textContent = `${componentNames[key] || key}, ${t.componentStates[info.status] || info.status}${info.version ? ` · ${info.version}` : ''}`;
     if (info.path) {
       const path = document.createElement('small');
       path.textContent = info.path;
@@ -508,7 +413,7 @@ function renderComponents(result) {
     result.activation === 'failed'
       ? `${t.componentsActivationFailed} ${componentError(result.activationError)}`
       : result.activation === 'deferred'
-        ? t.componentsDeferred
+        ? t.repairDone
         : result.ready
           ? t.componentsReady
           : Object.entries(result.components || {})
@@ -519,11 +424,12 @@ function renderComponents(result) {
               )
               .join(' ');
   $('components-install').hidden = result.ready;
-  const needsActivation =
-    result.ready && (result.needsRestart || ['failed', 'deferred'].includes(result.activation));
-  $('components-apply').hidden = !needsActivation;
-  $('components-apply').disabled = result.server?.managed === false;
-  $('components-actions').hidden = result.ready && !needsActivation;
+  // Single restart rule: no second activation button. Repair (prepare) then the
+  // one server Restart now below. Hide apply to avoid double activation.
+  $('components-actions').hidden = result.ready;
+  if (result.ready && (result.needsRestart || ['failed', 'deferred'].includes(result.activation))) {
+    $('components-status').textContent = t.repairDone;
+  }
   $('start').textContent = updatePending || !result.ready ? t.componentsLater : t.start;
   if (result.activation === 'failed') $('logs').hidden = false;
 }
@@ -545,15 +451,15 @@ async function componentsAction(action, component) {
   setPhase(t.checkingComponents);
   $('components-status').textContent = t.checkingComponents;
   for (const el of $('components').querySelectorAll('button')) el.disabled = true;
-  $('components-cancel').hidden = action !== 'install';
+  $('components-cancel').hidden = !['install', 'prepare'].includes(action);
   $('components-cancel').disabled = false;
   $('start').disabled = true;
   let result;
   try {
     result = await invoke('desktop_components', { action, component: component || null });
     renderComponents(result);
-    if (['install', 'apply'].includes(action) && result.ready && result.activation === 'active')
-      await start({ allowUnconfigured: true, background: backgroundParam });
+    // Never auto restart an active agent. Prepare only installs/validates;
+    // the user triggers one explicit Restart now when idle (with force confirm).
     return result;
   } catch (error) {
     latestComponents = undefined;
@@ -563,15 +469,23 @@ async function componentsAction(action, component) {
   } finally {
     componentsBusy = false;
     for (const el of $('components').querySelectorAll('button')) el.disabled = false;
-    $('components-apply').disabled = latestComponents?.server?.managed === false;
     $('components-cancel').hidden = true;
     $('start').disabled = false;
   }
 }
-$('components-install').onclick = () => componentsAction('install');
-$('components-apply').onclick = () => componentsAction('apply');
+$('components-install').onclick = () => componentsAction('prepare');
 $('components-diagnose').onclick = () => componentsAction('diagnose');
 $('components-cancel').onclick = () => invoke('desktop_components_cancel');
+$('update-cancel').onclick = async () => {
+  try {
+    await invoke('desktop_update_cancel');
+  } catch {
+    try {
+      await invoke('desktop_components_cancel');
+    } catch {}
+  }
+  await pollOperationOnce();
+};
 for (const name of ['engine', 'uv', 'python'])
   $('components-' + name).onclick = () => componentsAction('select', name);
 void window.__TAURI__?.event?.listen('components-progress', ({ payload }) => {
@@ -580,7 +494,7 @@ void window.__TAURI__?.event?.listen('components-progress', ({ payload }) => {
       ? ''
       : ` · ${payload.received.toLocaleString(language)} ${language === 'fr' ? 'octets reçus' : 'bytes received'}${payload.total ? ` / ${payload.total.toLocaleString(language)}` : ''}`;
   // Detailed diagnose steps (engine/python/shell/uv) plus download progress.
-  const text = `${componentNames[payload.component] || payload.component || ''} — ${t.componentStages[payload.stage] || payload.stage || ''}${received}`;
+  const text = `${componentNames[payload.component] || payload.component || ''}, ${t.componentStages[payload.stage] || payload.stage || ''}${received}`;
   $('components-status').textContent = text;
   // Mirror diagnose phases in the main connecting line so the window never freezes silently.
   if ($('components') && !$('components').hidden) setPhase(text);
@@ -678,7 +592,7 @@ $('update-check').onclick = async () => {
   $('update-install').hidden = true;
   $('update-notes').hidden = true;
   $('update-impact').hidden = true;
-  $('update-restart-option').hidden = true;
+  if ($('update-cancel')) $('update-cancel').hidden = true;
   updateStatus(t.updateChecking);
   try {
     const update = await invoke('desktop_update_check');
@@ -687,7 +601,6 @@ $('update-check').onclick = async () => {
       updateStatus(t.updateAvailable.replace('{version}', update.version));
       $('update-install').hidden = false;
       $('update-impact').hidden = false;
-      $('update-restart-option').hidden = false;
       renderLauncherNotes(update.notes || '');
       $('update-notes').hidden = !update.notes;
     } else updateStatus(t.updateCurrent);
@@ -721,8 +634,23 @@ $('update-install').onclick = async () => {
     await invoke('desktop_update_install', {
       version: availableVersion,
       onEvent,
-      restartServer: $('update-restart-after').checked,
+      restartServer: false,
     });
+    // Success: no stale busy UI. Installer relaunches the app; clear progress
+    // at once so a lingering window never shows a frozen downloading state.
+    currentOperation = null;
+    if ($('update-cancel')) $('update-cancel').hidden = true;
+    $('update-progress').hidden = true;
+    $('update-progress').removeAttribute('value');
+    updateStatus(t.updateCurrent);
+    availableVersion = undefined;
+    $('update-install').hidden = true;
+    $('update-impact').hidden = true;
+    $('update-check').disabled = false;
+    $('start').disabled = false;
+    updateBusy = false;
+    await refreshServer().catch(() => {});
+    await pollOperationOnce().catch(() => null);
   } catch (error) {
     updateStatus(error === 'install_failed' ? t.updateInstallFailed : t.updateDownloadFailed, true);
     $('update-progress').hidden = true;
@@ -736,47 +664,235 @@ let restarting = false;
 async function refreshServer() {
   const state = await invoke('desktop_update_status');
   $('server-state').textContent = state.running
-    ? t.serverVersion.replace('{version}', state.version)
+    ? t.serverVersion.replace('{version}', state.version || '?')
     : t.serverStopped;
-  $('server-agents').textContent = !state.managed
-    ? t.serverUnmanaged
-    : state.activeRuns
-      ? t.serverBusy
-      : t.serverIdle;
-  $('server-restart').disabled = !state.managed || restarting || updateBusy;
+  // Control contract: ownership managed|recoverable|unverified|absent, canRestart,
+  // restartReason, canStop/stopReason, source, pid/port/instanceId. Recoverable
+  // (OS-verified, no owner file) stays restartable; foreign stays protected.
+  const canRestart = state.canRestart !== undefined ? state.canRestart : state.managed;
+  const restartReason = state.restartReason || (state.managed === false ? 'server_not_managed' : null);
+  if (!state.running) {
+    $('server-agents').textContent = t.serverStopped;
+  } else if (canRestart === false) {
+    $('server-agents').textContent =
+      restartReason === 'server_port_occupied' ? t.componentsPort : t.serverUnmanaged;
+  } else {
+    $('server-agents').textContent = state.activeRuns ? t.serverBusy : t.serverIdle;
+  }
+  $('server-restart').disabled = !canRestart || restarting || updateBusy;
+  $('server-restart').textContent = t.restart;
   return state;
 }
-$('server-restart').onclick = async () => {
-  if (restarting || updateBusy) return;
-  restarting = true;
+let currentOperation = null;
+function formatBytes(value) {
+  if (value == null) return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return '';
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} Ko`;
+  return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+}
+function formatElapsed(ms) {
+  if (ms == null) return '';
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return '';
+  if (n < 1000) return `${Math.round(n)} ms`;
+  return `${(n / 1000).toFixed(1)} s`;
+}
+function formatOperation(op) {
+  // Shared snapshot, translated progress (bytes/time), never raw codes.
+  if (!op) return '';
+  const bits = [];
+  if (op.kind) bits.push(op.kind);
+  if (op.stage && !op.terminal) bits.push(op.stage);
+  if (op.percent != null) bits.push(`${op.percent} %`);
+  const bytes = formatBytes(op.receivedBytes);
+  const total = formatBytes(op.totalBytes);
+  if (bytes && total) bits.push(`${bytes} / ${total}`);
+  else if (bytes) bits.push(bytes);
+  if (op.updatedAt != null && op.startedAt != null) {
+    const elapsed = formatElapsed(op.updatedAt - op.startedAt);
+    if (elapsed) bits.push(elapsed);
+  }
+  if (op.detail) bits.push(op.detail);
+  if (op.terminal && op.stage === 'done') bits.push(language === 'fr' ? 'termine' : 'done');
+  return bits.join(', ');
+}
+async function pollOperationOnce() {
   try {
-    const state = await refreshServer();
-    if (!state.managed) return;
+    const res = await invoke('desktop_update_operation');
+    const op = res?.operation || null;
+    currentOperation = op;
+    const cancelBtn = $('update-cancel');
+    if (!op || op.terminal) {
+      if (cancelBtn) cancelBtn.hidden = true;
+      return op;
+    }
+    // Single status line (no duplicate section): show live progress here.
+    updateStatus(formatOperation(op));
+    if (cancelBtn) {
+      cancelBtn.hidden = !op.cancellable;
+      cancelBtn.disabled = !op.cancellable;
+    }
+    return op;
+  } catch {
+    currentOperation = null;
+    return null;
+  }
+}
+function startOperationPoll() {
+  if (window.__operationPoll) return;
+  window.__operationPoll = setInterval(() => {
+    if ($('updates') && !$('updates').hidden) void pollOperationOnce();
+  }, 1000);
+}
+let quitting = false;
+function showQuitDialog(prefill = {}) {
+  const dialog = $('quit-confirm');
+  if (!dialog) return;
+  if (prefill.detail) {
+    $('quit-confirm-detail').textContent = prefill.detail;
+    $('quit-confirm-detail').hidden = false;
+  } else {
+    $('quit-confirm-detail').hidden = true;
+  }
+  try {
+    if (!dialog.open) dialog.showModal();
+  } catch {
+    dialog.setAttribute('open', '');
+  }
+  $('quit-cancel').focus();
+}
+async function requestQuitFlow() {
+  if (quitting) return;
+  quitting = true;
+  try {
+    let snapshot = null;
+    try {
+      snapshot = await invoke('desktop_update_status');
+    } catch {}
+    const op = await pollOperationOnce().catch(() => null);
+    const activeRuns = snapshot?.activeRuns || 0;
+    const needsConfirm = activeRuns > 0 || (op && !op.terminal);
+    if (!needsConfirm) {
+      // Idle: stop direct after snapshot, exit only on confirmed stop.
+      try {
+        const res = await invoke('desktop_quit', { force: false, cancelCurrent: false });
+        if (res && (res.stopped === true || res.reason === 'already-stopped')) return;
+      } catch {}
+      showQuitDialog();
+      return;
+    }
+    const detail = activeRuns
+      ? t.serverBusy
+      : `${op?.kind || ''}, ${op?.stage || ''}`;
+    showQuitDialog({ detail });
+  } finally {
+    quitting = false;
+  }
+}
+if ($('quit-cancel')) $('quit-cancel').onclick = () => {
+  const d = $('quit-confirm');
+  if (d && d.open) d.close('cancel');
+  if (d) d.removeAttribute('open');
+};
+if ($('quit-proceed')) $('quit-proceed').onclick = async () => {
+  $('quit-proceed').disabled = true;
+  try {
+    const snapshot = await invoke('desktop_update_status').catch(() => null);
+    const op = currentOperation;
+    const force = Boolean(snapshot && snapshot.activeRuns);
+    // Confirmation before cancel: quit with cancelCurrent only after explicit proceed.
+    const cancelCurrent = Boolean(op && op.cancellable);
+    const res = await invoke('desktop_quit', { force, cancelCurrent });
+    if (res && (res.stopped === true || res.reason === 'already-stopped')) return;
+    $('quit-confirm-note').textContent = t.restartFailed;
+  } catch (error) {
+    $('quit-confirm-note').textContent =
+      String(error) === 'update_busy' ? t.componentsBusy : t.restartFailed;
+  } finally {
+    $('quit-proceed').disabled = false;
+  }
+};
+window.addEventListener('studio:quit-request', () => requestQuitFlow());
+if ($('back-studio')) $('back-studio').onclick = async () => {
+  try {
+    await start({ allowUnconfigured: true, background: false });
+  } catch {}
+};
+$('server-restart').onclick = async () => {
+  if (restarting) return;
+  restarting = true;
+  let restartedOk = false;
+  try {
+    const state = await refreshServer().catch(() => null);
+    const canRestart = state ? (state.canRestart !== undefined ? state.canRestart : state.managed) : true;
+    if (state && !canRestart) {
+      await refreshServer();
+      return;
+    }
+    const op = await pollOperationOnce().catch(() => null);
     let force = false;
-    if (state.activeRuns) {
-      const dialog = $('restart-confirm');
-      const accepted = new Promise((done) => {
-        dialog.returnValue = '';
-        $('restart-cancel').onclick = () => dialog.close('cancel');
-        $('restart-proceed').onclick = () => dialog.close('proceed');
-        dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
-      });
-      dialog.showModal();
-      $('restart-cancel').focus();
-      if (!(await accepted)) return;
-      force = true;
+    let cancelCurrent = false;
+    // Confirmation before any cancel: impact of agents + current operation.
+    if ((state && state.activeRuns) || (op && !op.terminal)) {
+      if (op && op.cancellable) {
+        const dialog = $('restart-confirm');
+        const accepted = new Promise((done) => {
+          dialog.returnValue = '';
+          $('restart-cancel').onclick = () => dialog.close('cancel');
+          $('restart-proceed').onclick = () => dialog.close('proceed');
+          dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
+        });
+        dialog.showModal();
+        $('restart-cancel').focus();
+        if (!(await accepted)) return;
+        force = Boolean(state && state.activeRuns);
+        cancelCurrent = true;
+      } else if (op && !op.cancellable) {
+        // Noncancellable handoff (download/install): explicit retry, no fake cancel.
+        updateStatus(t.updateDownloading + '…', false);
+        return;
+      } else {
+        const dialog = $('restart-confirm');
+        const accepted = new Promise((done) => {
+          dialog.returnValue = '';
+          $('restart-cancel').onclick = () => dialog.close('cancel');
+          $('restart-proceed').onclick = () => dialog.close('proceed');
+          dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
+        });
+        dialog.showModal();
+        $('restart-cancel').focus();
+        if (!(await accepted)) return;
+        force = true;
+      }
     }
     $('server-state').textContent = t.restarting;
-    const result = await invoke('desktop_server_restart', { force });
-    if (result.restarted) {
-      await refreshServer();
-      $('server-agents').textContent = t.restarted;
-    } else await refreshServer();
+    restartedOk = false;
+    try {
+      const result = await invoke('desktop_server_restart', { force, cancelCurrent });
+      if (result.restarted) {
+        // No stale success UI: clear operation + refresh versions at once.
+        currentOperation = null;
+        if ($('update-cancel')) $('update-cancel').hidden = true;
+        await refreshServer();
+        $('server-agents').textContent = t.restarted;
+        restartedOk = true;
+      } else await refreshServer();
+    } catch (error) {
+      // Never fail silently: explicit busy vs failure.
+      if (String(error) === 'update_busy') {
+        $('server-state').textContent = t.componentsBusy;
+      } else {
+        throw error;
+      }
+    }
   } catch {
     $('server-state').textContent = t.restartFailed;
   } finally {
     restarting = false;
-    $('server-restart').disabled = false;
+    // A final refresh must not clobber the post-restart confirmation line.
+    if (!restartedOk) await refreshServer().catch(() => {});
   }
 };
 let busy = false;
@@ -812,7 +928,6 @@ async function start(options = {}) {
       );
       $('progress').hidden = true;
       $('start').textContent = t.componentsLater;
-      if (shouldShowMigrationNotice(components)) showMigrationNotice();
       return;
     }
     if (settings) {
@@ -885,13 +1000,38 @@ $('import').onclick = async () => {
     return;
   }
   try {
+    const params = new URLSearchParams(location.search);
+    const isQuit = params.has('quit');
     const state = await invoke('desktop_state');
     $('app-version').textContent = `v${state.version}`;
-    $('updates').hidden = !settings;
-    if (settings)
-      void refreshServer().catch(() => {
-        $('server-state').textContent = t.restartFailed;
-      });
+    $('updates').hidden = !settings && !isQuit;
+    if ($('back-studio')) $('back-studio').hidden = !settings && !isQuit;
+    startOperationPoll();
+    if (isQuit) {
+      // Tray quit when server is down: same main shell shows quit choice.
+      showLauncher();
+      $('title').textContent = t.quitTitle;
+      $('description').textContent = t.quitNote;
+      showQuitDialog();
+      return;
+    }
+    if (settings) {
+      void refreshServer()
+        .then((s) => {
+          // Absent/stopped server: canRestart false, allow start path.
+          if (s && !s.running) {
+            $('start').disabled = false;
+            $('start').textContent = t.retry;
+          }
+        })
+        .catch(() => {
+          $('server-state').textContent = t.restartFailed;
+          // Same surface fallback with obvious retry when status is down.
+          $('start').disabled = false;
+          $('start').textContent = t.retry;
+        });
+      void pollOperationOnce().catch(() => null);
+    }
     $('autostart').checked = state.autostart;
     $('start').disabled = false;
     if (state.imported) {
@@ -910,7 +1050,6 @@ $('import').onclick = async () => {
       const diagnosed = await componentsAction('diagnose');
       // Explicit recovery surface: explain the 0.9.5 step when legacy
       // evidence is present. Fresh installs have none, so stay silent.
-      if (shouldShowMigrationNotice(diagnosed || latestComponents)) showMigrationNotice();
       return;
     }
     if (background) {
@@ -944,14 +1083,12 @@ $('import').onclick = async () => {
         } catch (retryError) {
           if (!isComponentsRequired(retryError)) throw retryError;
           $('components').hidden = false;
-          if (shouldShowMigrationNotice(latestComponents)) showMigrationNotice();
         }
       } else {
         $('components').hidden = false;
         // Cold foreground with a known older engine receipt and no running
         // server: explain the 0.9.5 step. Empty fresh installs carry no
         // legacy evidence, so the predicate stays silent there.
-        if (shouldShowMigrationNotice(latestComponents)) showMigrationNotice();
       }
     }
   } catch (error) {

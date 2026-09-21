@@ -43,7 +43,6 @@
         <p id="components-status" role="status" aria-live="polite"></p>
         <div id="components-actions" class="update-actions">
           <button id="components-install" class="primary"></button>
-          <button id="components-apply" class="primary" hidden></button>
           <button id="components-cancel" class="text-button" hidden></button>
         </div>
         <div id="components-details" hidden>
@@ -73,12 +72,10 @@
           <div id="update-notes-body" class="update-notes-body"></div>
         </details>
         <p id="update-impact" hidden></p>
-        <label id="update-restart-option" class="restart-option" hidden>
-          <input id="update-restart-after" type="checkbox" checked /><span id="update-restart-label"></span>
-        </label>
         <div class="update-actions">
           <button id="update-check" class="text-button"></button
-          ><button id="update-install" class="primary" hidden></button>
+          ><button id="update-install" class="primary" hidden></button
+          ><button id="update-cancel" class="text-button" hidden></button>
         </div>
         <div class="server-update">
           <h2 id="server-heading"></h2>
@@ -93,6 +90,7 @@
       <div id="error" role="alert" hidden></div>
       <div class="actions">
         <button id="start" class="primary" disabled></button
+        ><button id="back-studio" class="text-button" hidden></button
         ><button id="logs" class="text-button" hidden></button>
       </div>
       <footer>
@@ -114,15 +112,16 @@
       </div>
     </dialog>
     <dialog
-      id="migration-dialog"
-      aria-labelledby="migration-title"
-      aria-describedby="migration-desc"
+      id="quit-confirm"
+      aria-labelledby="quit-confirm-title"
+      aria-describedby="quit-confirm-note"
     >
-      <h2 id="migration-title"></h2>
-      <p id="migration-desc"></p>
+      <h2 id="quit-confirm-title"></h2>
+      <p id="quit-confirm-note"></p>
+      <p id="quit-confirm-detail" hidden></p>
       <div class="update-actions">
-        <button id="migration-continue" class="primary" autofocus></button>
-        <button id="migration-later" class="text-button"></button>
+        <button id="quit-cancel" class="text-button" autofocus></button>
+        <button id="quit-proceed" class="primary"></button>
       </div>
     </dialog>
   </body>

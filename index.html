@@ -1602,100 +1602,62 @@
               <p id="studio-update-remote-hint" class="settings-footnote"></p>
             </div>
             <div id="studio-update-native" hidden>
-              <dl class="update-versions">
-                <dt data-i18n="updates.app_version"></dt>
-                <dd id="studio-update-app-version">—</dd>
-                <dt data-i18n="updates.server_version"></dt>
-                <dd id="studio-update-server-version">—</dd>
-              </dl>
-              <p id="studio-update-status" class="update-status" role="status" aria-live="polite"></p>
-              <progress id="studio-update-progress" max="100" hidden></progress>
-              <details id="studio-update-notes" class="update-notes" hidden>
-                <summary data-i18n="updates.notes"></summary>
-                <div id="studio-update-notes-body" class="markdown update-notes-body"></div>
-              </details>
-              <div id="studio-update-options" hidden>
-                <label class="update-option"
-                  ><input id="studio-update-restart-after" type="checkbox" checked />
-                  <span data-i18n="updates.restart_after"></span
-                ></label>
-                <p class="settings-footnote" data-i18n="updates.restart_after_note"></p>
+              <div class="update-overview">
+                <p id="studio-update-status" class="update-status" role="status" aria-live="polite"></p>
+                <p id="studio-update-server-note" class="settings-footnote"></p>
+                <p id="studio-update-agents" class="settings-footnote"></p>
+              </div>
+              <div id="studio-update-operation" class="update-operation" hidden>
+                <progress id="studio-update-progress" max="100" hidden></progress>
+                <p id="studio-update-progress-detail" class="settings-footnote"></p>
+                <p id="studio-update-progress-wait" class="settings-footnote" role="status"></p>
+                <button
+                  id="studio-update-stop-operation"
+                  class="secondary-button"
+                  data-i18n="updates.cancel_operation"
+                  hidden
+                ></button>
               </div>
               <div class="update-actions">
                 <button id="studio-update-check" class="secondary-button" data-i18n="updates.check"></button>
                 <button
                   id="studio-update-install"
                   class="primary-button"
-                  data-i18n="updates.install"
+                  data-i18n="updates.update_studio"
                   hidden
                 ></button>
-              </div>
-              <div class="update-server">
-                <h4 data-i18n="updates.server_title"></h4>
-                <p id="studio-update-server-note" class="settings-footnote"></p>
-                <p id="studio-update-agents" class="settings-footnote"></p>
+                <button
+                  id="studio-update-repair"
+                  class="primary-button"
+                  data-i18n="updates.repair_studio"
+                  hidden
+                ></button>
                 <button
                   id="studio-update-restart"
                   class="secondary-button"
-                  data-i18n="updates.restart"
-                  disabled
+                  data-i18n="updates.restart_now"
                 ></button>
               </div>
-              <div id="studio-update-components" class="update-components" hidden>
-                <h4 id="studio-update-components-heading" tabindex="-1" data-i18n="components.title">
-                  Composants Prime Agent
-                </h4>
-                <p id="studio-update-components-recommendation" class="settings-footnote"></p>
-                <ul id="studio-update-components-list" class="component-chips" aria-live="polite"></ul>
-                <h5 class="components-subtitle" data-i18n="components.prep_title">Préparation</h5>
-                <p
-                  id="studio-update-components-status"
-                  class="update-status"
-                  role="status"
-                  aria-live="polite"
-                ></p>
-                <progress id="studio-update-components-progress" max="100" hidden></progress>
-                <p id="studio-update-components-error" class="form-error" role="alert" hidden></p>
-                <div class="update-actions">
-                  <button
-                    id="studio-update-components-check"
-                    class="secondary-button"
-                    data-i18n="components.check"
-                  ></button>
-                  <button
-                    id="studio-update-components-install"
-                    class="primary-button"
-                    data-i18n="components.install"
-                  ></button>
-                  <button
-                    id="studio-update-components-cancel"
-                    class="secondary-button"
-                    data-i18n="components.cancel"
-                    hidden
-                  ></button>
-                  <button
-                    id="studio-update-components-toggle"
-                    class="secondary-button"
-                    data-i18n="components.show_details"
-                    aria-expanded="false"
-                    aria-controls="studio-update-components-details"
-                  ></button>
-                </div>
-                <div id="studio-update-components-details" hidden>
+              <p id="studio-update-action-note" class="settings-footnote"></p>
+              <details id="studio-update-details" class="update-notes">
+                <summary data-i18n="updates.details"></summary>
+                <dl class="update-versions">
+                  <dt data-i18n="updates.app_version"></dt>
+                  <dd id="studio-update-app-version">?</dd>
+                  <dt data-i18n="updates.server_version"></dt>
+                  <dd id="studio-update-server-version">?</dd>
+                </dl>
+                <p id="studio-update-provenance" class="settings-footnote"></p>
+                <div id="studio-update-components" class="update-components" hidden>
+                  <h4 data-i18n="components.title"></h4>
                   <ul id="studio-update-components-detail-list" class="component-details"></ul>
                 </div>
-                <h5 class="components-subtitle" data-i18n="components.activation_title">Activation</h5>
-                <p id="studio-update-components-activation-note" class="settings-footnote"></p>
-                <p id="studio-update-components-server-note" class="settings-footnote"></p>
-                <div class="update-actions">
-                  <button
-                    id="studio-update-components-apply"
-                    class="secondary-button"
-                    data-i18n="components.apply"
-                    hidden
-                  ></button>
-                </div>
-              </div>
+                <details id="studio-update-notes" class="update-notes" hidden>
+                  <summary data-i18n="updates.notes"></summary>
+                  <div id="studio-update-notes-body" class="markdown update-notes-body"></div>
+                </details>
+                <pre id="studio-update-operation-detail" class="update-diagnostic" hidden></pre>
+              </details>
             </div>
             <p id="studio-update-error" class="form-error" role="alert" hidden></p>
             <a

@@ -361,12 +361,17 @@ function engineRuntime() {
     const cli = discoverCli();
     const rlmDir = cli?.packageDir ? join(cli.packageDir, 'dist', 'prime-agent-runtime', 'src', 'rlm') : null;
     if (!rlmDir || !existsSync(join(rlmDir, 'bash.py'))) return null;
-    let fullPython = null;
-    try {
-      const marker = localKernelPython();
-      if (marker && existsSync(marker)) fullPython = marker;
-    } catch {
-      /* no managed kernel yet */
+    // Release/CI tests provide an isolated compatible interpreter explicitly.
+    // Do not replace it with an unrelated checkout's cached kernel marker.
+    let fullPython = process.env.PRIME_AGENT_KERNEL_PYTHON;
+    if (fullPython && !existsSync(fullPython)) throw new Error('Explicit test Python is missing');
+    if (!fullPython) {
+      try {
+        const marker = localKernelPython();
+        if (marker && existsSync(marker)) fullPython = marker;
+      } catch {
+        /* no managed kernel yet */
+      }
     }
     return { rlmDir, fullPython, protoPython: fullPython || anyPython };
   } catch {

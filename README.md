@@ -36,19 +36,19 @@ Prime Agent Studio brings your **local Prime Agent sessions** together in a Wind
 - **Stay on course**: a Roadmap shared with agents, right beside conversations.
 - **Work from anywhere**: the same Studio on a Windows PC and on your phone, over Wi-Fi or beyond.
 
-**Version 3.7.1** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.1/Prime-Agent-Studio_3.7.1_x64-setup.exe) · [Release history](docs/en/changelog.md).
+**Version 3.8.0** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.0/Prime-Agent-Studio_3.8.0_x64-setup.exe) · [Release history](docs/en/changelog.md).
 
 ## Quick start
 
 ### Windows application
 
 1. Download the [Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/latest), install it, then open **Prime Agent Studio** from your desktop or Start menu. Node.js is included.
-2. At first launch, choose **Install missing components** (Prime Agent **0.9.5**, private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
+2. At first launch, choose **Repair Studio** (Prime Agent **0.9.5**, private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
 3. Configure your provider, add a project folder with **+**, then write your request. [Full guide](docs/en/desktop.md).
 
 Updates are signed for Tauri; the installer does not yet carry a Windows Authenticode signature.
 
-**After updating:** the application can keep using the previous server while agents finish. Once they have finished, use **Preferences → Updates → Restart server** in the Windows application to activate the installed update. [Update guide](docs/en/desktop.md#data-and-updates).
+**After updating:** open **Preferences → Updates → Restart now** to start the installed server version. Restart is explicit: confirmation explains which active agents and interruptible operations will stop. **Repair Studio** prepares missing components without restarting. [Update guide](docs/en/desktop.md#data-and-updates).
 
 <details>
 <summary><strong>From source</strong></summary>

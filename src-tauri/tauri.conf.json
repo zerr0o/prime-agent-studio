@@ -16,7 +16,7 @@
       "capabilities": [
         {
           "identifier": "launcher",
-          "windows": ["main", "desktop-settings"],
+          "windows": ["main"],
           "permissions": [
             "core:default",
             "allow-desktop-state",
@@ -28,7 +28,10 @@
             "allow-desktop-logs",
             "allow-desktop-start",
             "allow-desktop-update-status",
+            "allow-desktop-update-operation",
+            "allow-desktop-update-cancel",
             "allow-desktop-server-restart",
+            "allow-desktop-quit",
             "allow-desktop-update-check",
             "allow-desktop-update-install"
           ]

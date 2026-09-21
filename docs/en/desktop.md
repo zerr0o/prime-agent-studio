@@ -4,13 +4,15 @@
 
 The **Prime Agent Studio** application, built with Tauri 2, opens Studio in a dedicated Windows window. Its shortcut silently starts the server or reuses the running instance. There is no need to launch the VBS manually.
 
+> This update workflow and server shutdown from the system tray are available starting with **3.8.0**.
+
 ## Installation and first launch
 
-Run [Prime-Agent-Studio_3.6.1_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.6.1/Prime-Agent-Studio_3.6.1_x64-setup.exe). Installation is limited to your Windows user and offers Start menu and desktop shortcuts. Node.js is included. The installer installs WebView2 when needed; this component may require an Internet connection.
+Run [Prime-Agent-Studio_3.8.0_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.0/Prime-Agent-Studio_3.8.0_x64-setup.exe). Installation is limited to your Windows user and offers Start menu and desktop shortcuts. Node.js is included. The installer installs WebView2 when needed; this component may require an Internet connection.
 
-Builds containing guided setup download **Prime Agent, private npm, uv and Python** on demand. These components are not bundled in the installer. No previous Node, npm or Python installation, PATH changes or terminal commands are needed. An initial network connection is required. **Git Bash remains a separate prerequisite** for engine shell commands; its absence is reported. This source feature does not change previously published installers.
+Studio downloads **Prime Agent, private npm, uv and Python** on demand. These components are not bundled in the installer. No previous Node, npm or Python installation, PATH changes or terminal commands are needed. An initial network connection is required. **Git Bash remains a separate prerequisite** for engine shell commands; its absence is reported.
 
-On first launch, review component states, then choose **Update components**, **Choose an existing installation** or **Later — open Studio**. Downloads require an explicit click on the install button. “Later” preserves access to settings and history; engine actions ask you to finish setup. After validation, configure a provider in **Connections**: preparation neither signs into an account nor sends a paid prompt. If you previously used the checkout with the VBS launcher, select **Use an existing installation** and choose its folder containing `server.mjs` and `.local`.
+On first launch, check Studio status and use **Repair Studio** if required components are missing. Downloads require an explicit click. Repair does not restart the server; then use **Restart now**. Existing paths and diagnostics remain in technical details. After validation, configure a provider in **Connections**: repair does not sign into accounts or send paid prompts. If you used the checkout with the VBS launcher, select **Use an existing installation** and choose its folder containing `server.mjs` and `.local`.
 
 Migration copies projects, subagent defaults, attachments and remote access settings, including the PIN. The original installation remains intact. If its server is running, the application connects immediately and postpones copying until the first launch when that server is stopped. It interrupts no runs. Prime Agent sessions remain in their usual location. After migration, use the application to open Studio; the old launcher retains its own copy of the settings.
 
@@ -18,7 +20,9 @@ Browser appearance preferences and drafts are not copied: the Tauri window has i
 
 ## Preparation, repair and compatibility
 
-**Preferences → Updates → Studio components** groups the required engine, installed version, preparation and activation. **System → Studio components** and **Studio preferences** in the tray menu open that same panel. **Startup and recovery** remains available when the server is stopped or its interface is too old. Existing installation selection accepts the Prime Agent package root, `uv.exe` or `python.exe`. `PRIME_AGENT_CLI`, `PRIME_GUI_UV` and `PRIME_AGENT_KERNEL_PYTHON` take precedence, followed by saved selections, the managed installation, then customary external locations. Invalid explicit paths must be corrected; they are never silently replaced. A valid external Python is only validated, without installing into it or requiring uv.
+**Preferences → Updates** groups checking, updating, repair and restart. **System → Studio components**, the tray menu and `--settings` open the same surface. There is only one native window: if the server is unavailable or uses an older interface, that window shows local recovery controls. Versions, paths and logs are in collapsed technical details.
+
+Existing installation selection accepts the Prime Agent package root, `uv.exe` or `python.exe`. `PRIME_AGENT_CLI`, `PRIME_GUI_UV` and `PRIME_AGENT_KERNEL_PYTHON` remain authoritative. Invalid explicit paths must be corrected, without silent replacement. A valid external Python is checked without modifying its environment.
 
 In the current source tree, the versioned policy in `lib/desktop-components.mjs` pairs Studio with **Prime Agent 0.9.5**, **npm 10.9.4** and **uv 0.8.22**, using Python 3.11. Packaging accepts Windows x64 with Node 22 ≥ 22.16 or Node 24; the engine requires ≥ 22.8. A later Studio version may require another exact engine: the button then installs that version after explicit consent. There is no periodic monitoring, blind “stable” selection or automatic update of external installations.
 
@@ -32,19 +36,19 @@ Components live in `engine/prime-agent/<version-id>`, `engine/uv/<version-id>`, 
 
 Progress shows actual stages and received bytes, without an invented overall percentage. Cancellation or failure allows retrying without losing validated components. A lock prevents simultaneous preparations and recovers a stopped owner. The application also serializes component preparation, Studio installation and server restarts. `engine/logs/components.log` contains only stages, codes, phases and bytes. Final activation errors are recorded separately from preparation failures, without commands, environment variables or raw tool output. Downloads never start merely by opening a remote page or signing into Windows.
 
-Completed preparation restarts only a server whose ownership and inactivity Studio verifies. If agents are working or another launcher owns the server, activation remains deferred until an appropriate restart. Failed activation preserves ready components: **Activate components and restart** retries that step without downloading again. Occupied ports, unmanaged servers and inconsistent versions have explicit messages. No global Node process is stopped. Engine and kernel generations remain available for existing processes.
+**Repair Studio** installs and validates components without stopping the server. One **Restart now** button then applies ready changes. Validated components remain available after failure. Server identity must be proved before a stop: marker, PID, instance, executable, arguments, generation and Windows port owner. A missing marker can be recovered only when this evidence agrees; an unverified port or process is never stopped. Previous generations remain available.
 
 ## Window and background work
 
 - **Closing the window** hides it and keeps the icon near the clock. Agents, the server and mobile access continue.
 - Clicking this icon or launching the shortcut again brings back the same window.
-- The icon’s menu offers **Open Studio**, **Studio preferences** and **Quit application**. Quitting closes Tauri but leaves the server and agents working.
+- The icon’s menu offers **Open Studio**, **Studio preferences** and **Quit application**. Quitting first stops the verified Studio server, then closes the application. Active agents or operations require confirmation. If stopping fails, the application stays open and shows the reason.
 - In **Preferences → System**, **Start with Windows** is disabled by default. Enabling it starts Studio in the background when you sign in, without opening its window. Background startup errors are logged without opening a window; open Studio to access recovery controls.
 - External links open in your usual browser. LAN, Tailscale, HTTPS and the mobile PWA still use the same server.
 
-Daily, the main window first shows a connecting state (“Preparing your workspace”), then opens Studio: it reuses the running server or starts it. Settings appear only when setup is needed, on error, or when opened explicitly via `--settings` or the menu. Before a cold start, the launcher quickly checks the installation receipt (versions, provenance, paths, Python marker) without executing components; when something changed or failed, use **Check again** or **Update components**, which report each step (engine, Python, shell, uv).
+Daily, the main window first shows a connecting state (“Preparing your workspace”), then opens Studio: it reuses the running server or starts it. Settings appear only when setup is needed, on error, or when opened explicitly via `--settings` or the menu. Before a cold start, the launcher quickly checks the installation receipt (versions, provenance, paths, Python marker) without executing components; when something changed or failed, use **Check for updates** or **Repair Studio**, which report each step (engine, Python, shell, uv).
 
-To reconnect to a stopped server, open **Studio preferences** from the tray icon, then **Open Studio** in native recovery. This button reuses an existing instance and never stops agents.
+To reconnect to a stopped server, open **Studio preferences** from the tray icon, then **Open Studio** in the recovery view in the same window. This button reuses an existing instance and never stops agents.
 
 A Windows shortcut can use the `--settings` argument to open application settings directly, including when the app is already running in the background.
 
@@ -66,11 +70,15 @@ An update installs the new application and prepares a new server copy. **Prefere
 
 The **2.8.1** fix adds a one-time startup repair: the ten helpers omitted from release 2.8.0 are added to its original cache, even while its server is running. Existing files are preserved. This restores messages, skill discovery and providers without stopping agents.
 
-In Studio, open **Preferences → Updates → Check for updates**. When a newer stable version is published on GitHub, its release notes and an **Install and relaunch** button appear. Download progress is displayed, then Tauri verifies the signature before starting installation. Installation requires this explicit click.
+In Studio, open **Preferences → Updates**. Three actions have distinct roles:
 
-The **Restart the server after installation** option applies the new version when the server is idle. If agents are still working, the server stays running and settings open after relaunch. **Restart server** then displays a confirmation: restarting may interrupt runs and will temporarily disconnect devices. Projects and saved history are preserved. Activity is checked again before stopping; a server started by another installation is not stopped.
+- **Check for updates** looks for a new version without installing anything.
+- **Update Studio** asks for confirmation, downloads the file, verifies its signature and relaunches the application. The server restarts if idle; agents that are still active require another confirmation.
+- **Restart now** fully stops the server and starts it again with already installed files. Confirmation explains the effect on agents and connected devices. **Repair Studio** appears when required components are missing; repair does not restart the server.
 
-When the installed app and running server versions differ, foreground startup shows **Finish the Studio update**, including after a manual installation. It states the required engine and offers preparation followed by activation. **Later** keeps the old server without stopping its agents. Native recovery remains accessible through the tray icon when the older server does not yet support the integrated panel. In a browser or on a phone, the panel shows versions and release notes. With write access, you can confirm an update request: the Windows application must be running and no agents may be working. Installation and restart are still performed by the Windows application, which checks the conditions again. Normal mobile control of Studio remains available while agents work.
+You can close and reopen the panel without losing the operation. Stages, received bytes, known total size, real percentage, elapsed time and errors are retained. Downloads can be cancelled. A requested restart waits for interruptible work to actually stop before changing the server. Installer handoff cannot be cancelled and its reason is displayed.
+
+The application and running server have separate versions, shown in technical details. A mismatch calls for a restart, not a false success. If the server is unavailable or uses an older interface, recovery controls open in the main window, never in another native window. Browsers and phones can still view versions and release notes. A remote installation request requires write access, a running Windows application and no active agents; these conditions are rechecked on the PC.
 
 Web links, including Codex sign-in, open in the default browser. File drops use the HTML composer directly, without another file bridge. The components bridge is limited to the main application window at its exact local origin, or the native launcher. The page cannot supply paths, executables or download URLs; the verified policy and native dialogs retain that responsibility. Browsers, other ports and LAN pages do not receive these rights. Preparation buttons are absent for remote or read-only access.
 

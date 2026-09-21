@@ -1,43 +1,185 @@
 import { t, bindText, onLanguageChange } from './i18n.js';
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
-import { createDesktopComponentsPanel } from './desktop-components.js';
+import { createDesktopComponentsPanel, componentsErrorKey, describeProgress } from './desktop-components.js';
+import { openUpdatesPane } from './desktop-components-action.js';
+import { updateView, operationActive, progressNumbers } from './desktop-update-state.js';
 
 export function createDesktopUpdates({ api, getContext }) {
   const $ = (id) => document.getElementById('studio-update-' + id);
-  const componentsPanel = createDesktopComponentsPanel({ getContext });
   const core = window.__PRIME_STUDIO_DESKTOP__ === true && window.__TAURI__?.core;
-  let busy = false,
-    snapshot,
+  let snapshot,
+    components,
+    operation,
     version,
-    statusKey = 'updates.idle',
-    statusParams;
-  const status = (key, params) => {
-    statusKey = key;
-    statusParams = params;
-    bindText($('status'), () => t(statusKey, statusParams));
-  };
-  const failure = (error) => {
-    $('error').hidden = !error;
-    const key = [
-      'components_required',
-      'server_not_managed',
-      'server_port_occupied',
-      'server_version_mismatch',
-      'download_failed',
-      'install_failed',
-      'check_failed',
-      'update_busy',
-    ].includes(String(error))
-      ? String(error)
-      : 'failed';
-    const message = `updates.${key}`;
-    bindText($('error'), () => (error ? t(message) : ''));
-  };
-  function controls() {
-    $('check').disabled = $('install').disabled = $('restart-after').disabled = busy;
-    $('restart').disabled = busy || !snapshot?.managed;
-    $('native').setAttribute('aria-busy', String(busy));
+    checked = false;
+  let localKind = null,
+    localStartedAt = 0,
+    localEpoch = 0,
+    actionFlight = false,
+    errorCode = '',
+    notice = '';
+  let pollTimer,
+    pollFlight = false,
+    refreshFlight = null;
+  const allowed = () => Boolean(core) && !getContext().remote && !getContext().readOnly;
+  const message = (id, key, params) => bindText($(id), () => (key ? t(key, params) : ''));
+  const view = () =>
+    updateView({ server: snapshot, components, operation, available: version, checked, localKind });
+  const errors = new Set([
+    'operation_interrupted',
+    'components_required',
+    'server_not_managed',
+    'server_port_occupied',
+    'server_version_mismatch',
+    'download_failed',
+    'install_failed',
+    'check_failed',
+    'update_busy',
+    'download_timed_out',
+    'download_cancelled',
+    'install_noncancellable',
+    'cancel_timeout',
+    'cancel_not_supported',
+    'server_stop_failed',
+    'server_start_failed',
+    'agents_running',
+    'setup_busy',
+  ]);
+  const codeOf = (error) =>
+    String(error?.message || error || '')
+      .split(':')[0]
+      .trim();
+  function failure(error) {
+    errorCode = codeOf(error);
+    if (errorCode === 'components_required') components = { ...components, ready: false, needsUpdate: true };
+    render();
+  }
+  const componentsPanel = createDesktopComponentsPanel({
+    getContext,
+    onChange: (value) => {
+      components = value;
+      render();
+    },
+    onProgress: (value) => {
+      if (localKind !== 'prepare') return;
+      operation = {
+        id: 'local-prepare',
+        kind: 'prepare',
+        stage: 'working',
+        startedAt: localStartedAt,
+        updatedAt: Date.now(),
+        receivedBytes: value.bytes ?? value.received ?? 0,
+        totalBytes: value.total,
+        percent: value.percent,
+        detail: describeProgress(value),
+        cancellable: true,
+      };
+      render();
+    },
+  });
+  function stageKey(op) {
+    const stage = op?.stage;
+    if (stage === 'cancelled') return 'updates.operation_cancelled';
+    if (stage === 'error') return 'updates.operation_failed';
+    if (stage === 'done') return 'updates.operation_done';
+    if (['checking', 'downloading', 'verifying', 'installing'].includes(stage)) return 'updates.' + stage;
+    if (['stopping', 'starting', 'ready'].includes(stage)) return 'updates.phase_' + stage;
+    if (['stopping', 'starting', 'ready', 'checking'].includes(op?.detail))
+      return 'updates.phase_' + op.detail;
+    if (['restart', 'quit', 'prepare', 'components', 'start'].includes(op?.kind))
+      return 'updates.operation_' + op.kind;
+    return 'updates.working';
+  }
+  function render() {
+    const v = view();
+    $('native').setAttribute('aria-busy', String(v.busy));
+    $('check').disabled = v.busy || !allowed();
+    $('install').disabled = v.busy || !allowed();
+    $('repair').disabled = v.busy || !allowed();
+    $('install').hidden = !version;
+    $('repair').hidden = !v.repair || Boolean(version);
+    $('restart').disabled = v.restartDisabled || !allowed();
+    message('restart', snapshot?.running === false ? 'updates.start_now' : 'updates.restart_now');
+    const currentError =
+      errorCode || (operation?.stage === 'error' ? codeOf(operation.code || operation.error) : '');
+    $('error').hidden = !currentError;
+    if (currentError) {
+      const componentKey = componentsErrorKey(currentError);
+      message(
+        'error',
+        errors.has(currentError)
+          ? 'updates.' + currentError
+          : componentKey !== 'components.error_preparation'
+            ? componentKey
+            : 'updates.failed',
+      );
+    } else message('error', '');
+    const statusKey = v.active
+      ? stageKey(operation)
+      : localKind
+        ? 'updates.operation_' + localKind
+        : notice || v.status;
+    message('status', statusKey, { version });
+    $('app-version').textContent = snapshot?.appVersion || '?';
+    $('server-version').textContent = snapshot?.running ? snapshot.version || '?' : t('updates.stopped');
+    message(
+      'server-note',
+      !snapshot
+        ? 'updates.state_unknown'
+        : !v.canControl
+          ? 'updates.identity_unverified'
+          : snapshot.ownership === 'recoverable'
+            ? 'updates.identity_recoverable'
+            : v.needsRestart
+              ? 'updates.restart_versions'
+              : 'updates.restart_scope',
+    );
+    message('agents', snapshot?.activeRuns ? 'updates.agents' : 'updates.no_agents', {
+      count: snapshot?.activeRuns || 0,
+    });
+    bindText($('action-note'), () =>
+      [
+        !v.busy && version ? t('updates.available', { version }) : '',
+        t(
+          v.locked
+            ? 'updates.install_noncancellable'
+            : v.busy
+              ? 'updates.busy_restart_available'
+              : 'updates.action_note',
+        ),
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+    $('provenance').textContent = snapshot
+      ? [snapshot.ownership, snapshot.source, snapshot.pid ? 'PID ' + snapshot.pid : '']
+          .filter(Boolean)
+          .join(' · ')
+      : '';
+    $('operation').hidden = !operation && !localKind;
+    $('progress').hidden = !v.active && !localKind;
+    const numbers = progressNumbers(operation);
+    if (numbers.percent === null) $('progress').removeAttribute('value');
+    else $('progress').value = numbers.percent;
+    const number = (value) => Math.round(value).toLocaleString(document.documentElement.lang || 'fr');
+    const detail = [];
+    if (numbers.total)
+      detail.push(
+        t('updates.bytes_total', { received: number(numbers.received), total: number(numbers.total) }),
+      );
+    else if (numbers.received)
+      detail.push(t('updates.bytes_received', { received: number(numbers.received) }));
+    if (numbers.percent !== null) detail.push(Math.floor(numbers.percent) + ' %');
+    if (operation?.startedAt && v.active) detail.push(t('updates.elapsed', { seconds: numbers.seconds }));
+    if (operation?.stage === 'cancelled') detail.push(t('updates.operation_cancelled'));
+    if (operation?.detail === 'cancel_requested') detail.push(t('updates.cancelling'));
+    $('progress-detail').textContent = detail.join(' · ');
+    message('progress-wait', numbers.stalled ? 'updates.progress_wait' : '');
+    $('stop-operation').hidden = !v.cancellable;
+    $('stop-operation').disabled = operation?.detail === 'cancel_requested';
+    $('operation-detail').hidden = !operation;
+    $('operation-detail').textContent = operation ? JSON.stringify(operation, null, 2) : '';
   }
   // Release notes are GitHub markdown. Render with the shared marked + DOMPurify
   // stack (same family as the transcript renderer), never raw HTML. No file-link
@@ -131,7 +273,7 @@ export function createDesktopUpdates({ api, getContext }) {
     bindText($('remote-hint'), () => '');
     try {
       const meta = await remoteApi(`/api/updates/metadata${force ? '?refresh=1' : ''}`);
-      $('remote-installed').textContent = meta.installed || '—';
+      $('remote-installed').textContent = meta.installed || '?';
       $('remote-published').textContent = meta.published
         ? meta.published.version
         : t('updates.meta_unavailable');
@@ -212,6 +354,32 @@ export function createDesktopUpdates({ api, getContext }) {
       button.disabled = false;
     }
   }
+  async function readOperation() {
+    if (!core || pollFlight) return;
+    pollFlight = true;
+    try {
+      const result = await core.invoke('desktop_update_operation');
+      const next = result?.operation || null;
+      if (!localKind || !next || next.updatedAt >= localStartedAt) operation = next;
+      render();
+    } finally {
+      pollFlight = false;
+    }
+  }
+  function schedulePoll() {
+    if (pollTimer) return;
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      const visible = document.getElementById('settings-dialog')?.open && !$('native').hidden;
+      if (!visible && !localKind && !operationActive(operation)) return;
+      try {
+        await readOperation();
+      } catch {
+        /* The action/status retry owns user-visible errors. */
+      }
+      schedulePoll();
+    }, 1000);
+  }
   async function refresh() {
     const remote = getContext().remote === true;
     const native = Boolean(core) && !remote;
@@ -220,43 +388,49 @@ export function createDesktopUpdates({ api, getContext }) {
     $('remote').hidden = !remote;
     $('native').hidden = !native;
     if (!native) {
-      if (getContext().remote) await refreshRemote();
-      else void componentsPanel.refresh().catch(() => {});
+      if (remote) await refreshRemote();
       return;
     }
-    void componentsPanel.refresh().catch(() => {});
-    try {
+    schedulePoll();
+    if (refreshFlight) return refreshFlight;
+    refreshFlight = (async () => {
+      await readOperation();
       snapshot = await core.invoke('desktop_update_status');
-      $('app-version').textContent = snapshot.appVersion;
-      $('server-version').textContent = snapshot.version || t('updates.stopped');
-      const key = !snapshot.managed
-        ? 'updates.unmanaged'
-        : !snapshot.running
-          ? 'updates.stopped_note'
-          : snapshot.version !== snapshot.appVersion
-            ? 'updates.pending'
-            : 'updates.server_current';
-      bindText($('server-note'), () => t(key));
-      const count = snapshot.activeRuns;
-      bindText($('agents'), () => t(count ? 'updates.agents' : 'updates.no_agents', { count }));
-      controls();
+      if (!operationActive(operation) && !localKind) {
+        try {
+          await componentsPanel.refresh();
+        } catch (error) {
+          if (!['update_busy', 'setup_busy'].includes(codeOf(error))) failure(error);
+        }
+      }
+      render();
       return snapshot;
-    } catch (error) {
-      snapshot = undefined;
-      controls();
-      failure(error);
-      throw error;
-    }
+    })().finally(() => {
+      refreshFlight = null;
+    });
+    return refreshFlight;
   }
-  function confirm(kind, count) {
+  function confirmAction(kind, count, pending) {
     const dialog = $('confirm');
-    bindText($('confirm-title'), () =>
-      t(kind === 'interrupt' ? 'updates.interrupt_title' : 'updates.install_busy_title'),
-    );
+    if (dialog.open) return Promise.resolve(false);
+    message('confirm-title', 'updates.confirm_' + kind + '_title');
     bindText($('confirm-note'), () =>
-      t(kind === 'interrupt' ? 'updates.interrupt_note' : 'updates.install_busy_note', { count }),
+      [
+        t(`updates.confirm_${kind}_note`),
+        count ? t('updates.confirm_agents', { count }) : t('updates.no_agents'),
+        pending ? t('updates.confirm_pending') : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
     );
-    bindText($('proceed'), () => t(kind === 'interrupt' ? 'updates.interrupt' : 'updates.install'));
+    message(
+      'proceed',
+      kind === 'quit'
+        ? 'updates.quit_confirm'
+        : kind === 'install'
+          ? 'updates.update_studio'
+          : 'updates.restart_now',
+    );
     return new Promise((resolve) => {
       dialog.returnValue = '';
       $('cancel').onclick = () => dialog.close('cancel');
@@ -266,116 +440,184 @@ export function createDesktopUpdates({ api, getContext }) {
       $('cancel').focus();
     });
   }
+  function beginLocal(kind) {
+    localKind = kind;
+    localStartedAt = Date.now();
+    errorCode = '';
+    notice = '';
+    if (!operationActive(operation)) operation = null;
+    render();
+    schedulePoll();
+    return ++localEpoch;
+  }
+  async function endLocal(epoch) {
+    // An interrupted download must not clear a later restart's state.
+    if (epoch === undefined || epoch !== localEpoch) return;
+    localKind = null;
+    try {
+      await readOperation();
+    } catch {
+      /* Preserve the real action outcome. */
+    }
+    render();
+  }
   $('check').onclick = async () => {
-    if (busy) return;
-    busy = true;
-    controls();
-    failure();
-    version = undefined;
-    $('install').hidden = $('options').hidden = $('notes').hidden = true;
-    status('updates.checking');
+    if (view().busy || !allowed()) return;
+    const epoch = beginLocal('check');
     try {
       const update = await core.invoke('desktop_update_check');
+      if (epoch !== localEpoch) return;
+      checked = true;
       version = update.available ? update.version : undefined;
-      status(version ? 'updates.available' : 'updates.current', { version });
-      $('install').hidden = $('options').hidden = !version;
       renderNotesInto($('notes-body'), update.notes || '');
-      $('notes').hidden = !version || !update.notes;
-      await refresh();
+      $('notes').hidden = !update.notes;
     } catch (error) {
-      status('updates.idle');
-      failure(error);
+      if (epoch === localEpoch) failure(error);
     } finally {
-      busy = false;
-      controls();
+      await endLocal(epoch);
     }
+    if (epoch === localEpoch)
+      try {
+        await refresh();
+      } catch (error) {
+        failure(error);
+      }
   };
   $('install').onclick = async () => {
-    if (busy || !version) return;
-    busy = true;
-    controls();
-    failure();
+    if (view().busy || actionFlight || !version || !allowed()) return;
+    const gate = {};
+    actionFlight = gate;
+    let epoch;
     try {
-      const current = await refresh();
-      if (current.activeRuns && !(await confirm('install_busy', current.activeRuns))) return;
-      $('progress').hidden = false;
-      $('progress').removeAttribute('value');
-      status('updates.downloading');
+      await refresh();
+      if (!(await confirmAction('install', snapshot?.activeRuns || 0, false))) return;
+      epoch = beginLocal('install');
+      actionFlight = false; // Explicit restart remains available during the download.
       const onEvent = new core.Channel();
-      onEvent.onmessage = ({ stage, percent }) => {
-        status(
-          'updates.' +
-            (stage === 'downloading' ? 'downloading' : stage === 'verifying' ? 'verifying' : 'installing'),
-        );
-        if (stage === 'downloading' && percent != null) $('progress').value = percent;
-        else $('progress').removeAttribute('value');
+      onEvent.onmessage = (event) => {
+        if (epoch !== localEpoch) return;
+        operation = {
+          ...operation,
+          id: operation?.id || 'local-install',
+          kind: 'install',
+          startedAt: operation?.startedAt || localStartedAt,
+          updatedAt: Date.now(),
+          ...event,
+          terminal: false,
+          done: false,
+          cancellable: event.stage === 'downloading',
+        };
+        render();
       };
-      await core.invoke('desktop_update_install', {
-        version,
-        onEvent,
-        restartServer: $('restart-after').checked,
-      });
+      await core.invoke('desktop_update_install', { version, onEvent, restartServer: true });
     } catch (error) {
-      $('progress').hidden = true;
+      if (epoch === undefined || epoch === localEpoch) failure(error);
+    } finally {
+      if (actionFlight === gate) actionFlight = false;
+      await endLocal(epoch);
+    }
+  };
+  $('repair').onclick = async () => {
+    if (view().busy || !allowed()) return;
+    const epoch = beginLocal('prepare');
+    try {
+      const result = await componentsPanel.prepare();
+      if (epoch !== localEpoch) return;
+      if (result?.failure) failure(result.failure.error);
+      else if (result?.cancelled) notice = 'updates.operation_cancelled';
+      else if (result?.ready) notice = 'updates.repair_ready';
+    } catch (error) {
+      if (epoch === localEpoch) failure(error);
+    } finally {
+      await endLocal(epoch);
+    }
+    if (epoch === localEpoch)
+      try {
+        await refresh();
+      } catch (error) {
+        failure(error);
+      }
+  };
+  async function control(kind) {
+    if (actionFlight || !allowed()) return;
+    const gate = {};
+    actionFlight = gate;
+    let epoch;
+    try {
+      openUpdatesPane();
+      errorCode = '';
+      notice = '';
+      await refresh();
+      const v = view();
+      if (v.locked) {
+        failure('install_noncancellable');
+        return;
+      }
+      const canControl =
+        kind === 'quit'
+          ? snapshot?.running === false ||
+            snapshot?.canStop === true ||
+            (snapshot?.canStop === undefined && v.canControl)
+          : v.canControl;
+      if (!canControl) {
+        failure(snapshot?.restartReason || 'server_not_managed');
+        return;
+      }
+      const pending = operationActive(operation) || Boolean(localKind);
+      if (
+        (kind !== 'quit' || pending || snapshot?.activeRuns) &&
+        !(await confirmAction(kind, snapshot?.activeRuns || 0, pending))
+      )
+        return;
+      epoch = beginLocal(kind);
+      const command = kind === 'quit' ? 'desktop_quit' : 'desktop_server_restart';
+      const result = await core.invoke(command, {
+        force: Boolean(snapshot?.activeRuns),
+        cancelCurrent: pending,
+      });
+      if (result?.restarted) {
+        notice = 'updates.restarted';
+        components = null;
+      } else if (kind === 'quit' && (result?.stopped || result?.reason === 'already-stopped'))
+        notice = 'updates.quitting';
+      else if (result?.reason) failure(result.reason);
+      else failure('server_start_failed');
+    } catch (error) {
       failure(error);
     } finally {
-      busy = false;
-      controls();
+      if (actionFlight === gate) actionFlight = false;
+      await endLocal(epoch);
     }
-  };
-  $('restart').onclick = async () => {
-    if (busy) return;
-    busy = true;
-    controls();
-    failure();
     try {
-      const current = await refresh();
-      if (!current.managed) return;
-      let force = false;
-      if (current.activeRuns) {
-        if (!(await confirm('interrupt', current.activeRuns))) return;
-        force = true;
-      }
-      status('updates.restarting');
-      const result = await core.invoke('desktop_server_restart', { force });
-      if (result.reason === 'components_required' || result.activationError === 'components_required') {
-        status('updates.components_required');
-        failure('components_required');
-        void componentsPanel.refresh().catch(() => {});
-        await refresh();
-      } else if (result.reason === 'agents_running') {
-        status('updates.agents_changed');
-        await refresh();
-      } else if (result.restarted) status('updates.restarted');
+      await refresh();
+    } catch {
+      /* Native main switches to the local shell if the server is down. */
+    }
+  }
+  $('restart').onclick = () => void control('restart');
+  window.addEventListener('studio:quit-request', () => void control('quit'));
+  window.__PRIME_STUDIO_QUIT_READY__ = true;
+  $('stop-operation').onclick = async () => {
+    try {
+      if (['components', 'prepare'].includes(operation?.kind)) await core.invoke('desktop_components_cancel');
+      else await core.invoke('desktop_update_cancel');
+      if (operation) operation = { ...operation, detail: 'cancel_requested' };
+      render();
+      schedulePoll();
     } catch (error) {
-      const code = String(error?.message || error);
-      if (code === 'components_required') {
-        status('updates.components_required');
-        failure('components_required');
-        void componentsPanel.refresh().catch(() => {});
-        await refresh().catch(() => {});
-      } else {
-        failure(error);
-        status('updates.idle');
-      }
-    } finally {
-      busy = false;
-      controls();
+      failure(error);
     }
   };
-  $('remote-request').onclick = () => {
-    void requestRemote();
-  };
+  $('remote-request').onclick = () => void requestRemote();
   $('remote-check').onclick = () => void refreshRemote({ force: true });
-  status('updates.idle');
   onLanguageChange(() => {
-    if (!$('native').hidden) void refresh().catch(() => {});
-    else if (!$('remote').hidden) void refreshRemote().catch(() => {});
+    render();
+    if (!$('remote').hidden) void refreshRemote();
   });
+  render();
   return {
     refresh: () => {
-      void refresh().catch(() => {});
-      void componentsPanel.refresh().catch(() => {});
+      void refresh().catch(failure);
     },
     components: componentsPanel,
   };

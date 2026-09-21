@@ -36,19 +36,19 @@ Prime Agent Studio réunit les sessions de votre **Prime Agent local** dans une 
 - **Gardez le cap** : Roadmap partagée avec les agents, juste à côté des conversations.
 - **Travaillez d’où vous voulez** : le même Studio sur PC Windows et sur téléphone, en Wi-Fi ou hors Wi-Fi.
 
-**Version 3.7.1** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.1/Prime-Agent-Studio_3.7.1_x64-setup.exe) · [Historique des versions](docs/changelog.md).
+**Version 3.8.0** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.0/Prime-Agent-Studio_3.8.0_x64-setup.exe) · [Historique des versions](docs/changelog.md).
 
 ## Démarrage rapide
 
 ### Application Windows
 
 1. Téléchargez l’[installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/latest), installez-le, puis ouvrez **Prime Agent Studio** depuis le Bureau ou le menu Démarrer. Node.js est inclus.
-2. Au premier lancement, choisissez **Installer les composants manquants** (Prime Agent **0.9.5**, npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
+2. Au premier lancement, choisissez **Réparer Studio** (Prime Agent **0.9.5**, npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
 3. Configurez votre fournisseur, ajoutez un dossier de projet avec **+**, puis écrivez votre demande. [Guide complet](docs/desktop.md).
 
 Les mises à jour sont signées pour Tauri ; l’installateur ne possède pas encore de signature Windows Authenticode.
 
-**Après la mise à jour :** l’application peut continuer à utiliser l’ancien serveur pendant que les agents terminent leur travail. Une fois leurs exécutions terminées, utilisez **Préférences → Mise à jour → Redémarrer le serveur** dans l’application Windows pour activer la mise à jour installée. [Guide de mise à jour](docs/desktop.md#données-et-mises-à-jour).
+**Après la mise à jour :** ouvrez **Préférences → Mises à jour → Redémarrer maintenant** pour démarrer la version installée du serveur. Le redémarrage est explicite : la confirmation indique les agents actifs et les opérations annulables qui seront interrompus. **Réparer Studio** prépare les composants manquants sans redémarrer. [Guide de mise à jour](docs/desktop.md#données-et-mises-à-jour).
 
 <details>
 <summary><strong>Depuis le code source</strong></summary>

@@ -47,6 +47,12 @@ async function fixture(t) {
     stopped = 0,
     started = 0;
   const deps = {
+    processInfo: async () => ({
+      exe: join(options.resourceDir, 'node.exe'),
+      args: `"${join(options.resourceDir, 'node.exe')}" "${join(options.resourceDir, 'studio/server.mjs')}"`,
+      createdAt: 'fixed-start',
+    }),
+    portOwner: async () => health.pid,
     probe: async () => ({ state: 'ready', health }),
     activity: async () => active,
     stop: async (input) => {

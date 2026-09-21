@@ -18,6 +18,16 @@ En usage ordinaire, Prime Inference utilise `PRIME_API_KEY` puis l’entrée `au
 
 Azure et Cloudflare demandent des paramètres d’environnement complémentaires. Bedrock et Vertex utilisent leurs réglages cloud existants ; une indication dans leur carte explique où les configurer. Les fournisseurs personnalisés doivent d’abord être définis dans **Modèles et valeurs par défaut**.
 
+## Meta Model API (Muse Spark)
+
+Le fournisseur **Meta** (`meta`) connecte directement Prime Agent à [Meta Model API](https://dev.meta.ai/docs/overview), sans installer ni lancer le CLI Muse Code. Les outils et sous-agents restent ceux de Prime Agent.
+
+Dans **Gérer les connexions**, recherchez **Meta**, puis choisissez **Ajouter une clé API** et saisissez votre clé Meta Model API. Vous pouvez aussi utiliser la variable `MODEL_API_KEY` dans l’environnement du serveur. Ne collez pas votre clé dans une conversation.
+
+Après la connexion, choisissez **Muse Spark 1.3** (`meta/muse-spark-1.3`) ou **Muse Spark 1.3 Contributor** (`meta/muse-spark-1.3-contributor`). L’adresse API officielle est `https://api.meta.ai/v1`. L’accès, les quotas et la facturation sont gérés par Meta. **La variante Contributor autorise Meta à utiliser les prompts et les réponses pour l’entraînement.** Choisissez la variante Standard si vous ne souhaitez pas cet usage. Une connexion configurée ne garantit pas qu’une génération soit autorisée.
+
+Muse Spark raisonne toujours : les niveaux proposés vont de `minimal` à `max` pour Standard, et jusqu’à `xhigh` pour Contributor. Une ancienne préférence `off` est ramenée à `minimal`. Le protocole Responses conserve le raisonnement chiffré entre les tours. Les entrées exposées dans le Studio sont le texte et les images.
+
 ## Catalogue et disponibilité
 
 Avec Prime Agent **0.9.4**, le sélecteur utilise le registre natif des modèles disponibles pour les fournisseurs configurés. Son actualisation inclut les modèles publics et les modèles privés Prime Inference accessibles à votre compte. Si le moteur est plus ancien ou si ce registre est indisponible, le Studio utilise le catalogue intégré à l’installation et les modèles personnalisés. Avec Prime Agent **0.9.5**, la résolution ordinaire ne lit plus la configuration Prime CLI et le catalogue ne la surveille plus ; un instantané d’équipe CLI n’est réutilisé que lors d’une connexion explicite en amont, puis conservé par l’Agent sans suivre les changements CLI ultérieurs.

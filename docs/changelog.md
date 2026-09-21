@@ -4,6 +4,16 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.8.0
+
+- **Une seule fenêtre de bureau** : les préférences, les mises à jour et la récupération utilisent la fenêtre principale, même si le serveur est arrêté ou utilise encore une ancienne interface.
+- **Des actions distinctes** : vérifier les mises à jour, mettre à jour Studio, réparer les composants manquants et redémarrer le serveur ont chacun leur rôle. Une réparation ne redémarre pas implicitement le serveur.
+- **Progression réelle et annulation** : les étapes, octets reçus, totaux connus, durée et erreurs restent disponibles à la réouverture du panneau. Une opération interrompue ne laisse plus l’interface bloquée indéfiniment.
+- **Redémarrage explicite du serveur** : confirmez l’interruption des agents actifs et des opérations annulables. Le redémarrage attend la fin de l’annulation, vérifie l’identité du serveur et refuse d’arrêter un processus étranger. Le passage à l’installateur ne peut pas être annulé.
+- **Quitter arrête le serveur** : « Quitter l’application » depuis la zone de notification arrête le serveur Studio vérifié avant de fermer. La croix masque toujours la fenêtre et laisse les agents travailler.
+- **Meta Model API** : connectez Muse Spark avec une clé API, sans le CLI Muse Code. Les réglages personnalisés sont préservés. Le modèle Contributor signale que les requêtes et réponses peuvent servir à l’entraînement ; les accès et la facturation restent gérés par Meta.
+- **Interface française et anglaise** : confirmations, messages de récupération et panneaux de mise à jour plus clairs sur PC et mobile. Projets, comptes et historique des conversations sont préservés.
+
 ## 3.7.1
 
 - **Reprise après les outils** : rétroportage du correctif amont Prime Agent #2372 dans les nouveaux environnements Python gérés par Studio. La consommation d’un résultat `bash()` retire sa notification avant la fin de la cellule, pour éviter une interruption de la continuation. Empreinte dédiée, contrôle de compatibilité et validation du protocole avant utilisation. Les environnements déjà utilisés et les Python externes ne sont pas modifiés.

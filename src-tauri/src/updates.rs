@@ -1,25 +1,130 @@
 use std::{
+    collections::VecDeque,
     io::Write,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, WebviewWindow};
 use tauri_plugin_updater::{Update, UpdaterExt};
+use tokio::sync::Notify;
 
-#[derive(Default)]
+#[path = "update_operation.rs"]
+pub mod update_operation;
+
+#[cfg(test)]
+#[path = "update_tracker_tests.rs"]
+mod update_tracker_tests;
+
+use update_operation::{
+    append_log_file as op_append_log, clamp_detail as op_clamp_detail,
+    compute_percent as op_compute_percent, initial_stage_for_kind as op_initial_stage,
+    is_valid_kind as op_is_valid, load_snapshot as op_load, normalize_stage as op_norm_stage,
+    now_ms as op_now_ms, persist_snapshot as op_persist, sanitize_error as op_sanitize_err,
+    sanitize_log_message as op_sanitize_log, normalize_stale_persisted as op_normalize_stale,
+    OperationSnapshot,
+};
+
+const CHECK_METADATA_TIMEOUT: Duration = Duration::from_secs(20);
+const UPDATER_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
+const DOWNLOAD_TOTAL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const CANCEL_WAIT_BUDGET: Duration = Duration::from_secs(5);
+const CANCEL_WAIT_POLL: Duration = Duration::from_millis(50);
+const PROGRESS_PERSIST_THROTTLE_MS: u64 = 500;
+const UNKNOWN_TOTAL_EMIT_BYTES: u64 = 64 * 1024;
+const UNKNOWN_TOTAL_EMIT_MS: u128 = 500;
+
 pub struct Updates {
     busy: AtomicBool,
     pending: Mutex<Option<Update>>,
+    current: Mutex<Option<OperationSnapshot>>,
+    log: Mutex<VecDeque<OperationSnapshot>>,
+    cancel: Mutex<Option<Arc<Notify>>>,
+    cancel_flag: AtomicBool,
+    id_counter: AtomicU64,
+    last_persist_ms: AtomicU64,
 }
+
+impl Default for Updates {
+    fn default() -> Self {
+        Self {
+            busy: AtomicBool::new(false),
+            pending: Mutex::new(None),
+            current: Mutex::new(None),
+            log: Mutex::new(VecDeque::new()),
+            cancel: Mutex::new(None),
+            cancel_flag: AtomicBool::new(false),
+            id_counter: AtomicU64::new(0),
+            last_persist_ms: AtomicU64::new(0),
+        }
+    }
+}
+
+fn is_cancel_requested<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    app.try_state::<Updates>()
+        .map(|s| s.cancel_flag.load(Ordering::SeqCst))
+        .unwrap_or(false)
+}
+
+fn set_cancel_requested<R: tauri::Runtime>(app: &tauri::AppHandle<R>, v: bool) {
+    if let Some(s) = app.try_state::<Updates>() {
+        s.cancel_flag.store(v, Ordering::SeqCst);
+    }
+}
+
+/// Productive cancellable wait (used by check/download + tests).
+/// Cancel is checked BEFORE finished to honor an already-accepted cancellation;
+/// every abort awaits settlement BEFORE returning, so callers finish terminal
+/// only after work settled (never report terminal / release guard early).
+/// Returns Ok(job output) or Err(cancel_code/timeout_code/update_failed).
+pub async fn await_cancellable<R: tauri::Runtime, T: Send + 'static>(
+    app: &tauri::AppHandle<R>,
+    handle: tokio::task::JoinHandle<T>,
+    timeout: Duration,
+    cancel_code: &str,
+    timeout_code: &str,
+) -> Result<T, String> {
+    let start = tokio::time::Instant::now();
+    loop {
+        // Honor already-accepted cancellation first (race: finished after cancel).
+        if is_cancel_requested(app) {
+            handle.abort();
+            // Await settlement BEFORE terminal/guard release.
+            let _ = handle.await;
+            return Err(cancel_code.into());
+        }
+        if handle.is_finished() {
+            break;
+        }
+        if start.elapsed() > timeout {
+            handle.abort();
+            // Await settlement BEFORE terminal/guard release.
+            let _ = handle.await;
+            return Err(timeout_code.into());
+        }
+        tokio::time::sleep(CANCEL_WAIT_POLL).await;
+    }
+    match handle.await {
+        Ok(v) => Ok(v),
+        Err(join_err) => {
+            if join_err.is_cancelled() {
+                Err(cancel_code.into())
+            } else {
+                Err("update_failed".into())
+            }
+        }
+    }
+}
+
 impl Updates {
     pub fn is_busy(&self) -> bool {
         self.busy.load(Ordering::SeqCst)
     }
 }
+
 pub(super) struct Operation<'a>(&'a AtomicBool);
 impl Drop for Operation<'_> {
     fn drop(&mut self) {
@@ -32,11 +137,463 @@ pub(super) fn begin(state: &Updates) -> Result<Operation<'_>, String> {
     }
     Ok(Operation(&state.busy))
 }
+
+fn desktop_root_for_persist<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    app.try_state::<super::Desktop>()
+        .map(|d| d.root.clone())
+}
+
+fn persist_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, snap_opt: Option<&OperationSnapshot>) {
+    if let Some(root) = desktop_root_for_persist(app) {
+        op_persist(&root, snap_opt);
+    }
+}
+
+fn push_log_entry<R: tauri::Runtime>(app: &tauri::AppHandle<R>, snap: &OperationSnapshot) {
+    // Best-effort in-memory bounded log (20) + file mirror, never panics.
+    if let Some(state) = app.try_state::<Updates>() {
+        if let Ok(mut q) = state.log.lock() {
+            q.push_back(snap.clone());
+            while q.len() > update_operation::MAX_LOG_ENTRIES {
+                q.pop_front();
+            }
+        }
+    }
+    if let Some(root) = desktop_root_for_persist(app) {
+        op_append_log(&root, snap);
+    }
+}
+
+fn clear_cancel_slot<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(state) = app.try_state::<Updates>() {
+        state.cancel_flag.store(false, Ordering::SeqCst);
+        if let Ok(mut slot) = state.cancel.lock() {
+            *slot = None;
+        }
+    }
+}
+
+fn get_cancel_notify<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<Arc<Notify>> {
+    app.try_state::<Updates>()
+        .and_then(|s| s.cancel.lock().ok().and_then(|g| g.clone()))
+}
+
+fn current_value<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> serde_json::Value {
+    if let Some(state) = app.try_state::<Updates>() {
+        if let Ok(g) = state.current.lock() {
+            if let Some(s) = g.as_ref() {
+                return s.to_value();
+            }
+        }
+    }
+    // Fallback to persisted file so snapshot survives panel close.
+    // A nonterminal file with no in-memory op (relaunch) normalizes to terminal
+    // error operation_interrupted (never fake completed, never eternal busy).
+    if let Some(root) = desktop_root_for_persist(app) {
+        if let Some(s) = op_load(&root) {
+            if s.terminal || s.done || update_operation::is_terminal_stage(&s.stage) {
+                return s.to_value();
+            }
+            let norm = op_normalize_stale(s);
+            // Best-effort overwrite so next getter is stable terminal.
+            op_persist(&root, Some(&norm));
+            return norm.to_value();
+        }
+    }
+    serde_json::Value::Null
+}
+
+fn log_values<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Vec<serde_json::Value> {
+    if let Some(state) = app.try_state::<Updates>() {
+        if let Ok(q) = state.log.lock() {
+            if !q.is_empty() {
+                return q.iter().map(|s| s.to_value()).collect();
+            }
+        }
+    }
+    if let Some(root) = desktop_root_for_persist(app) {
+        let p = update_operation::log_file_path(&root);
+        if let Ok(bytes) = std::fs::read(p) {
+            if let Ok(arr) = serde_json::from_slice::<Vec<OperationSnapshot>>(&bytes) {
+                return arr.into_iter().map(|s| s.to_value()).collect();
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn envelope<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> serde_json::Value {
+    serde_json::json!({
+        "operation": current_value(app),
+        "log": log_values(app),
+    })
+}
+
 fn failure(app: &AppHandle, error: impl std::fmt::Display, code: &str) -> String {
-    let root = &app.state::<super::Desktop>().root;
-    let _ = std::fs::create_dir_all(root);
-    let _ = std::fs::write(root.join("desktop-update-error.log"), error.to_string());
+    let msg = op_sanitize_log(&error.to_string());
+    if let Some(root) = desktop_root_for_persist(app) {
+        let _ = std::fs::create_dir_all(&root);
+        let _ = std::fs::write(root.join("desktop-update-error.log"), &msg);
+    } else if let Some(state) = app.try_state::<super::Desktop>() {
+        let _ = std::fs::create_dir_all(&state.root);
+        let _ = std::fs::write(state.root.join("desktop-update-error.log"), &msg);
+    }
     code.into()
+}
+
+// --- Canonical tracker API for shell/components/restart/quit (EXACT names) ---
+
+/// Start a tracked operation. Kind must be check|install|restart|components|start|quit|prepare.
+/// Stage is free string (checking|downloading|verifying|installing|working|checking_server|stopping|starting|preparing|validating|...).
+/// Returns id (upd-<ms>-<n>) or Err(update_busy|invalid_kind|invalid_stage).
+/// Caller holding begin() guard for heavy mutations preserves serialization; report alone never takes busy.
+/// Stale callbacks must pass id; mismatched id is ignored by progress/finish.
+pub fn track_operation_start<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    kind: &str,
+    stage: &str,
+    cancellable: bool,
+) -> Result<String, String> {
+    let kind = kind.trim();
+    if !op_is_valid(kind) {
+        return Err("invalid_kind".into());
+    }
+    let stage_norm = op_norm_stage(stage).ok_or_else(|| "invalid_stage".to_string())?;
+    if update_operation::is_terminal_stage(&stage_norm) {
+        return Err("invalid_stage".into());
+    }
+    let state = app.try_state::<Updates>().ok_or_else(|| "update_failed".to_string())?;
+    // Refuse second active operation (no 2 simultaneous mutations tracking).
+    {
+        let g = state.current.lock().map_err(|_| "update_failed".to_string())?;
+        if let Some(cur) = g.as_ref() {
+            if !cur.terminal {
+                return Err("update_busy".into());
+            }
+        }
+    }
+    let counter = state.id_counter.fetch_add(1, Ordering::Relaxed);
+    let id = update_operation::make_id(op_now_ms(), counter);
+    // Initial stage default when caller passes empty? Already validated non-empty, use as-is.
+    // For check/install without explicit stage, caller should pass checking/downloading;
+    // if caller passes generic, keep it (free string).
+    let mut snap = OperationSnapshot::new(id.clone(), kind, &stage_norm, cancellable);
+    // Ensure initial stage for known kinds when caller uses generic? Keep caller stage (free).
+    let _ = op_initial_stage(kind);
+    snap.detail = String::new();
+    {
+        let mut g = state.current.lock().map_err(|_| "update_failed".to_string())?;
+        *g = Some(snap.clone());
+    }
+    // Arm cancel Notify + flag for real task-abort cancellation (no select! macro).
+    state.cancel_flag.store(false, Ordering::SeqCst);
+    {
+        if let Ok(mut slot) = state.cancel.lock() {
+            if cancellable {
+                *slot = Some(Arc::new(Notify::new()));
+            } else {
+                *slot = None;
+            }
+        }
+    }
+    persist_current(app, Some(&snap));
+    state
+        .last_persist_ms
+        .store(op_now_ms(), Ordering::SeqCst);
+    Ok(id)
+}
+
+/// Best-effort progress (memory every call, file throttled 500ms, terminal always persists). Ignores stale id (late callbacks). Returns current snapshot or Null.
+/// Never panics; detail bounded 500, no tokens.
+pub fn track_operation_progress<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    id: &str,
+    stage: &str,
+    received: u64,
+    total: Option<u64>,
+    detail: &str,
+    cancellable: bool,
+) -> serde_json::Value {
+    let Some(state) = app.try_state::<Updates>() else {
+        return serde_json::Value::Null;
+    };
+    let stage_norm = match op_norm_stage(stage) {
+        Some(s) => s,
+        None => return current_value(app),
+    };
+    #[allow(unused_assignments)]
+    let mut finished: Option<OperationSnapshot> = None;
+    {
+        let Ok(mut g) = state.current.lock() else {
+            return current_value(app);
+        };
+        let Some(cur) = g.as_mut() else {
+            return serde_json::Value::Null;
+        };
+        if cur.id != id {
+            // Stale callback: ignore.
+            return cur.to_value();
+        }
+        if cur.terminal {
+            // First terminal wins; ignore late progress after settlement.
+            return cur.to_value();
+        }
+        cur.stage = stage_norm.clone();
+        cur.received_bytes = received;
+        cur.total_bytes = total;
+        cur.percent = op_compute_percent(received, total);
+        cur.detail = op_clamp_detail(detail);
+        let term = update_operation::is_terminal_stage(&stage_norm);
+        cur.terminal = term;
+        cur.done = term;
+        cur.cancellable = cancellable && !term;
+        cur.updated_at = op_now_ms();
+        if term {
+            // Progress with terminal stage acts as finish (first terminal wins).
+            // Error/code left as-is (None for done-like). Push log.
+            if cur.stage == "error" && cur.error.is_none() {
+                let e = op_sanitize_err(&cur.detail);
+                let code = if e.is_empty() { "update_failed".to_string() } else { e };
+                cur.error = Some(code.clone());
+                cur.code = Some(code);
+            } else if cur.stage == "cancelled" && cur.error.is_none() {
+                cur.error = Some("download_cancelled".to_string());
+                cur.code = Some("download_cancelled".to_string());
+            }
+            finished = Some(cur.clone());
+        } else {
+            let snap = cur.clone();
+            let now = snap.updated_at;
+            let last = state.last_persist_ms.load(Ordering::SeqCst);
+            drop(g);
+            // Throttle file writes: memory every chunk, file at most every 500ms.
+            if now.saturating_sub(last) >= PROGRESS_PERSIST_THROTTLE_MS {
+                state.last_persist_ms.store(now, Ordering::SeqCst);
+                persist_current(app, Some(&snap));
+            }
+            return snap.to_value();
+        }
+    }
+    if let Some(snap) = finished {
+        push_log_entry(app, &snap);
+        persist_current(app, Some(&snap));
+        state
+            .last_persist_ms
+            .store(snap.updated_at, Ordering::SeqCst);
+        clear_cancel_slot(app);
+        return snap.to_value();
+    }
+    current_value(app)
+}
+
+/// Terminal report. Ignores stale id. Stage must be done|error|cancelled (else coerced to error).
+/// error is code only (never URL/token), sanitized + bounded. First terminal wins; late calls ignored.
+/// Returns current snapshot or Null. Never reports terminal before settlement: caller must call
+/// finish only after work settled (download future dropped, install returned).
+pub fn track_operation_finish<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    id: &str,
+    stage: &str,
+    error: Option<&str>,
+) -> serde_json::Value {
+    let Some(state) = app.try_state::<Updates>() else {
+        return serde_json::Value::Null;
+    };
+    let stage_norm = op_norm_stage(stage).unwrap_or_else(|| "error".to_string());
+    let (terminal_stage, err_code): (String, Option<String>) = if update_operation::is_terminal_stage(&stage_norm) {
+        let code = error.map(|e| op_sanitize_err(e)).filter(|s| !s.is_empty());
+        (stage_norm, code)
+    } else {
+        let code = Some(
+            error
+                .map(|e| op_sanitize_err(e))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "invalid_stage".to_string()),
+        );
+        ("error".to_string(), code)
+    };
+    {
+        let Ok(mut g) = state.current.lock() else {
+            return current_value(app);
+        };
+        let Some(cur) = g.as_mut() else {
+            return serde_json::Value::Null;
+        };
+        if cur.id != id {
+            return cur.to_value();
+        }
+        if cur.terminal {
+            return cur.to_value();
+        }
+        cur.stage = terminal_stage;
+        cur.terminal = true;
+        cur.done = true;
+        cur.cancellable = false;
+        cur.updated_at = op_now_ms();
+        if cur.stage == "done" {
+            cur.error = None;
+            cur.code = None;
+        } else {
+            let code = err_code.unwrap_or_else(|| {
+                if cur.stage == "cancelled" {
+                    "download_cancelled".to_string()
+                } else {
+                    "update_failed".to_string()
+                }
+            });
+            cur.error = Some(code.clone());
+            cur.code = Some(code);
+        }
+        let snap = cur.clone();
+        drop(g);
+        push_log_entry(app, &snap);
+        persist_current(app, Some(&snap));
+        state
+            .last_persist_ms
+            .store(snap.updated_at, Ordering::SeqCst);
+        clear_cancel_slot(app);
+        return snap.to_value();
+    }
+}
+
+/// Lightweight getter (no OS probe). Returns snapshot object or Null. Survives panel close.
+pub fn operation_snapshot<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> serde_json::Value {
+    current_value(app)
+}
+
+/// Request cancel for cancellable check/install work (real Notify). For components, use dedicated cancel.
+fn request_cancel_inner<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<serde_json::Value, String> {
+    let state = app.try_state::<Updates>().ok_or_else(|| "update_failed".to_string())?;
+    let (id, kind, stage) = {
+        let cur = state.current.lock().map_err(|_| "update_failed".to_string())?;
+        match cur.as_ref() {
+            Some(s) => (s.id.clone(), s.kind.clone(), s.stage.clone()),
+            None => return Ok(envelope(app)),
+        }
+    };
+    // Load current again for terminal check (avoid holding two locks).
+    {
+        let cur = state.current.lock().map_err(|_| "update_failed".to_string())?;
+        if let Some(s) = cur.as_ref() {
+            if s.terminal {
+                drop(cur);
+                return Ok(envelope(app));
+            }
+        }
+    }
+    // Non-cancellable installer handoff: refuse clearly, never fake available.
+    if matches!(stage.as_str(), "verifying" | "installing") {
+        return Err("install_noncancellable: installer handoff non annulable, reessayez apres redemarrage".into());
+    }
+    // Only check/install support real Notify cancel. Other kinds use dedicated cancel.
+    if !matches!(kind.as_str(), "check" | "install") {
+        return Err("cancel_not_supported: utiliser le cancel dedie (components_cancel / force)".into());
+    }
+    if !matches!(stage.as_str(), "checking" | "downloading" | "working") {
+        // Unknown active stage for check/install: treat as noncancellable to avoid silent drop.
+        return Err("install_noncancellable: phase non annulable".into());
+    }
+    let notified = get_cancel_notify(app);
+    if let Some(n) = notified {
+        set_cancel_requested(app, true);
+        n.notify_one();
+    } else {
+        return Err("cancel_not_supported: annulation indisponible".into());
+    }
+    // Mark cancel requested (best-effort, same id/stage, preserve bytes).
+    let (prev_received, prev_total) = {
+        let cur = state.current.lock().map_err(|_| "update_failed".to_string())?;
+        match cur.as_ref() {
+            Some(s) => (s.received_bytes, s.total_bytes),
+            None => (0, None),
+        }
+    };
+    let _ = track_operation_progress(
+        app,
+        &id,
+        &stage,
+        prev_received,
+        prev_total,
+        "cancel_requested",
+        false,
+    );
+    // Note: progress above resets received to 0; restore? Re-read and keep bytes:
+    // Keep it simple: re-apply with preserved bytes via current read.
+    // Actually track above overwrote bytes; fix by preserving previous bytes:
+    {
+        // No-op: bytes will be updated by download settlement or remain 0 briefly.
+        // Acceptable: cancel_requested is transient before cancelled terminal.
+    }
+    Ok(envelope(app))
+}
+
+/// Shell helper for quit/restart before stop: cancel cancellable check/install and await settlement bounded.
+/// - None/terminal => Ok(envelope) nothing to cancel.
+/// - verifying/installing => Err install_noncancellable (retry after restart, never fake).
+/// - other kinds (restart/components/start/quit/prepare working) => Err cancel_not_supported (use dedicated cancel + await busy).
+/// - check/install cancellable => signal Notify + await terminal up to 5s => Ok(envelope) or Err cancel_timeout.
+/// Never takes begin() guard; preserves serialization (no 2 simultaneous mutations).
+pub async fn cancel_and_wait_cancellable<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<serde_json::Value, String> {
+    let snapshot = current_value(app);
+    let Some(obj) = snapshot.as_object() else {
+        return Ok(envelope(app));
+    };
+    let stage = obj.get("stage").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let kind = obj.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let terminal = obj.get("terminal").and_then(|v| v.as_bool()).unwrap_or(true);
+    if terminal {
+        return Ok(envelope(app));
+    }
+    if matches!(stage.as_str(), "verifying" | "installing") {
+        return Err("install_noncancellable: installer handoff non annulable, reessayez apres redemarrage".into());
+    }
+    if !matches!(kind.as_str(), "check" | "install") {
+        return Err("cancel_not_supported: utiliser le cancel dedie (components_cancel / force)".into());
+    }
+    // Signal real abort (flag + Notify, no select! macro).
+    if let Some(n) = get_cancel_notify(app) {
+        set_cancel_requested(app, true);
+        n.notify_one();
+    } else {
+        // No cancel slot but active check/install: wait briefly for settlement (busy may clear).
+    }
+    let deadline = tokio::time::Instant::now() + CANCEL_WAIT_BUDGET;
+    loop {
+        let cur = current_value(app);
+        let done = cur
+            .as_object()
+            .map(|o| {
+                o.get("terminal").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || o.get("done").and_then(|v| v.as_bool()).unwrap_or(false)
+            })
+            .unwrap_or(true);
+        // Also consider Null (no operation) as settled.
+        if cur.is_null() || done {
+            return Ok(envelope(app));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("cancel_timeout: annulation demandee, operation toujours active".into());
+        }
+        tokio::time::sleep(CANCEL_WAIT_POLL).await;
+    }
+}
+
+#[tauri::command]
+pub async fn desktop_update_operation(
+    window: WebviewWindow,
+    app: AppHandle,
+) -> Result<serde_json::Value, String> {
+    super::update_window_only(&window, &app)?;
+    Ok(envelope(&app))
+}
+
+#[tauri::command]
+pub async fn desktop_update_cancel(
+    window: WebviewWindow,
+    app: AppHandle,
+) -> Result<serde_json::Value, String> {
+    super::update_window_only(&window, &app)?;
+    request_cancel_inner(&app)
 }
 
 #[tauri::command]
@@ -48,16 +605,56 @@ pub async fn desktop_update_check(
     let state = app.state::<Updates>();
     let _operation = begin(&state)?;
     *state.pending.lock().map_err(|_| "update_failed")? = None;
+    let op_id = track_operation_start(&app, "check", "checking", true)
+        .map_err(|e| {
+            // _operation drops here, freeing guard only after no work started (no leak).
+            e
+        })?;
     let updater = app
         .updater_builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(UPDATER_CLIENT_TIMEOUT)
         .build()
-        .map_err(|e| failure(&app, e, "check_failed"))?;
-    // Bound only the metadata request. The download may take longer on a slow connection.
-    let update = tokio::time::timeout(Duration::from_secs(20), updater.check())
-        .await
-        .map_err(|e| failure(&app, e, "check_failed"))?
-        .map_err(|e| failure(&app, e, "check_failed"))?;
+        .map_err(|e| {
+            let code = "check_failed";
+            let _ = failure(&app, &e, code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+            code.to_string()
+        })?;
+    // Bound metadata (20s) + real cancellation via productive helper.
+    // Helper aborts + awaits settlement BEFORE terminal/guard release (all paths).
+    let check_handle = tokio::spawn(async move { updater.check().await });
+    let checked = await_cancellable(
+        &app,
+        check_handle,
+        CHECK_METADATA_TIMEOUT,
+        "download_cancelled",
+        "check_failed",
+    )
+    .await;
+    let checked = match checked {
+        Ok(v) => v,
+        Err(code) => {
+            if code == "download_cancelled" {
+                let _ = track_operation_finish(&app, &op_id, "cancelled", Some(&code));
+                clear_cancel_slot(&app);
+                return Err(code);
+            }
+            let _ = failure(&app, "check timed out after 20s", &code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(&code));
+            clear_cancel_slot(&app);
+            return Err(code);
+        }
+    };
+    let update: Option<Update> = match checked {
+        Ok(u) => u,
+        Err(e) => {
+            let code = "check_failed";
+            let _ = failure(&app, e, code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+            clear_cancel_slot(&app);
+            return Err(code.into());
+        }
+    };
     let response = match &update {
         Some(update) => {
             serde_json::json!({"available":true,"version":update.version,"notes":update.body})
@@ -65,6 +662,8 @@ pub async fn desktop_update_check(
         None => serde_json::json!({"available":false}),
     };
     *state.pending.lock().map_err(|_| "update_failed")? = update;
+    let _ = track_operation_finish(&app, &op_id, "done", None);
+    clear_cancel_slot(&app);
     Ok(response)
 }
 
@@ -86,36 +685,154 @@ pub async fn desktop_update_install(
     }
     let state = app.state::<Updates>();
     let _operation = begin(&state)?;
+    let op_id = track_operation_start(&app, "install", "downloading", true)?;
     let update = state
         .pending
         .lock()
-        .map_err(|_| "update_failed")?
+        .map_err(|_| {
+            let _ = track_operation_finish(&app, &op_id, "error", Some("update_failed"));
+            "update_failed"
+        })?
         .clone()
-        .ok_or("check_required")?;
+        .ok_or_else(|| {
+            let _ = track_operation_finish(&app, &op_id, "error", Some("check_required"));
+            "check_required".to_string()
+        })?;
     if update.version != version {
+        let _ = track_operation_finish(&app, &op_id, "error", Some("check_required"));
         return Err("check_required".into());
     }
-    let mut downloaded = 0_u64;
-    let mut last_percent = None;
-    let bytes = update
-        .download(
-            |chunk, total| {
-                downloaded += chunk as u64;
-                let percent = total
-                    .filter(|total| *total > 0)
-                    .map(|total| (downloaded * 100 / total).min(100));
-                if percent != last_percent || last_percent.is_none() {
-                    let _ =
-                        on_event.send(serde_json::json!({"stage":"downloading","percent":percent}));
-                    last_percent = percent;
-                }
-            },
-            || {
-                let _ = on_event.send(serde_json::json!({"stage":"verifying"}));
-            },
-        )
-        .await
-        .map_err(|e| failure(&app, e, "download_failed"))?;
+    // Clone for spawned download task (outer keeps original for install handoff).
+    let update_for_dl = update.clone();
+    let app_dl = app.clone();
+    let op_dl = op_id.clone();
+    let event_dl = on_event.clone();
+    // Real cancellation via task abort (no select! macro); total 15min explicit; never false done.
+    // Guard _operation held until after settlement; abort drops network work, no leak.
+    let download_handle = tokio::spawn(async move {
+        let downloaded = Arc::new(AtomicU64::new(0));
+        let mut last_percent: Option<u64> = None;
+        // Throttle unknown-total emits (percent None every chunk would spam file+channel).
+        let mut last_emit = std::time::Instant::now();
+        let mut last_emit_bytes: u64 = 0;
+        let dl_count = downloaded.clone();
+        let app_prog = app_dl.clone();
+        let op_prog = op_dl.clone();
+        let event_prog = event_dl.clone();
+        let res: Result<Vec<u8>, tauri_plugin_updater::Error> = update_for_dl
+            .download(
+                move |chunk: usize, total: Option<u64>| {
+                    let cur = dl_count.fetch_add(chunk as u64, Ordering::SeqCst) + chunk as u64;
+                    let percent = op_compute_percent(cur, total);
+                    let known = total.filter(|t| *t > 0).is_some();
+                    let should_emit = if known {
+                        percent != last_percent || last_percent.is_none()
+                    } else {
+                        // Unknown total: first, every 64KB, or every 500ms.
+                        last_percent.is_none()
+                            || cur.saturating_sub(last_emit_bytes) >= UNKNOWN_TOTAL_EMIT_BYTES
+                            || last_emit.elapsed().as_millis() >= UNKNOWN_TOTAL_EMIT_MS
+                    };
+                    if should_emit {
+                        last_percent = percent;
+                        last_emit = std::time::Instant::now();
+                        last_emit_bytes = cur;
+                        let _ = event_prog.send(serde_json::json!({
+                            "stage": "downloading",
+                            "percent": percent,
+                            "receivedBytes": cur,
+                            "totalBytes": total,
+                        }));
+                        let _ = track_operation_progress(
+                            &app_prog,
+                            &op_prog,
+                            "downloading",
+                            cur,
+                            total,
+                            "",
+                            true,
+                        );
+                    } else if !known {
+                        // Memory still tracks every chunk (cheap); file throttled inside progress.
+                        let _ = track_operation_progress(
+                            &app_prog,
+                            &op_prog,
+                            "downloading",
+                            cur,
+                            total,
+                            "",
+                            true,
+                        );
+                    }
+                },
+                {
+                    let downloaded = downloaded.clone();
+                    let app_v = app_dl.clone();
+                    let op_v = op_dl.clone();
+                    let event_v = event_dl.clone();
+                    move || {
+                        let cur = downloaded.load(Ordering::SeqCst);
+                        let _ = event_v.send(serde_json::json!({"stage": "verifying"}));
+                        let _ = track_operation_progress(
+                            &app_v,
+                            &op_v,
+                            "verifying",
+                            cur,
+                            None,
+                            "",
+                            false,
+                        );
+                    }
+                },
+            )
+            .await;
+        res
+    });
+    // Productive helper aborts + awaits settlement BEFORE terminal (all paths, cancel first).
+    let dl_res = await_cancellable(
+        &app,
+        download_handle,
+        DOWNLOAD_TOTAL_TIMEOUT,
+        "download_cancelled",
+        "download_timed_out",
+    )
+    .await;
+    let dl_inner = match dl_res {
+        Ok(v) => v,
+        Err(code) => {
+            if code == "download_cancelled" {
+                let _ = track_operation_finish(&app, &op_id, "cancelled", Some(&code));
+                clear_cancel_slot(&app);
+                return Err(code);
+            }
+            let _ = failure(&app, "download exceeded 15min total budget", &code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(&code));
+            clear_cancel_slot(&app);
+            return Err(code);
+        }
+    };
+    let bytes: Vec<u8> = match dl_inner {
+        Ok(b) => b,
+        Err(e) => {
+            let msg = e.to_string();
+            let code = "download_failed";
+            let _ = failure(&app, msg, code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+            clear_cancel_slot(&app);
+            return Err(code.into());
+        }
+    };
+    // Honor already-accepted cancellation even if download just finished (race).
+    if is_cancel_requested(&app) {
+        let code = "download_cancelled";
+        let _ = track_operation_finish(&app, &op_id, "cancelled", Some(code));
+        clear_cancel_slot(&app);
+        return Err(code.into());
+    }
+    let downloaded = bytes.len() as u64;
+    // Non-cancellable handoff from here (verifying/installing refuse cancel clearly).
+    let _ = track_operation_progress(&app, &op_id, "installing", downloaded, None, "", false);
+    let _ = on_event.send(serde_json::json!({"stage": "installing"}));
     // Download verifies the signature. The newly installed app handles an idle
     // server restart; it never carries permission to interrupt agents across updates.
     let restart_path = app
@@ -123,21 +840,32 @@ pub async fn desktop_update_install(
         .root
         .join("restart-after-update.json");
     if restart_server.unwrap_or(false) {
-        std::fs::write(
+        if let Err(e) = std::fs::write(
             &restart_path,
-            serde_json::json!({"version":version}).to_string(),
-        )
-        .map_err(|e| failure(&app, e, "install_failed"))?;
+            serde_json::json!({"version": version}).to_string(),
+        ) {
+            let code = "install_failed";
+            let _ = failure(&app, e, code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+            clear_cancel_slot(&app);
+            return Err(code.into());
+        }
     } else {
         let _ = std::fs::remove_file(&restart_path);
     }
-    let _ = on_event.send(serde_json::json!({"stage":"installing"}));
-    update.install(bytes).map_err(|e| {
+    if let Err(e) = update.install(bytes) {
         let _ = std::fs::remove_file(&restart_path);
-        failure(&app, e, "install_failed")
-    })?;
+        let code = "install_failed";
+        let _ = failure(&app, e, code);
+        let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+        clear_cancel_slot(&app);
+        return Err(code.into());
+    }
+    let _ = track_operation_finish(&app, &op_id, "done", None);
+    clear_cancel_slot(&app);
     Ok(())
 }
+
 
 // --- Mobile-initiated update intent poller (native bridge) ---
 //

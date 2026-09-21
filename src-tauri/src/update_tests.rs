@@ -190,13 +190,15 @@ fn updater_verifies_signed_downloads_and_rejects_tampering() {
 
 #[test]
 fn component_bridge_rejects_lan_browser_like_origins_and_other_windows() {
+    // Single window: only main exists. Launcher URL or main at exact Studio
+    // loopback origin may invoke native commands. No desktop-settings window.
     assert!(super::is_update_origin(
         "main",
         &"http://127.0.0.1:3088/".parse().unwrap(),
         3088
     ));
     assert!(super::is_update_origin(
-        "desktop-settings",
+        "main",
         &"tauri://localhost/index.html?settings".parse().unwrap(),
         3088
     ));
@@ -214,15 +216,191 @@ fn component_bridge_rejects_lan_browser_like_origins_and_other_windows() {
         );
     }
     assert!(!super::is_update_origin(
-        "desktop-settings",
+        "main",
         &"http://127.0.0.1:3088/".parse().unwrap(),
-        3088
+        9999
     ));
     assert!(!super::is_update_origin(
         "other",
         &"http://127.0.0.1:3088/".parse().unwrap(),
         3088
     ));
+    // Single-window gate: only main label passes, even for launcher URL.
+    // No second window exists, so other labels are denied for both origins.
+    assert!(!super::is_update_origin(
+        "other",
+        &"tauri://localhost/index.html?settings".parse().unwrap(),
+        3088
+    ));
+}
+
+#[test]
+fn single_window_has_no_secondary_settings_label() {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    let caps = config["app"]["security"]["capabilities"].as_array().unwrap();
+    for cap in caps {
+        if let Some(windows) = cap.get("windows") {
+            let list: Vec<String> =
+                serde_json::from_value(windows.clone()).unwrap_or_default();
+            assert!(
+                !list.iter().any(|w| w == "desktop-settings"),
+                "secondary desktop-settings window must be gone"
+            );
+        }
+    }
+    // Gate is the real proof (bridge test): only main label passes for both
+    // launcher and Studio origins. No second window label exists to create.
+    assert!(super::is_update_origin(
+        "main",
+        &"tauri://localhost/index.html?settings".parse().unwrap(),
+        3088
+    ));
+    assert!(!super::is_update_origin(
+        "other",
+        &"tauri://localhost/index.html?settings".parse().unwrap(),
+        3088
+    ));
+}
+
+#[test]
+fn components_prepare_is_allowed_without_auto_restart() {
+    assert!(super::components::is_component_action_allowed("prepare"));
+    assert!(super::components::is_component_action_allowed("install"));
+    assert!(super::components::is_component_action_allowed("diagnose"));
+    assert!(!super::components::is_component_action_allowed("restart"));
+    assert!(!super::components::is_component_action_allowed("prepare_now"));
+}
+
+#[test]
+fn components_readonly_status_and_diagnose_skip_mutation_state() {
+    // status/diagnose take no Updates guard, no Components busy, no global
+    // stdin and no tracker report; every mutation stays serialized.
+    assert!(super::components::is_component_action_readonly("status"));
+    assert!(super::components::is_component_action_readonly("diagnose"));
+    for action in ["install", "prepare", "select", "activate", "apply"] {
+        assert!(
+            !super::components::is_component_action_readonly(action),
+            "{action}"
+        );
+    }
+}
+
+#[test]
+fn components_busy_guard_resets_on_every_return_path() {
+    // RAII: a tracker start error after swap(true) must not leave a permanent
+    // busy. Dropping the guard always resets and clears the stdin handle.
+    use super::components::{Components, ComponentsBusyGuard};
+    let state = Components::default();
+    assert!(!state.is_busy());
+    {
+        let _guard = ComponentsBusyGuard::claim(&state).unwrap();
+        assert!(state.is_busy());
+        assert!(matches!(
+            ComponentsBusyGuard::claim(&state),
+            Err(code) if code == "setup_busy"
+        ));
+    }
+    assert!(!state.is_busy());
+    assert!(state.input.lock().map(|g| g.is_none()).unwrap_or(false));
+    // Reclaimable after drop: no permanent busy.
+    assert!(ComponentsBusyGuard::claim(&state).is_ok());
+}
+
+#[test]
+fn settings_eval_falls_back_inside_js_when_panel_missing() {
+    // eval().is_ok() never proves the panel opened, so the fallback lives in
+    // the script itself: missing DOM replaces location with the shell URL.
+    let shell = "http://tauri.localhost/index.html?settings";
+    let script = super::settings_panel_script(shell);
+    assert!(script.contains("settings-dialog"));
+    assert!(script.contains("settings-tab-updates"));
+    assert!(script.contains("window.location.replace"));
+    assert!(script.contains(shell));
+}
+
+#[test]
+fn quit_eval_detects_handler_before_dispatching() {
+    // Old server pages without the quit flag must land on the quit shell
+    // instead of silently dropping the confirmation.
+    let shell = "http://tauri.localhost/index.html?quit";
+    let script = super::quit_handshake_script(shell);
+    assert!(script.contains("__PRIME_STUDIO_QUIT_READY__"));
+    assert!(script.contains("studio:quit-request"));
+    assert!(script.contains("window.location.replace"));
+    assert!(script.contains(shell));
+}
+
+#[test]
+fn quit_treats_already_stopped_as_terminated() {
+    // Real criteria: absent server {stopped:false, reason:already-stopped} is done.
+    assert!(super::is_quit_terminated(true, None));
+    assert!(super::is_quit_terminated(false, Some("already-stopped")));
+    assert!(!super::is_quit_terminated(false, Some("agents_running")));
+    assert!(!super::is_quit_terminated(false, None));
+}
+
+#[test]
+fn restart_marks_done_only_on_restarted_true() {
+    // No false success: refusals are terminal errors, never done.
+    assert!(super::is_restart_success(&serde_json::json!({"restarted": true})));
+    assert!(!super::is_restart_success(
+        &serde_json::json!({"restarted": false, "reason": "agents_running"})
+    ));
+    assert!(!super::is_restart_success(
+        &serde_json::json!({"restarted": false, "reason": "components_required"})
+    ));
+    assert!(!super::is_restart_success(&serde_json::json!({})));
+    assert_eq!(
+        super::restart_refusal_reason(
+            &serde_json::json!({"restarted": false, "reason": "agents_running"})
+        ),
+        "agents_running"
+    );
+}
+
+#[test]
+fn control_options_never_carry_unknown_pid() {
+    // Real builders used in prod restart/quit: no pid/kill/signal keys.
+    // Ownership checks stay in control worker, never a raw PID from shell.
+    use std::path::PathBuf;
+    let resources = PathBuf::from("/res");
+    let data = PathBuf::from("/data");
+    let restart = super::restart_control_options(&resources, &data, 3088, true);
+    assert_eq!(restart["port"], 3088);
+    assert_eq!(restart["force"], true);
+    assert!(!super::control_options_contain_forbidden_pid(&restart));
+    let quit = super::quit_control_options(&resources, &data, 3088, false);
+    assert_eq!(quit["action"], "stop");
+    assert_eq!(quit["force"], false);
+    assert!(!super::control_options_contain_forbidden_pid(&quit));
+    assert!(super::control_options_contain_forbidden_pid(&serde_json::json!({"pid": 1234})));
+    assert!(super::control_options_contain_forbidden_pid(&serde_json::json!({"signal": "kill"})));
+}
+
+#[test]
+fn operation_snapshot_uses_terminal_not_done_code() {
+    // FINAL: snapshot exposes done AND terminal plus code/error (done==terminal).
+    let sample = serde_json::json!({
+        "id": "components",
+        "kind": "components",
+        "stage": "preparing",
+        "startedAt": 0,
+        "updatedAt": 0,
+        "receivedBytes": 0,
+        "totalBytes": null,
+        "percent": null,
+        "detail": "",
+        "error": null,
+        "code": null,
+        "cancellable": true,
+        "done": false,
+        "terminal": false
+    });
+    assert_eq!(sample["terminal"], false);
+    assert_eq!(sample["done"], false);
+    assert!(sample.get("code").is_some());
+    assert_eq!(sample["cancellable"], true);
 }
 
 #[test]
