@@ -36,7 +36,7 @@ Prime Agent Studio brings your **local Prime Agent sessions** together in a Wind
 - **Stay on course**: a Roadmap shared with agents, right beside conversations.
 - **Work from anywhere**: the same Studio on a Windows PC and on your phone, over Wi-Fi or beyond.
 
-**Version 3.8.0** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.0/Prime-Agent-Studio_3.8.0_x64-setup.exe) · [Release history](docs/en/changelog.md).
+**Version 3.8.1** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.1/Prime-Agent-Studio_3.8.1_x64-setup.exe) · [Release history](docs/en/changelog.md).
 
 ## Quick start
 

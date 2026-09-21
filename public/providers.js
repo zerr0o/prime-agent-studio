@@ -181,7 +181,7 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
         button(
           () =>
             entry.credentialType === 'oauth' ? tr('ui.reconnecter_le_compte') : tr('ui.connecter_un_compte'),
-          () => startLogin(entry),
+          () => museCodeLogin(entry),
         ),
       );
     if (entry.methods.includes('api_key'))
@@ -472,6 +472,38 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
         acting = false;
         remove.disabled = false;
       }
+    };
+  }
+  // Muse Code (experimental subscription) requires explicit acknowledgment
+  // of its warning before any login request is sent. Other providers keep
+  // their direct login flow.
+  function museCodeLogin(entry) {
+    if (entry && entry.id === 'muse-code') museCodeConsentForm(entry);
+    else startLogin(entry);
+  }
+  function museCodeConsentForm(entry) {
+    const form = formShell(entry.name);
+    form.append(node('p', 'provider-notice', () => tr('providers.muse_code_guidance')));
+    const check = node('input');
+    check.type = 'checkbox';
+    check.checked = false;
+    const consent = node('label', 'provider-consent');
+    consent.append(check, node('span', '', () => tr('providers.muse_code_ack')));
+    form.append(consent);
+    const actions = node('div', 'provider-form-actions'),
+      start = button(() => tr('ui.connecter_un_compte'), null, 'primary-button');
+    start.type = 'submit';
+    start.disabled = true;
+    check.onchange = () => {
+      start.disabled = !check.checked;
+    };
+    actions.append(button(() => tr('ui.retour'), renderList), start);
+    form.append(actions);
+    check.focus();
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      if (!check.checked || acting) return;
+      startLogin(entry);
     };
   }
   async function startLogin(entry) {

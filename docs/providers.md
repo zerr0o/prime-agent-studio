@@ -28,6 +28,14 @@ Après la connexion, choisissez **Muse Spark 1.3** (`meta/muse-spark-1.3`) ou **
 
 Muse Spark raisonne toujours : les niveaux proposés vont de `minimal` à `max` pour Standard, et jusqu’à `xhigh` pour Contributor. Une ancienne préférence `off` est ramenée à `minimal`. Le protocole Responses conserve le raisonnement chiffré entre les tours. Les entrées exposées dans le Studio sont le texte et les images.
 
+## Muse Code (abonnement, expérimental)
+
+Le fournisseur **Muse** (`muse-code`) est distinct du fournisseur **Meta** (`meta`) : il utilise votre abonnement Muse via une connexion par code dans le navigateur, sans clé API et sans installer ni intégrer le CLI Muse. Il n’apparaît dans **Gérer les connexions** que lorsque le module d’authentification natif est disponible ; sinon, il reste invisible et rien ne change.
+
+Choisissez **Connecter un compte**, lisez l’avertissement expérimental, cochez la case de confirmation, puis ouvrez la page officielle et saisissez le code affiché. L’accès exige un abonnement actif : sans abonnement, la connexion échoue sans repli vers un usage payant. Aucune clé `MODEL_API_KEY` ni aucun identifiant `meta` existant n’est utilisé ou modifié par ce parcours.
+
+Aucun repli silencieux : tant qu’un **modèle de secours** moteur est configuré (facturation payante quelconque : `meta`, Prime, OpenRouter ou autre), une session Muse refuse de démarrer au lieu de changer de facturation en cas de quota ou de panne. Videz le secours moteur pour utiliser Muse. Portée du garde-fou : ce refus couvre le démarrage des sessions par le Studio. Il ne couvre ni les sous-agents natifs qui résoudraient Muse en cours de session sous un parent non Muse, ni une modification des réglages en cours d’exécution (le moteur natif relit `settings.json` dans son chemin de reprise, hors contrôle du Studio).
+
 ## Catalogue et disponibilité
 
 Avec Prime Agent **0.9.4**, le sélecteur utilise le registre natif des modèles disponibles pour les fournisseurs configurés. Son actualisation inclut les modèles publics et les modèles privés Prime Inference accessibles à votre compte. Si le moteur est plus ancien ou si ce registre est indisponible, le Studio utilise le catalogue intégré à l’installation et les modèles personnalisés. Avec Prime Agent **0.9.5**, la résolution ordinaire ne lit plus la configuration Prime CLI et le catalogue ne la surveille plus ; un instantané d’équipe CLI n’est réutilisé que lors d’une connexion explicite en amont, puis conservé par l’Agent sans suivre les changements CLI ultérieurs.

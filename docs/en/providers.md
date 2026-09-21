@@ -28,6 +28,14 @@ After connecting, select **Muse Spark 1.3** (`meta/muse-spark-1.3`) or **Muse Sp
 
 Muse Spark always reasons: available levels range from `minimal` to `max` for Standard, and up to `xhigh` for Contributor. A saved `off` preference is clamped to `minimal`. The Responses protocol preserves encrypted reasoning between turns. Studio exposes text and image inputs.
 
+## Muse Code (subscription, experimental)
+
+The **Muse** provider (`muse-code`) is separate from the **Meta** provider (`meta`): it uses your Muse subscription through a browser device-code login, with no API key and without installing or embedding the Muse CLI. It only appears in **Manage connections** when the native authentication module is available; otherwise it stays invisible and nothing changes.
+
+Choose **Connect an account**, read the experimental warning, check the confirmation box, then open the official page and enter the displayed code. Access requires an active subscription: without one, login fails closed with no fallback to paid usage. No existing `MODEL_API_KEY` key or `meta` credential is used or modified by this flow.
+
+No silent fallback: while any engine **fallback model** is configured (any paid billing: `meta`, Prime, OpenRouter or other), a Muse session refuses to start instead of switching billing on quota or outage. Clear the engine fallback to run Muse. Guard scope: this refusal covers Studio session starts. It does not cover native subagents resolving Muse mid-session under a non-Muse parent, nor settings changed mid-run (the native engine re-reads `settings.json` in its retry path, outside Studio control).
+
 ## Catalog and availability
 
 With Prime Agent **0.9.4**, the model picker uses the native registry of available models for configured providers. Refreshing includes public models and private Prime Inference models accessible to your account. If the engine is older or this registry is unavailable, Studio uses the catalog bundled with the installation and custom models. With Prime Agent **0.9.5**, ordinary resolution no longer reads the Prime CLI configuration and the catalog no longer watches it; a CLI team snapshot is reused only during an explicit upstream login, then kept by the Agent without tracking later CLI changes.

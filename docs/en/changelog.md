@@ -4,6 +4,13 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.8.1
+
+- **Muse Code subscription login (experimental)**: separate `muse-code` provider using browser device-code login, with no API key and no CLI install. Requires an active subscription and fails closed with no fallback to paid usage.
+- **Explicit consent before login**: the Connect flow shows the experimental warning and requires the confirmation checkbox before any login request is sent. The checkbox stays compact and aligned with the first text line on desktop and narrow layouts.
+- **No silent billing switch**: while an engine fallback model is set, a Muse session refuses to start instead of switching billing on quota or outage. Clear the engine fallback to run Muse. This guard covers Studio session starts.
+- **Provider docs and coverage**: updated provider guides in English and French, with unit and UI coverage for the gated provider.
+
 ## 3.8.0
 
 - **One desktop window**: Preferences, updates and recovery now share the main window, including when the server is stopped or still uses an older interface.

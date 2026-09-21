@@ -218,6 +218,30 @@
   color: var(--text);
   font: inherit;
 }
+.provider-form .provider-consent {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  line-height: 1.55;
+  font-weight: 400;
+  cursor: pointer;
+}
+.provider-form .provider-consent input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.provider-form .provider-consent > span {
+  min-width: 0;
+  font-size: 13px;
+  line-height: inherit;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 .provider-form .providers-note {
   margin: 0;
 }

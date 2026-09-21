@@ -139,6 +139,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
         if (turn !== generation || busy || !data) return;
         drafts[field] = model || '';
         renderPickerModels();
+        refreshBillingWarning();
         refreshSave();
       },
     });
@@ -193,6 +194,29 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
     modelGrid.append(wrap);
     pickerButtons.set(field, { button, nameEl, providerEl });
     button.onclick = () => openPicker(field);
+  }
+
+  // Cross billing warning for the fallback field. The native backup switch is
+  // automatic on quota or outage once the configured model is authenticated,
+  // so pairing Muse subscription with paid Meta API billing must stay an
+  // explicit informed choice. Shown whenever the backup draft selects either
+  // side, since the session primary may be the other one.
+  const billingWarning = document.createElement('p');
+  billingWarning.className = 'model-defaults-note engine-billing-warning';
+  billingWarning.dataset.i18n = 'engine.backup_billing_warning';
+  billingWarning.hidden = true;
+  pickerButtons.get('providerBackupModel')?.button.closest('.engine-field')?.append(billingWarning);
+  function backupProviderOf(ref) {
+    if (typeof ref !== 'string') return '';
+    const slash = ref.trim().indexOf('/');
+    if (slash <= 0) return '';
+    return ref.trim().slice(0, slash).trim();
+  }
+  function refreshBillingWarning() {
+    const provider = backupProviderOf(drafts.providerBackupModel || '');
+    const show = provider === 'muse-code' || provider === 'meta';
+    billingWarning.hidden = !show;
+    if (show) bindText(billingWarning, () => tr('engine.backup_billing_warning'));
   }
 
   for (const field of AUTONOMOUS_FIELDS) {
@@ -330,6 +354,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
   function render() {
     if (!data) return;
     renderPickerModels();
+    refreshBillingWarning();
     fillBudgets();
     applyReadOnly();
   }

@@ -8,6 +8,14 @@ import {
   ensureMetaProvider,
   hasUserMetaConfig,
 } from '../lib/meta-provider.mjs';
+import {
+  MUSE_CODE_PROVIDER_ID,
+  ensureMuseCodeProvider,
+  hasUserMuseCodeConfig,
+  isMuseCodeStoredOAuth,
+  loadMuseCodeConfig,
+  shouldPruneMuseCodeModels,
+} from '../lib/muse-code-gate.mjs';
 
 const REFRESH_TTL = 5 * 60_000;
 const OBSERVATION_WINDOW = 12_000;
@@ -65,7 +73,7 @@ async function fingerprint() {
   );
 }
 
-function snapshot(registry, { metaCanonical = false } = {}) {
+function snapshot(registry, { metaCanonical = false, museCanonical = false, museOAuthStored = false } = {}) {
   // Canonical Meta models must only reach the picker with a real credential.
   // The registration placeholder alone (models_json_key without stored key or
   // MODEL_API_KEY env) is pruned here; the provider still lists in manage
@@ -79,6 +87,20 @@ function snapshot(registry, { metaCanonical = false } = {}) {
       pruneMeta = false;
     }
   }
+  // Gated Muse Code models must only reach the picker with a real stored
+  // OAuth credential. No environment variable can satisfy this id, and
+  // malformed or non-oauth stored entries stay hidden too. Missing adapter
+  // means museCanonical is false and nothing is pruned because nothing was
+  // registered.
+  let pruneMuse = false;
+  if (museCanonical) {
+    try {
+      const source = registry.getProviderAuthStatus?.(MUSE_CODE_PROVIDER_ID)?.source;
+      pruneMuse = shouldPruneMuseCodeModels({ museCanonical, source, storedIsOAuth: museOAuthStored });
+    } catch {
+      pruneMuse = false;
+    }
+  }
   const models = new Map();
   // getAll() includes unauthorized private models. Only this native availability filter may supply UI rows.
   for (const model of registry.getAvailable()) {
@@ -87,6 +109,7 @@ function snapshot(registry, { metaCanonical = false } = {}) {
     const provider = text(model.provider, 128);
     if (!id || !provider) continue;
     if (pruneMeta && provider === META_PROVIDER_ID) continue;
+    if (pruneMuse && provider === MUSE_CODE_PROVIDER_ID) continue;
     const levels = thinkingLevels(model);
     models.set(`${provider}/${id}`, {
       id,
@@ -117,7 +140,11 @@ function snapshot(registry, { metaCanonical = false } = {}) {
 
 function publish(current) {
   if (state !== current) return;
-  current.catalog = snapshot(current.registry, { metaCanonical: current.metaCanonical === true });
+  current.catalog = snapshot(current.registry, {
+    metaCanonical: current.metaCanonical === true,
+    museCanonical: current.museCanonical === true,
+    museOAuthStored: current.museOAuthStored === true,
+  });
 }
 
 function beginRefresh(current) {
@@ -169,7 +196,31 @@ async function read(message) {
     } catch {
       metaCanonical = false;
     }
-    const current = { registry, stamp, refreshing: false, lastRefresh: 0, metaCanonical };
+    // Gated Muse Code overlay: only with a real validated adapter. Missing or
+    // invalid adapter leaves museCanonical false, so the id stays invisible.
+    // ANY user models.json muse-code entry (JSONC-aware) wins; malformed
+    // content fails closed and skips the gated registration.
+    let museCanonical = false;
+    try {
+      const loaded = await loadMuseCodeConfig(() => import('../lib/muse-oauth-provider.mjs'));
+      if (loaded) {
+        museCanonical = ensureMuseCodeProvider(registry, loaded.config, {
+          hasUserConfig: hasUserMuseCodeConfig(modelsPath),
+        });
+      }
+    } catch {
+      museCanonical = false;
+    }
+    // Typed stored credential read: auth.get never refreshes tokens, so this
+    // stays a fast local check. Wrong-typed or malformed entries hide the
+    // gated models instead of reading as configured.
+    let museOAuthStored = false;
+    try {
+      museOAuthStored = isMuseCodeStoredOAuth(auth.get(MUSE_CODE_PROVIDER_ID));
+    } catch {
+      museOAuthStored = false;
+    }
+    const current = { registry, stamp, refreshing: false, lastRefresh: 0, metaCanonical, museCanonical, museOAuthStored };
     state = current;
     publish(current);
   }

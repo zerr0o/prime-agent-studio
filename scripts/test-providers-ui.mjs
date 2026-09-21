@@ -130,6 +130,36 @@ try {
   await expect(metaCard).toContainText('Non configuré');
   assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
   assert.equal(await readFile(join(agentHome, 'models.json'), 'utf8'), '{"providers":{}}');
+  // Subscription login is separate from Meta API and requires explicit consent.
+  await search.fill('muse');
+  const museCard = page.locator('[data-provider="muse-code"]');
+  await expect(museCard).toBeVisible();
+  await expect(museCard).toContainText('Non configuré');
+  await expect(museCard.getByRole('button', { name: 'Ajouter une clé API', exact: true })).toHaveCount(0);
+  await museCard.getByRole('button', { name: 'Connecter un compte', exact: true }).click();
+  const museConsent = page.locator('#providers-dialog input[type="checkbox"]');
+  const museConnect = page.getByRole('button', { name: 'Connecter un compte', exact: true });
+  await expect(museConsent).not.toBeChecked();
+  const consentLabel = page.locator('.provider-consent');
+  const consentText = consentLabel.locator('span');
+  await expect(consentText).toHaveCSS('font-size', '13px');
+  for (const width of [1440, 720]) {
+    await page.setViewportSize({ width, height: 960 });
+    const box = await museConsent.boundingBox();
+    const textBox = await consentText.boundingBox();
+    assert.ok(box && textBox);
+    assert.ok(box.width <= 20 && box.height <= 20, 'checkbox stays compact');
+    assert.ok(box.x + box.width <= textBox.x, 'checkbox sits before consent text');
+    assert.ok(Math.abs(box.y - textBox.y) <= 5, 'checkbox aligns with first line');
+    await page.screenshot({ path: `test-results/muse-consent-${width}.png`, animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await expect(museConnect).toBeDisabled();
+  await museConsent.check();
+  await expect(museConnect).toBeEnabled();
+  // Do not submit: this UI check must never initiate a real Meta login.
+  await page.getByRole('button', { name: 'Retour', exact: true }).click();
+  assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
   // OAuth form events are replayed without connecting any real account.
   let job = {
     id: '12345678-abcd-1234-abcd-123456789012',

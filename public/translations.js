@@ -13,6 +13,22 @@ export const messages = {
     fr: 'Ajoutez votre clé Meta Model API ou définissez MODEL_API_KEY dans l’environnement du Studio. Les requêtes utilisent https://api.meta.ai/v1. Attention : la variante Contributor autorise l’entraînement sur vos prompts et réponses. Choisissez la variante Standard si vous ne souhaitez pas cet usage.',
     en: 'Add your Meta Model API key or set MODEL_API_KEY in the Studio environment. Requests use https://api.meta.ai/v1. Warning: the Contributor variant allows training on your prompts and responses. Choose the Standard variant if you do not want this use.',
   },
+  'providers.muse_code_guidance': {
+    fr: 'Connexion par abonnement exp\u00e9rimentale pour Muse Code (muse-code), s\u00e9par\u00e9e de l\u2019API Meta payante (meta). Connexion par code dans le navigateur uniquement, sans cl\u00e9 API et sans installer de CLI. L\u2019acc\u00e8s exige un abonnement actif : sans abonnement, la connexion \u00e9choue sans repli vers un usage payant. Les estimations de co\u00fbt affich\u00e9es dans le s\u00e9lecteur ne s\u2019appliquent pas ; la facturation est par abonnement, pas au jeton.',
+    en: 'Experimental subscription login for Muse Code (muse-code), separate from the paid Meta Model API (meta). Browser device-code login only, no API key and no CLI install. Access requires an active subscription: without one, login fails closed with no fallback to paid usage. Cost estimates shown in the picker do not apply; billing is per subscription, not per token.',
+  },
+  'providers.muse_code_ack': {
+    fr: 'Je comprends qu\u2019il s\u2019agit d\u2019une connexion par abonnement exp\u00e9rimentale, s\u00e9par\u00e9e de la facturation API payante, et je veux la d\u00e9marrer.',
+    en: 'I understand this is an experimental subscription login, separate from paid API billing, and I want to start it.',
+  },
+  'engine.backup_billing_warning': {
+    fr: 'Attention : ce secours m\u00e9lange la facturation d\u2019abonnement Muse et de l\u2019API Meta payante. En cas de quota ou de panne, les demandes changent de facturation automatiquement d\u00e8s que les deux acc\u00e8s sont authentifi\u00e9s. Laissez vide pour aucun changement silencieux.',
+    en: 'Warning: this fallback crosses Muse subscription and paid Meta API billing. On quota or outage, requests switch billing automatically once both sides are authenticated. Leave empty for no silent switch.',
+  },
+  'server.muse_backup_run_refused': {
+    fr: 'D\u00e9marrage Muse refus\u00e9 : le mod\u00e8le de secours moteur est configur\u00e9 et changerait de facturation en silence en cas de quota ou de panne. Videz le mod\u00e8le de secours dans les r\u00e9glages moteur, puis relancez.',
+    en: 'Muse run refused: an engine fallback model is configured and would silently switch billing on quota or outage. Clear the engine fallback model in engine settings, then retry.',
+  },
   'updates.update_studio': { fr: 'Mettre à jour Studio', en: 'Update Studio' },
   'updates.repair_studio': { fr: 'Réparer Studio', en: 'Repair Studio' },
   'updates.restart_now': { fr: 'Redémarrer maintenant', en: 'Restart now' },

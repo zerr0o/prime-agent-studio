@@ -8,7 +8,7 @@ L’application **Prime Agent Studio**, construite avec Tauri 2, ouvre le Studio
 
 ## Installation et premier lancement
 
-Exécutez l’installateur [Prime-Agent-Studio_3.8.0_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.0/Prime-Agent-Studio_3.8.0_x64-setup.exe). L’installation est limitée à votre utilisateur Windows et propose les raccourcis du menu Démarrer et du Bureau. Node.js est inclus. L’installateur installe WebView2 si nécessaire ; une connexion Internet peut être requise pour ce composant.
+Exécutez l’installateur [Prime-Agent-Studio_3.8.1_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.1/Prime-Agent-Studio_3.8.1_x64-setup.exe). L’installation est limitée à votre utilisateur Windows et propose les raccourcis du menu Démarrer et du Bureau. Node.js est inclus. L’installateur installe WebView2 si nécessaire ; une connexion Internet peut être requise pour ce composant.
 
 Studio télécharge **Prime Agent, npm privé, uv et Python** à la demande. Ces composants ne sont pas embarqués dans l’installateur. Aucune installation préalable de Node, npm ou Python, modification du PATH ou commande de terminal n’est nécessaire. Une connexion réseau initiale est requise. **Git Bash reste un prérequis séparé** pour les commandes shell du moteur ; son absence est signalée.
 

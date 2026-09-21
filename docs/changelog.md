@@ -4,6 +4,13 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.8.1
+
+- **Connexion par abonnement Muse Code (expérimentale)** : fournisseur `muse-code` séparé, par code dans le navigateur, sans clé API et sans installation du CLI. Exige un abonnement actif et échoue sans repli vers un usage payant.
+- **Consentement explicite avant connexion** : le parcours Connecter affiche l’avertissement expérimental et exige la case de confirmation avant toute demande de connexion. La case reste compacte et alignée sur la première ligne du texte, sur PC comme sur écran étroit.
+- **Aucun changement silencieux de facturation** : tant qu’un modèle de secours moteur est configuré, une session Muse refuse de démarrer au lieu de changer de facturation en cas de quota ou de panne. Videz le secours moteur pour utiliser Muse. Ce garde-fou couvre le démarrage des sessions par le Studio.
+- **Docs et tests** : guides fournisseurs mis à jour en français et en anglais, avec couverture unitaire et UI du fournisseur filtré.
+
 ## 3.8.0
 
 - **Une seule fenêtre de bureau** : les préférences, les mises à jour et la récupération utilisent la fenêtre principale, même si le serveur est arrêté ou utilise encore une ancienne interface.
