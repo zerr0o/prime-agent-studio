@@ -57,6 +57,8 @@ async function fixture(t) {
       } else if (args[0] === 'pip') {
         if (failInstall) throw new Error('fixture install failed');
         installed.add(args[args.indexOf('--python') + 1]);
+      } else if (typeof args[0] === 'string' && args[0].endsWith('kernel-compat.py')) {
+        assert.ok(installed.has(command), 'compat overlay applies to the new venv before validation');
       } else {
         assert.equal(args[0], '-c');
         assert.match(args[1], /module\.send/);

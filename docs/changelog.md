@@ -4,6 +4,12 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.7.1
+
+- **Reprise après les outils** : rétroportage du correctif amont Prime Agent #2372 dans les nouveaux environnements Python gérés par Studio. La consommation d’un résultat `bash()` retire sa notification avant la fin de la cellule, pour éviter une interruption de la continuation. Empreinte dédiée, contrôle de compatibilité et validation du protocole avant utilisation. Les environnements déjà utilisés et les Python externes ne sont pas modifiés.
+- **Activité plus explicite** : la fin d’un tour sans fin de session affiche un état d’attente distinct de la génération. Une nouvelle activité réactive l’indicateur. Aucun succès implicite, aucune fermeture anticipée de la session, des sous-agents ou des tâches de fond.
+- **Déploiement prudent** : moteur maintenu en 0.9.5. Les sessions déjà actives restent sur leur environnement actuel ; le correctif Python s’applique aux nouveaux noyaux après activation de cette version du Studio. Ce correctif ne traite pas l’erreur Codex `Previous response not found`.
+
 ## 3.7.0
 
 - **Migration du moteur vers Prime Agent 0.9.5** : politique épinglée (npm 10.9.4 et uv 0.8.22 inchangés), explication unique pour les utilisateurs venant d'une version < 3.7.0. Après la mise à jour de l'application, préparez puis activez la version 0.9.5 depuis **Préférences → Mise à jour**  ; le téléchargement exige votre accord, et l’activation peut redémarrer le serveur géré uniquement quand les agents sont inactifs. Comptes et sessions conservés. Secours natif conservé si le serveur est arrêté ou ancien.

@@ -23,6 +23,12 @@ const labels = {
   get waiting() {
     return tr('ui.en_attente');
   },
+  get background() {
+    return tr('ui.en_arriere_plan');
+  },
+  get turn_end() {
+    return tr('ui.fin_de_tour');
+  },
   get queued() {
     return tr('ui.dans_la_file');
   },
@@ -49,7 +55,16 @@ const labels = {
     return tr('ui.etat_inconnu');
   },
 };
-const busy = new Set(['working', 'tool', 'children', 'waiting', 'queued', 'compacting']);
+const busy = new Set([
+  'working',
+  'tool',
+  'children',
+  'waiting',
+  'background',
+  'turn_end',
+  'queued',
+  'compacting',
+]);
 const count = (number) =>
   new Intl.NumberFormat('fr-FR', {
     notation: number >= 10000 ? 'compact' : 'standard',

@@ -306,6 +306,9 @@
 .inspector-status:is(.is-working, .is-tool, .is-children, .is-compacting) {
   color: var(--accent-text, var(--accent));
 }
+.inspector-status:is(.is-background, .is-turn_end, .is-waiting, .is-queued) {
+  color: var(--muted);
+}
 .inspector-status.is-completed {
   color: #9fc7b0;
 }

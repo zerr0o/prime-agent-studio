@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "check:docs": "node scripts/check-docs.mjs",
     "docs:sync": "node scripts/check-docs.mjs --record",
     "test:activity": "node scripts/test-project-activity-ui.mjs",
+    "test:background-activity": "node scripts/test-background-activity-ui.mjs",
     "test:stability": "node scripts/test-session-stability-ui.mjs",
     "test:navigation": "node scripts/test-project-navigation-ui.mjs",
     "test:knowledge": "node scripts/test-knowledge-ui.mjs",
@@ -38,6 +39,7 @@
     "test:providers": "node scripts/test-providers-ui.mjs",
     "test:commands": "node scripts/test-commands-ui.mjs && node scripts/test-command-chips.mjs",
     "test:commands:native": "node scripts/test-commands-native.mjs",
+    "test:continuation:native": "node scripts/test-continuation-native.mjs",
     "test:subagents:native": "node scripts/test-subagents-native.mjs && node scripts/test-kernel-messaging-native.mjs",
     "test:reasoning": "node scripts/test-reasoning-ui.mjs",
     "test:remote-access": "node scripts/test-remote-access-ui.mjs",

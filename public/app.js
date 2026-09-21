@@ -24,7 +24,7 @@ import { createInspector } from './inspector.js';
 import { fileLinkRenderer, bindFileLinks } from './file-links.js';
 import { createSessionActivity } from './session-activity.js';
 import { parseAgentEnvelope } from './agent-messages.js';
-import { applyRuntimeStatus } from './runtime-status.js';
+import { applyRuntimeStatus, noteActivity } from './runtime-status.js';
 import { createProjectSorting } from './project-sorting.js';
 import { createSessionSorting } from './session-sorting.js';
 import { createProjectNavigation, hasPendingQuestion } from './project-navigation.js';
@@ -1850,18 +1850,22 @@ function applyRunEvent(run, e) {
       renderNavigation();
       break;
     case 'message_start':
+      noteActivity(run, tr);
       if (e.role === 'assistant') {
         if (run.currentMessage) run.currentMessage.streaming = false;
         ensureAssistant(run, e.seq);
       }
       break;
     case 'text':
+      noteActivity(run, tr);
       ensureAssistant(run, e.seq).text += e.delta || '';
       break;
     case 'thinking':
+      noteActivity(run, tr);
       ensureAssistant(run, e.seq).thinking += e.delta || '';
       break;
     case 'message': {
+      noteActivity(run, tr);
       const incoming = translateKnown(e.message) || {};
       if (incoming.role === 'assistant') {
         const m = ensureAssistant(run, e.seq),
@@ -1896,6 +1900,7 @@ function applyRunEvent(run, e) {
       break;
     }
     case 'tool_start': {
+      noteActivity(run, tr);
       let t = findTool(run, e.id);
       if (!t) {
         let m = run.messages.findLast((m) => m.role === 'assistant');
@@ -1908,6 +1913,7 @@ function applyRunEvent(run, e) {
     }
     case 'tool_update':
     case 'tool_end': {
+      noteActivity(run, tr);
       const t = findTool(run, e.id);
       if (t)
         Object.assign(t, {
@@ -1944,7 +1950,7 @@ function subscribe(run) {
     }
   };
   source.onopen = () => {
-    if (run.disconnected) run.statusLabel = tr('ui.l_agent_travaille');
+    if (run.disconnected) applyRuntimeStatus(run, { status: run.activityStatus || 'running' }, tr);
     run.disconnected = false;
     if (state.viewRunId === run.id) updateComposer();
   };

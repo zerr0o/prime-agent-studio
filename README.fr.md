@@ -36,7 +36,7 @@ Prime Agent Studio réunit les sessions de votre **Prime Agent local** dans une 
 - **Gardez le cap** : Roadmap partagée avec les agents, juste à côté des conversations.
 - **Travaillez d’où vous voulez** : le même Studio sur PC Windows et sur téléphone, en Wi-Fi ou hors Wi-Fi.
 
-**Version 3.7.0** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.0/Prime-Agent-Studio_3.7.0_x64-setup.exe) · [Historique des versions](docs/changelog.md).
+**Version 3.7.1** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.7.1/Prime-Agent-Studio_3.7.1_x64-setup.exe) · [Historique des versions](docs/changelog.md).
 
 ## Démarrage rapide
 

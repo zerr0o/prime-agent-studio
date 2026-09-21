@@ -4,6 +4,12 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.7.1
+
+- **Continuation after tools**: backport Prime Agent upstream fix #2372 into new Studio-managed Python environments. Consuming a `bash()` result withdraws its notification before the cell ends, to prevent interrupted continuation. Dedicated fingerprint, compatibility checks and protocol validation before use. In-use environments and external Python installations are not modified.
+- **Clearer activity**: a turn ending without session completion shows a waiting state distinct from generation. New activity reactivates the indicator. No implied success or early closure of sessions, subagents or background tasks.
+- **Safe rollout**: engine remains on 0.9.5. Active sessions keep their current environment; the Python fix applies to new kernels after this Studio version is activated. This fix does not address the Codex `Previous response not found` error.
+
 ## 3.7.0
 
 - **Engine migration to Prime Agent 0.9.5**: pinned policy (npm 10.9.4 and uv 0.8.22 unchanged), one-time explanation for users coming from a version < 3.7.0. After updating the application, prepare then activate 0.9.5 from **Preferences → Updates**; downloading requires your consent, and activation can restart the managed server only when agents are idle. Accounts and sessions are preserved. Native recovery retained for stopped or older servers.

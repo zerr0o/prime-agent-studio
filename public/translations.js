@@ -1948,6 +1948,14 @@ export const messages = {
     fr: 'En attente',
     en: 'Waiting',
   },
+  'ui.en_arriere_plan': {
+    fr: 'En arrière-plan',
+    en: 'In background',
+  },
+  'ui.fin_de_tour': {
+    fr: 'Fin de tour',
+    en: 'Turn ended',
+  },
   'ui.dans_la_file': {
     fr: 'Dans la file',
     en: 'Queued',
