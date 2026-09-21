@@ -4,6 +4,14 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 3.7.0
+
+- **Engine migration to Prime Agent 0.9.5**: pinned policy (npm 10.9.4 and uv 0.8.22 unchanged), one-time explanation for users coming from a version < 3.7.0. After updating the application, prepare then activate 0.9.5 from **Preferences → Updates**; downloading requires your consent, and activation can restart the managed server only when agents are idle. Accounts and sessions are preserved. Native recovery retained for stopped or older servers.
+- **Update flow**: components integrated into Preferences, separate prepare then activate steps with retry without downloading again, serialized operations and no automatic interruption of active agents. Explicitly validated external installations can reactivate without fabricated download receipts.
+- **Unified advanced models**: shared picker with search, providers and the engine default choice, without changing the conversation model. Refinement, fallback and native subagent settings with default autonomous budgets, never enabled implicitly.
+- **Conversation and tracking**: 0.9.5 and legacy inter-agent messages, subagent progress and last activity, provider waiting, fallback and restoration states. Ordered live relay with an explicit memory limit and no history replay. Mirrored user message heading — time on the left, "You" with avatar on the right.
+- **Explicit authentication**: environment then native storage, with no silent import of CLI accounts. Grok OAuth and API-key flows preserved.
+
 ## 3.7.0-beta.2
 
 - Components integrated into Preferences, required-engine notice and guidance after application updates. Native recovery retained for stopped or older servers.

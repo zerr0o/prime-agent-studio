@@ -4,6 +4,14 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 3.7.0
+
+- **Migration du moteur vers Prime Agent 0.9.5** : politique épinglée (npm 10.9.4 et uv 0.8.22 inchangés), explication unique pour les utilisateurs venant d'une version < 3.7.0. Après la mise à jour de l'application, préparez puis activez la version 0.9.5 depuis **Préférences → Mise à jour**  ; le téléchargement exige votre accord, et l’activation peut redémarrer le serveur géré uniquement quand les agents sont inactifs. Comptes et sessions conservés. Secours natif conservé si le serveur est arrêté ou ancien.
+- **Parcours de mise à jour** : composants intégrés aux Préférences, préparation puis activation distinguées avec reprise sans retéléchargement, opérations sérialisées et aucun arrêt automatique des agents actifs. Installations externes explicitement validées réactivables sans faux reçu de téléchargement.
+- **Modèles avancés unifiés** : même sélecteur commun avec recherche, fournisseurs et choix « Défaut du moteur », sans changer le modèle de la conversation. Réglages d'affinage, de secours et de sous-agent natif avec budgets autonomes par défaut, sans activation implicite.
+- **Conversation et suivi** : messages inter-agents 0.9.5 et anciens formats, progression et dernière activité des sous-agents, états d'attente, de secours et de restauration du fournisseur. Relais en direct ordonné avec limite mémoire explicite, sans rejouer l'historique. En-tête du message utilisateur en miroir de l'assistant — heure à gauche, « Vous » avec avatar à droite.
+- **Authentification explicite** : résolution par environnement puis stockage natif, sans import silencieux des comptes du CLI. Parcours Grok OAuth et clé API conservés.
+
 ## 3.7.0-beta.2
 
 - Composants intégrés aux Préférences, indication du moteur requis et guide après mise à jour de l’application. Secours natif conservé pour un serveur arrêté ou ancien.
