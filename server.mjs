@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { isDirectInvocation } from './scripts/launcher-common.mjs';
 import { randomUUID } from 'node:crypto';
 import { createStore, HttpError, validateDirectory, cwdKey, validId } from './lib/store.mjs';
+import { createWorktrees } from './lib/worktrees.mjs';
+import { createWorktreeRoutes } from './lib/worktree-routes.mjs';
 import { createAgentRuntime } from './lib/agent.mjs';
 import { createRemoteNetwork } from './lib/remote-network.mjs';
 import { createRemoteAccess } from './lib/remote-access.mjs';
@@ -65,6 +67,8 @@ const publicRun = ({
   allowQuestions,
   interactions,
   prompt,
+  worktreeId,
+  projectCwd,
 }) => ({
   id,
   sessionId,
@@ -79,6 +83,8 @@ const publicRun = ({
   interactions: interactions || [],
   prompt: splitFileMessage(prompt).text,
   attachments: splitFileMessage(prompt).attachments,
+  ...(typeof worktreeId === 'string' && worktreeId ? { worktreeId } : {}),
+  ...(typeof projectCwd === 'string' && projectCwd ? { projectCwd } : {}),
 });
 
 async function readBody(req) {
@@ -120,6 +126,24 @@ export function createApp(options = {}) {
       dataDir,
       initialCwd: options.initialCwd || process.env.PRIME_AGENT_GUI_INITIAL_CWD || ROOT,
     });
+  const worktrees =
+    options.worktrees ||
+    createWorktrees({
+      dataDir,
+      isBusy: (paths) =>
+        [...runs.values()].some(
+          (run) =>
+            (run.status === 'running' || run.status === 'stopping') &&
+            (Array.isArray(paths) ? paths : []).some((candidate) => {
+              try {
+                return cwdKey(run.cwd) === cwdKey(candidate);
+              } catch {
+                return false;
+              }
+            }),
+        ),
+    });
+  const worktreeRoutesPlaceholder = { current: null };
   const fileStore = createFileStore(join(dataDir, 'attachments'));
   const remoteAccess = createRemoteAccess({ dataDir });
   const remoteUpdates = createRemoteUpdates({
@@ -209,6 +233,63 @@ export function createApp(options = {}) {
       onChanged: () => invalidateModels(),
     });
   const projectFiles = createProjectFiles({ store, protectedRoots: [agentHome, sessionDir, dataDir] });
+  const isTaskFilesCwd = (value) => {
+    try {
+      if (typeof value !== 'string' || !value || !worktrees?.managedRoot) return false;
+      const r = cwdKey(worktrees.managedRoot);
+      const c = cwdKey(resolve(String(value)));
+      return c === r || c.startsWith(r + sep);
+    } catch {
+      return false;
+    }
+  };
+  async function resolveWorktreeFileRoot(cwd) {
+    if (typeof cwd !== 'string' || !cwd) {
+      const err = new HttpError(400, 'Worktree path must be an absolute path.');
+      err.code = 'worktree_invalid';
+      throw err;
+    }
+    const found = typeof worktrees.findByPath === 'function' ? await worktrees.findByPath({ path: cwd }).catch(() => null) : null;
+    if (!found) {
+      const err = new HttpError(404, 'Task worktree not found.');
+      err.code = 'worktree_missing';
+      throw err;
+    }
+    const detail = await worktrees.inspect({ id: found.id }).catch(() => null);
+    if (!detail || detail.orphaned || !detail.worktree || !detail.task) {
+      const err = new HttpError(404, 'Task worktree is orphaned.');
+      err.code = 'worktree_missing';
+      throw err;
+    }
+    try {
+      if (cwdKey(detail.worktree.path) !== cwdKey(cwd)) {
+        const err = new HttpError(404, 'Task worktree path mismatch.');
+        err.code = 'worktree_missing';
+        throw err;
+      }
+    } catch (error) {
+      if (error?.status) throw error;
+      const err = new HttpError(404, 'Task worktree path mismatch.');
+      err.code = 'worktree_missing';
+      throw err;
+    }
+    await store.findProject(detail.worktree.projectCwd);
+    return detail.worktree.path;
+  }
+  const worktreeFileStore = {
+    findProject: async (cwd) => {
+      if (isTaskFilesCwd(cwd)) {
+        const taskPath = await resolveWorktreeFileRoot(cwd);
+        return { cwd: taskPath };
+      }
+      return store.findProject(cwd);
+    },
+  };
+  const taskProjectFiles = createProjectFiles({
+    store: worktreeFileStore,
+    protectedRoots: [agentHome, sessionDir],
+  });
+  const filesFor = (cwd) => (isTaskFilesCwd(cwd) ? taskProjectFiles : projectFiles);
   const knowledge = options.knowledge || createKnowledge({ store, dataDir, agentHome, sessionDir });
   const inspector = createSessionInspector({
     store,
@@ -381,6 +462,13 @@ export function createApp(options = {}) {
       run.sessionId = event.sessionId;
       sessionLocks.add(event.sessionId);
       roadmapRoutes.onSession(run);
+      if (run._pendingWorktree?.worktreeId) {
+        const pending = run._pendingWorktree;
+        delete run._pendingWorktree;
+        void store
+          .bindSessionWorktree({ id: event.sessionId, worktreeId: pending.worktreeId, projectCwd: pending.projectCwd })
+          .catch(() => {});
+      }
       if (run.allowQuestions !== undefined)
         void store
           .setConversationSettings(event.sessionId, { allowQuestions: run.allowQuestions })
@@ -429,6 +517,44 @@ export function createApp(options = {}) {
     if (activeRuns().length >= 8)
       throw new HttpError(429, tr('server.huit_sessions_tournent_deja_arretez_en_une_avant_de_continuer'));
     const cwd = await validateDirectory(body.cwd);
+    let worktreeAuth = null;
+    if (worktrees?.managedRoot) {
+      const root = worktrees.managedRoot;
+      let inside = false;
+      try {
+        const r = cwdKey(root);
+        const c = cwdKey(cwd);
+        inside = c === r || c.startsWith(r + sep);
+      } catch {}
+      if (inside) {
+        const found = typeof worktrees.findByPath === 'function' ? await worktrees.findByPath({ path: cwd }).catch(() => null) : null;
+        if (!found) {
+          const err = new HttpError(404, 'Task worktree was removed or is unknown, cannot start an agent there.');
+          err.code = 'worktree_missing';
+          throw err;
+        }
+        const detail = await worktrees.inspect({ id: found.id }).catch(() => null);
+        if (!detail || detail.orphaned || !detail.worktree || !detail.task) {
+          const err = new HttpError(404, 'Task worktree is orphaned, cannot start an agent there.');
+          err.code = 'worktree_missing';
+          throw err;
+        }
+        try {
+          if (cwdKey(detail.worktree.path) !== cwdKey(cwd)) {
+            const err = new HttpError(404, 'Task worktree path mismatch, cannot start an agent there.');
+            err.code = 'worktree_missing';
+            throw err;
+          }
+        } catch (error) {
+          if (error?.status) throw error;
+          const err = new HttpError(404, 'Task worktree path mismatch, cannot start an agent there.');
+          err.code = 'worktree_missing';
+          throw err;
+        }
+        const project = await store.findProject(detail.worktree.projectCwd);
+        worktreeAuth = { entry: detail.worktree, projectCwd: project.cwd };
+      }
+    }
     const images = validateImages(body.images);
     const files = validateFiles(body.files);
     if (images.length + files.length > 8)
@@ -465,6 +591,9 @@ export function createApp(options = {}) {
       existing = await store.history(body.sessionId);
       if (!existing.cwd || cwdKey(cwd) !== cwdKey(existing.cwd))
         throw new HttpError(409, tr('server.cette_session_appartient_a_un_autre_dossier'));
+    }
+    if (worktreeAuth && existing?.id) {
+      await store.bindSessionWorktree({ id: existing.id, worktreeId: worktreeAuth.entry.id, projectCwd: worktreeAuth.projectCwd });
     }
     const catalog = await models();
     const settings = existing?.generationSettings;
@@ -523,6 +652,11 @@ export function createApp(options = {}) {
       clients: new Set(),
       finished: false,
     };
+    if (worktreeAuth) {
+      run.worktreeId = worktreeAuth.entry.id;
+      run.projectCwd = worktreeAuth.projectCwd;
+      run._pendingWorktree = { worktreeId: worktreeAuth.entry.id, projectCwd: worktreeAuth.projectCwd };
+    }
     runs.set(run.id, run);
     try {
       run.prompt = appendFileMessage(run.prompt, await fileStore.save(files));
@@ -569,6 +703,17 @@ export function createApp(options = {}) {
     }
     return publicRun(run);
   }
+  const worktreeRoutes =
+    worktreeRoutesPlaceholder.current ||
+    createWorktreeRoutes({
+      store,
+      worktrees,
+      dataDir,
+      activeRuns,
+      sessionBusy: (id) => sessionLocks.has(id) || conversationSettings.busy(id),
+      startRun,
+    });
+  worktreeRoutesPlaceholder.current = worktreeRoutes;
   function subscribe(req, res, run, url) {
     let after = Number(req.headers['last-event-id'] || url.searchParams.get('after') || 0);
     if (!Number.isSafeInteger(after) || after < 0) after = 0;
@@ -697,12 +842,12 @@ export function createApp(options = {}) {
         );
       if (method === 'POST' && path === '/api/project-files/open') {
         const body = await readBody(req);
-        const file = await projectFiles.localFile(body.cwd, body.path);
+        const file = await filesFor(body.cwd).localFile(body.cwd, body.path);
         fileLaunchMode(file);
         return json(res, 200, await (options.openFile || openLocalFile)(file));
       }
       if (['GET', 'HEAD'].includes(method) && path === '/api/project-files/image') {
-        const image = await projectFiles.image(
+        const image = await filesFor(url.searchParams.get('cwd')).image(
           url.searchParams.get('cwd'),
           url.searchParams.get('reference'),
           url.searchParams.get('basePath') || '',
@@ -722,24 +867,24 @@ export function createApp(options = {}) {
           return json(
             res,
             200,
-            await projectFiles.list(cwd, file, Number(url.searchParams.get('offset') || 0)),
+            await filesFor(cwd).list(cwd, file, Number(url.searchParams.get('offset') || 0)),
           );
-        if (path === '/api/project-files/changes') return json(res, 200, await projectFiles.changes(cwd));
+        if (path === '/api/project-files/changes') return json(res, 200, await filesFor(cwd).changes(cwd));
         if (path === '/api/project-files/preview')
-          return json(res, 200, await projectFiles.preview(cwd, file));
+          return json(res, 200, await filesFor(cwd).preview(cwd, file));
         if (path === '/api/project-files/resolve')
           return json(
             res,
             200,
-            await projectFiles.resolveReference(
+            await filesFor(cwd).resolveReference(
               cwd,
               url.searchParams.get('reference'),
               url.searchParams.get('basePath') || '',
             ),
           );
-        if (path === '/api/project-files/diff') return json(res, 200, await projectFiles.diff(cwd, file));
+        if (path === '/api/project-files/diff') return json(res, 200, await filesFor(cwd).diff(cwd, file));
         if (path === '/api/project-files/download') {
-          const result = await projectFiles.download(cwd, file);
+          const result = await filesFor(cwd).download(cwd, file);
           res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
             'Content-Length': result.data.length,
@@ -799,7 +944,9 @@ export function createApp(options = {}) {
         const body = await readBody(req);
         if (!['skill', 'prompt'].includes(body.source) || !['global', 'project'].includes(body.scope))
           throw new HttpError(400, tr('folders.invalid_resource'));
-        const project = await store.findProject(body.cwd);
+        const project = isTaskFilesCwd(body.cwd)
+          ? { cwd: await resolveWorktreeFileRoot(body.cwd) }
+          : await store.findProject(body.cwd);
         const base = body.scope === 'global' ? agentHome : join(project.cwd, '.prime', 'agent');
         const folder = join(base, body.source === 'skill' ? 'skills' : 'prompts');
         await mkdir(folder, { recursive: true });
@@ -1065,6 +1212,32 @@ export function createApp(options = {}) {
         return json(res, 200, await conversationSettings.update(await readBody(req)));
       if (method === 'PATCH' && path === '/api/sessions')
         return json(res, 200, await store.patchSession(await readBody(req)));
+      if (path === '/api/worktrees') {
+        if (method === 'GET') return json(res, 200, await worktreeRoutes.list(url.searchParams.get('cwd')));
+        if (method === 'POST') {
+          const body = await readBody(req);
+          return json(res, 201, await worktreeRoutes.create(body));
+        }
+      }
+      {
+        const match = path.match(/^\/api\/worktrees\/([A-Za-z0-9_-]+)(\/(integrate|remove|prepare))?$/);
+        if (match) {
+          const id = match[1];
+          const action = match[3] || '';
+          if (!action && method === 'GET')
+            return json(res, 200, await worktreeRoutes.inspect({ id, cwd: url.searchParams.get('cwd') }));
+          if (action && method === 'POST') {
+            const body = await readBody(req);
+            if (action === 'integrate') return json(res, 200, await worktreeRoutes.integrate({ id, ...body }));
+            if (action === 'remove') return json(res, 200, await worktreeRoutes.remove({ id, ...body }));
+            if (action === 'prepare') {
+              const run = await worktreeRoutes.prepare({ id, ...body });
+              const { _pendingWorktree: _dropped, ...publicRunData } = run;
+              return json(res, 201, publicRunData);
+            }
+          }
+        }
+      }
       if (method === 'GET' && path === '/api/runs') return json(res, 200, { runs: activeRuns() });
       if (method === 'POST' && path === '/api/runs')
         return json(res, 201, await startRun(await readBody(req)));
@@ -1147,7 +1320,9 @@ export function createApp(options = {}) {
         ...(tailscaleSetupUrl(error.setupUrl) ? { setupUrl: tailscaleSetupUrl(error.setupUrl) } : {}),
         error: error.status ? error.message : tr('server.une_erreur_interne_est_survenue') + error.message,
         ...(typeof error.code === 'string' &&
-        (error.code.startsWith('roadmap_') || error.code.startsWith('pastudio_'))
+        (error.code.startsWith('roadmap_') ||
+          error.code.startsWith('pastudio_') ||
+          error.code.startsWith('worktree_'))
           ? {
               code: error.code,
               // Allowlisted .pastudio pending-contract fields only (server-generated, no secrets).
@@ -1198,6 +1373,8 @@ export function createApp(options = {}) {
   return {
     server,
     store,
+    worktrees,
+    worktreeRoutes,
     runtime,
     modelConfig,
     modelDefaults,

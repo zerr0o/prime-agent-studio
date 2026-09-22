@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="/public/commands.css" />
     <link rel="stylesheet" href="/public/inspector.css" />
     <link rel="stylesheet" href="/public/settings.css" />
+    <link rel="stylesheet" href="/public/worktrees.css" />
   </head>
   <body>
     <a class="skip-link" href="#composer" data-i18n="ui.aller_au_message">Aller au message</a>
@@ -62,7 +63,16 @@
           <button id="new-session" class="new-session-button">
             <span data-icon="plus"></span><span data-i18n="ui.nouvelle_session">Nouvelle session</span
             ><kbd>Ctrl N</kbd></button
-          ><label class="search-field"
+          ><button
+            id="new-task"
+            type="button"
+            aria-label="Créer une tâche isolée"
+            data-i18n-aria-label="worktrees.creer_tache_title"
+            title="Créer une tâche isolée"
+            data-i18n-title="worktrees.creer_tache_title"
+          >
+            <span data-icon="plus"></span><span data-i18n="worktrees.nouvelle_tache">Nouvelle tâche</span>
+          </button><label class="search-field"
             ><span data-icon="search"></span
             ><input
               id="session-search"
@@ -185,6 +195,26 @@
             ></button>
           </div>
         </header>
+        <div id="worktree-banner" class="worktree-banner" role="status" hidden>
+          <strong data-i18n="worktrees.bandeau_tache">Worktree</strong>
+          <span class="wt-lines"
+            ><code id="worktree-banner-branch"></code
+            ><code id="worktree-banner-path" class="wt-path"></code
+          ></span>
+          <span class="wt-spacer"></span>
+          <button
+            id="worktree-banner-copy"
+            class="wt-button"
+            type="button"
+            data-i18n="worktrees.copier_chemin"
+            data-i18n-aria-label="worktrees.copier_chemin"
+          >
+            Copier le chemin du dossier
+          </button>
+          <button id="worktree-banner-button" class="wt-button" type="button" data-i18n="worktrees.voir_tache">
+            Ouvrir le diff
+          </button>
+        </div>
         <div id="configuration-warning" class="configuration-warning" role="status" hidden>
           <span id="configuration-warning-text"></span>
           <button id="configuration-provider-action" data-i18n="configuration.connect">
@@ -1989,6 +2019,206 @@
             </button>
           </div>
         </form>
+      </div>
+    </dialog>
+    <dialog id="worktree-dialog" class="modal" aria-labelledby="worktree-title">
+      <form id="worktree-form" method="dialog">
+        <div class="modal-heading">
+          <span class="modal-icon" data-icon="plus"></span
+          ><button
+            class="icon-button"
+            type="button"
+            data-close-dialog
+            aria-label="Fermer"
+            data-i18n-aria-label="ui.fermer"
+            data-icon="x"
+          ></button>
+        </div>
+        <h2 id="worktree-title" data-i18n="worktrees.creer_tache">Créer une tâche isolée</h2>
+        <div class="wt-field">
+          <span id="worktree-mode-label" data-i18n="worktrees.mode_conversation">Mode de conversation</span>
+          <label class="wt-radio"
+            ><input type="radio" name="worktree-mode" value="current" checked /><span
+              ><strong data-i18n="worktrees.mode_projet">Projet actuel</strong
+              ><small data-i18n="worktrees.mode_projet_note"
+                >Continuer dans le dossier du projet, comportement habituel.</small
+              ></span
+            ></label
+          >
+          <label class="wt-radio"
+            ><input type="radio" name="worktree-mode" value="isolated" /><span
+              ><strong data-i18n="worktrees.mode_isole">Tâche isolée</strong
+              ><small data-i18n="worktrees.mode_isole_note"
+                >Travailler dans un dossier de tâche séparé. La session et ses sous-agents partagent ce
+                dossier. Aucune fusion, aucun envoi, aucune installation automatique.</small
+              ></span
+            ></label
+          >
+        </div>
+        <div id="worktree-name-field" class="wt-field" hidden>
+          <label for="worktree-name" data-i18n="worktrees.nom_tache">Nom du worktree</label>
+          <input
+            id="worktree-name"
+            name="worktree-name"
+            maxlength="80"
+            autocomplete="off"
+            placeholder="Exemple : corriger le panier"
+            data-i18n-placeholder="worktrees.nom_exemple"
+          />
+        </div>
+        <div class="wt-section">
+          <h3 data-i18n="worktrees.worktrees_existants">Worktrees conservés</h3>
+          <ul id="worktree-list" class="wt-files"></ul>
+          <p id="worktree-list-empty" class="wt-hint" data-i18n="worktrees.aucun_worktree" hidden>
+            Aucun worktree conservé pour ce projet.
+          </p>
+        </div>
+        <div id="worktree-error" class="form-error" role="alert" hidden></div>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" data-close-dialog data-i18n="ui.annuler">
+            Annuler
+          </button>
+          <button id="worktree-submit" class="primary-button" type="submit">
+            <span data-icon="check"></span><span data-i18n="worktrees.creer">Créer</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="worktree-task-dialog" class="modal" aria-labelledby="worktree-task-title">
+      <div class="wt-sticky">
+        <div class="modal-heading">
+          <span class="modal-icon" data-icon="folder"></span
+          ><button
+            class="icon-button"
+            type="button"
+            data-close-dialog
+            aria-label="Fermer"
+            data-i18n-aria-label="ui.fermer"
+            data-icon="x"
+          ></button>
+        </div>
+        <h2 id="worktree-task-title">Worktree</h2>
+        <p id="wt-remote-note" class="wt-hint" data-i18n="worktrees.distant_consultation" hidden>
+          Consultation à distance, les actions sont désactivées.
+        </p>
+      </div>
+      <div class="wt-body">
+        <div class="wt-layout">
+          <div>
+            <dl class="wt-meta">
+              <dt data-i18n="worktrees.branche">Branche</dt>
+              <dd><code id="wt-meta-branch"></code></dd>
+              <dt data-i18n="worktrees.dossier">Dossier</dt>
+              <dd>
+                <code id="wt-meta-path"></code>
+                <button
+                  id="wt-copy-path"
+                  class="wt-button"
+                  type="button"
+                  data-i18n="worktrees.copier_chemin"
+                  data-i18n-aria-label="worktrees.copier_chemin"
+                >
+                  Copier le chemin du dossier
+                </button>
+              </dd>
+              <dt data-i18n="worktrees.etat">État</dt>
+              <dd id="wt-meta-state"></dd>
+              <dt data-i18n="worktrees.cible">Cible</dt>
+              <dd><code id="wt-meta-source"></code></dd>
+              <dt data-i18n="worktrees.base">Base</dt>
+              <dd><code id="wt-meta-base"></code></dd>
+            </dl>
+            <div class="wt-section">
+              <h3 data-i18n="worktrees.fichiers_modifies">Fichiers du diff</h3>
+              <ul id="wt-files" class="wt-files"></ul>
+              <p id="wt-files-empty" class="wt-hint" data-i18n="worktrees.aucun_changement">
+                Aucun changement pour le moment. Commitez dans le worktree pour les voir ici.
+              </p>
+            </div>
+          </div>
+          <div>
+            <div class="wt-section">
+              <h3 data-wt="payload-label" data-i18n="worktrees.charge_utile">Diff à merger</h3>
+              <p class="wt-hint" data-i18n="worktrees.charge_utile_note">
+                Diff des commits du worktree par rapport à la cible actuelle. Vérifiez de nouveau avant de
+                confirmer le merge.
+              </p>
+              <pre id="wt-diff" class="wt-diff" tabindex="0"></pre>
+              <p id="wt-diff-note" class="wt-hint" hidden></p>
+            </div>
+          </div>
+        </div>
+        <div id="wt-prepare-box" class="wt-section" hidden>
+          <h3 data-i18n="worktrees.preparer">Préparer le merge avec l’agent</h3>
+          <p class="wt-hint" data-i18n="worktrees.preparer_note">
+            L’agent du worktree commite les changements voulus, merge la branche cible dans le worktree si
+            besoin, résout les conflits et lance les vérifications. Le dossier d’origine n’est jamais modifié,
+            aucun push.
+          </p>
+          <label class="wt-check"
+            ><input id="wt-prepare-confirm" type="checkbox" /><span data-i18n="worktrees.preparer_confirm"
+              >Je demande explicitement à l’agent du worktree de préparer le merge.</span
+            ></label
+          >
+          <div class="modal-actions">
+            <button id="wt-prepare-open" class="wt-button" type="button" data-i18n="worktrees.ouvrir_conversation_tache" hidden>
+              Ouvrir la conversation du worktree
+            </button>
+            <button id="wt-prepare-button" class="wt-button primary" type="button" data-i18n="worktrees.preparer">
+              Préparer le merge avec l’agent
+            </button>
+          </div>
+        </div>
+        <details id="wt-integrate-box" class="wt-section wt-details">
+          <summary data-i18n="worktrees.integrer">Merge fast-forward</summary>
+          <p class="wt-hint" data-i18n="worktrees.integrer_note">
+            Le merge exige une cible propre et un fast-forward. Aucune résolution de conflit, aucun push, aucun
+            commit automatique.
+          </p>
+          <p class="wt-hint" data-i18n="worktrees.commits_requis_note">
+            Seuls les commits du worktree peuvent être mergés. Les changements non commités bloquent le merge.
+          </p>
+          <label class="wt-check"
+            ><input id="wt-integrate-confirm" type="checkbox" /><span data-i18n="worktrees.integrer_confirm"
+              >Je confirme le merge fast-forward des commits du worktree, sans conflit.</span
+            ></label
+          >
+          <div class="modal-actions">
+            <button id="wt-integrate-button" class="primary-button" type="button" data-i18n="worktrees.integrer">
+              Merge fast-forward
+            </button>
+          </div>
+        </details>
+        <details id="wt-remove-box" class="wt-section wt-details">
+          <summary data-i18n="worktrees.supprimer_tache">Supprimer le worktree</summary>
+          <p class="wt-hint" data-i18n="worktrees.supprimer_sale_note">
+            Le worktree contient des changements non commités ou non mergés. Cochez la case d’abandon pour les
+            écarter explicitement.
+          </p>
+          <label class="wt-check"
+            ><input id="wt-remove-confirm" type="checkbox" /><span data-i18n="worktrees.supprimer_confirm"
+              >Je confirme la suppression du dossier worktree. La branche et l’historique Git sont
+              conservés.</span
+            ></label
+          >
+          <label id="wt-discard-row" class="wt-check" hidden
+            ><input id="wt-discard-changes" type="checkbox" /><span data-i18n="worktrees.ecarter_modifs"
+              >Abandonner explicitement les modifications restantes</span
+            ></label
+          >
+          <div class="modal-actions">
+            <button id="wt-remove-button" class="wt-button danger" type="button" data-i18n="worktrees.supprimer_tache">
+              Supprimer le worktree
+            </button>
+          </div>
+        </details>
+        <div id="worktree-task-error" class="form-error" role="alert" hidden></div>
+        <p id="worktree-task-status" class="wt-status" role="status"></p>
+        <div class="modal-actions">
+          <button id="wt-refresh-button" class="wt-button" type="button" data-i18n="worktrees.actualiser">
+            Actualiser
+          </button>
+        </div>
       </div>
     </dialog>
     <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>

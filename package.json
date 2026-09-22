@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "3.8.1",
+  "version": "3.9.0-beta.1",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -37,6 +37,7 @@
     "test:workspace": "node scripts/test-workspace-ui.mjs",
     "test:inspector": "node scripts/test-inspector-ui.mjs && node scripts/test-file-context-ui.mjs",
     "test:providers": "node scripts/test-providers-ui.mjs",
+    "test:worktrees": "node --test test/worktrees.test.mjs test/worktree-routes.test.mjs && node scripts/test-worktrees-ui.mjs",
     "test:commands": "node scripts/test-commands-ui.mjs && node scripts/test-command-chips.mjs",
     "test:commands:native": "node scripts/test-commands-native.mjs",
     "test:continuation:native": "node scripts/test-continuation-native.mjs",

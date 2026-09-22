@@ -30,6 +30,7 @@ import { createSessionSorting } from './session-sorting.js';
 import { createProjectNavigation, hasPendingQuestion } from './project-navigation.js';
 import { createKnowledgeBrowser } from './knowledge.js';
 import { createProjectArchives } from './project-archives.js';
+import { createWorktreesUI } from './worktrees.js';
 import { createRoadmap } from './roadmap.js';
 import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
@@ -55,6 +56,7 @@ let commandsUI;
 let inspectorUI;
 let roadmapUI;
 let archivesUI;
+let worktreesUI;
 let roadmapNavigationSequence = 0;
 let modelPickerTarget = null;
 let modelCatalogRequest = null;
@@ -152,6 +154,7 @@ const prefs = {
 const state = {
   projects: [],
   projectCwd: null,
+  execCwd: null,
   sessionId: null,
   viewRunId: null,
   history: [],
@@ -198,6 +201,7 @@ const project = () => state.projects.find((p) => samePath(p.cwd, state.projectCw
 const allSessions = () =>
   state.projects.flatMap((p) => (p.sessions || []).map((s) => ({ ...s, cwd: s.cwd || p.cwd })));
 const session = (id) => allSessions().find((s) => s.id === (id || state.sessionId));
+const execCwdOf = () => state.execCwd || state.projectCwd;
 const isRunning = (run) => run && ['running', 'stopping'].includes(run.status);
 const activeRun = () =>
   state.runs.get(state.viewRunId) ||
@@ -855,7 +859,7 @@ function applyAccessMode() {
   }
 }
 function draftKey() {
-  return state.sessionId ? `session:${state.sessionId}` : `project:${normalizedPath(state.projectCwd)}`;
+  return state.sessionId ? `session:${state.sessionId}` : `project:${normalizedPath(execCwdOf())}`;
 }
 function saveDraft() {
   if (state.readOnly) return;
@@ -1276,13 +1280,14 @@ function renderNavigation() {
   renderProjectOverview();
   renderDetails();
   archivesUI?.update();
+  worktreesUI?.update();
   updateComposer();
   if ($('open-roadmap')) $('open-roadmap').disabled = !state.projectCwd;
   if ($('detail-project-roadmap')) $('detail-project-roadmap').hidden = !state.projectCwd;
   roadmapUI?.update();
 }
 marked.setOptions({ gfm: true, breaks: false });
-function markdown(text, { cwd = state.projectCwd, basePath = '', imageRoot } = {}) {
+function markdown(text, { cwd = execCwdOf(), basePath = '', imageRoot } = {}) {
   const n = el('div', 'markdown');
   const references = [],
     images = [];
@@ -1671,10 +1676,11 @@ function resetView() {
   state.requestId++;
   messageNodes.clear();
 }
-function newSession() {
+function newSession(execCwd) {
   if (state.readOnly) return;
   saveDraft();
   resetView();
+  state.execCwd = execCwd || state.projectCwd;
   selectNewConversationModel();
   state.archived = false;
   saveSelection();
@@ -1689,6 +1695,7 @@ function selectProject(cwd) {
   saveDraft();
   resetView();
   state.projectCwd = cwd;
+  state.execCwd = cwd;
   restoreGenerationSettings(null, null);
   projectNavigation?.reveal(cwd);
   state.projectOverview = true;
@@ -1715,7 +1722,10 @@ async function selectSession(id, cwd) {
   const token = ++state.requestId;
   state.sessionId = id;
   state.projectOverview = false;
-  state.projectCwd = cwd || session(id)?.cwd || state.projectCwd;
+  const knownOwner =
+    cwd && state.projects.some((p) => samePath(p.cwd, cwd)) ? cwd : state.projectCwd;
+  state.projectCwd = knownOwner;
+  state.execCwd = session(id)?.cwd || cwd || state.projectCwd;
   projectNavigation?.reveal(state.projectCwd);
   state.viewRunId = null;
   state.history = [];
@@ -1741,6 +1751,8 @@ async function selectSession(id, cwd) {
     }
     if (token !== state.requestId) return;
     state.history = h.messages || [];
+    if (h?.cwd) state.execCwd = h.cwd;
+    else if (session(id)?.cwd) state.execCwd = session(id).cwd;
     if (h.id && !running) sessionActivity.observe(h);
     if (running) {
       state.viewRunId = running.id;
@@ -1761,10 +1773,11 @@ async function selectSession(id, cwd) {
   }
 }
 async function selectRun(run) {
-  if (run.sessionId) return selectSession(run.sessionId, run.cwd);
+  if (run.sessionId) return selectSession(run.sessionId, run.projectCwd || run.cwd);
   saveDraft();
   resetView();
-  state.projectCwd = run.cwd;
+  state.projectCwd = run.projectCwd || run.cwd;
+  state.execCwd = run.cwd;
   projectNavigation?.reveal(run.cwd);
   state.viewRunId = run.id;
   restoreGenerationSettings(null, run);
@@ -1788,16 +1801,17 @@ function initializeRun(run, history) {
 }
 function upsertSession(id, run) {
   if (!id) return;
-  let p = state.projects.find((p) => samePath(p.cwd, run.cwd));
-  if (!p) {
-    p = { cwd: run.cwd, name: run.cwd.split(/[\\/]/).pop(), exists: true, sessions: [] };
-    state.projects.push(p);
-  }
+  const owner = run.projectCwd || run.cwd;
+  const p = state.projects.find((p) => samePath(p.cwd, owner));
+  if (!p) return;
   if (!p.sessions.some((s) => s.id === id)) {
-    // Transient optimistic row matches server top-of-unpinned until refresh.
+    // Transient optimistic row grouped under the authoritative owner project
+    // (run.projectCwd); the server refresh confirms grouping. Never invents a
+    // standalone task project. Entry cwd stays the actual execution cwd.
     const entry = {
       id,
       cwd: run.cwd,
+      ...(run.worktreeId ? { worktreeId: run.worktreeId } : {}),
       title: run.prompt?.replace(/\s+/g, ' ').slice(0, 100) || tr('ui.nouvelle_session'),
       createdAt: run.startedAt,
       updatedAt: run.startedAt,
@@ -2032,7 +2046,7 @@ async function sendMessage(event) {
     originalDraftKey = draftKey();
   const message =
       originalDraft.trim() || (images.length || files.length ? tr('ui.analyse_les_pieces_jointes') : ''),
-    cwd = state.projectCwd,
+    cwd = state.execCwd || state.projectCwd,
     sessionId = state.sessionId,
     base = [...activeMessages()],
     token = state.requestId;
@@ -2879,7 +2893,7 @@ inspectorUI = createInspector({
   icon,
   toast,
   getContext: () => ({
-    cwd: state.projectCwd,
+    cwd: execCwdOf(),
     sessionId: state.sessionId || activeRun()?.sessionId,
     enabled: state.inspectorAvailable === true,
     readOnly: state.readOnly,
@@ -2965,6 +2979,30 @@ archivesUI = createProjectArchives({
   refreshOverview,
   openModelPicker: () => openModelDialog(),
 });
+worktreesUI = createWorktreesUI({
+  api,
+  getContext: () => ({
+    projectCwd: state.projectCwd,
+    executionCwd: state.execCwd || state.projectCwd,
+    sessionId: state.sessionId || activeRun()?.sessionId,
+    sessionWorktreeId: session(state.sessionId || activeRun()?.sessionId)?.worktreeId || '',
+    remote: state.remote,
+    readOnly: state.readOnly,
+    online: state.online,
+    mainModel: $('model-select').value || state.modelCatalogDefault || '',
+  }),
+  toast,
+  refreshOverview,
+  requestNewSession: () => newSession(),
+  startTaskSession: (taskPath) => {
+    // Stay grouped under the owner project; only the execution cwd moves into
+    // the worktree. The server binds the first run session to the worktree.
+    newSession(taskPath || state.projectCwd);
+  },
+  openTaskSession: (sessionId, ownerCwd) => {
+    if (sessionId) void selectSession(sessionId, ownerCwd || state.projectCwd);
+  },
+});
 imageComposer = createImageComposer({
   getContext: () => ({
     key: draftKey(),
@@ -2979,7 +3017,7 @@ imageComposer = createImageComposer({
 commandsUI = createCommands({
   api,
   getContext: () => ({
-    cwd: state.projectCwd,
+    cwd: execCwdOf(),
     sessionId: activeRun()?.sessionId || state.sessionId,
     running: isRunning(activeRun()),
     readOnly: state.readOnly,
@@ -3081,7 +3119,7 @@ liveMessagesUI = createLiveMessages({
       draftKey: draftKey(),
       runId: run?.id,
       sessionId: run?.sessionId || state.sessionId,
-      cwd: state.projectCwd,
+      cwd: execCwdOf(),
       running: isRunning(run),
       stopping: run?.status === 'stopping',
       readOnly: state.readOnly,

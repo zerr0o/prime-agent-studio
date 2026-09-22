@@ -43,6 +43,30 @@ Le format `.pastudio` (v1) transfère des conversations complètes vers un autre
 - Un import interrompu reste en attente : prévisualisez-le et relancez-le sans rien réinstaller.
 - Limite d’archive : 128 Mio compressés assortis côté serveur et interface (256 Mio non compressés au total, 128 Mio par entrée) ; une archive de plus de 64 Mio demande la version 3.4.1 des deux côtés.
 
+## Worktrees Git
+
+Un **worktree Git** fournit un checkout et une branche dédiés, rattachés au dépôt du projet. Le mode habituel continue à travailler dans le dossier du projet. L’isolation est un choix explicite, pas un changement des conversations existantes.
+
+### Créer et travailler
+
+Dans le projet, ouvrez **Nouveau worktree**, choisissez le mode **Worktree** et donnez-lui un nom. La conversation reste rattachée au projet d’origine. L’agent et l’explorateur de fichiers utilisent le dossier du worktree. La liste **Worktrees conservés** permet de reprendre un worktree, même si aucune conversation n’y a encore démarré.
+
+Le projet doit être un dépôt Git avec au moins un commit et une branche active. Le dossier isolé démarre depuis le commit courant. Les modifications non commitées du projet restent dans le dossier d’origine ; elles ne sont ni copiées, ni remisées, ni supprimées.
+
+La branche et le chemin effectif permettent de vérifier où l’agent travaille. Ses sous-agents partagent ce dossier par défaut. Les dépendances, fichiers ignorés et secrets locaux ne sont pas copiés automatiquement. Préparez l’environnement si nécessaire avant de lancer les tests.
+
+### Diff et merge
+
+La vue du diff présente les fichiers et un diff borné. Les fichiers non suivis sont signalés par leur nom, sans lecture automatique de leur contenu. Une sortie trop volumineuse est indiquée comme tronquée.
+
+Le merge demande une confirmation. Pour cette première version, les changements de la tâche doivent être commités, le dossier cible doit être propre et sa branche doit permettre une avance rapide (**fast-forward**). Une cible modifiée, une branche divergente ou un agent actif bloque le merge direct. **Préparer le merge avec l’agent** permet de demander à l’agent de préparer les commits, résoudre les conflits dans le dossier isolé et relancer les contrôles. Le dossier principal reste inchangé pendant cette préparation ; le merge final exige toujours votre confirmation. L’agent vous demande un choix si le conflit porte sur le comportement souhaité. Aucun commit global, push, stash ou reset n’est effectué automatiquement.
+
+### Conserver ou supprimer
+
+Vous pouvez conserver le dossier pour reprendre la tâche plus tard. La suppression d’un worktree géré demande une confirmation supplémentaire s’il contient du travail non mergé ou non commité. La branche Git est conservée ; les modifications non commitées supprimées ne sont pas sauvegardées par cette branche.
+
+Les actions de gestion sont réservées au Studio ouvert localement sur le PC. Un worktree n’est **pas une sandbox** : les processus, ports, bases de données et services externes restent partagés. Les projets utilisant des filtres Git exécutables ne sont pas pris en charge par cette V1.
+
 ## Images et pièces jointes
 
 Deux boutons distincts accompagnent le champ de saisie : **Photo** ouvre le sélecteur d’images du téléphone ou du PC ; **Pièce jointe** accepte tout type de fichier. Vous pouvez aussi **glisser-déposer** les fichiers dans la conversation, ou **coller** les images et documents que le navigateur reçoit du presse-papiers. Le collage de texte habituel reste disponible.

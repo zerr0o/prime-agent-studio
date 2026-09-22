@@ -1,0 +1,353 @@
+/* Isolated Git task worktrees, sober panel consistent with Studio modals. */
+#new-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 7px;
+  padding: 8px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 8px;
+  width: 100%;
+  justify-content: center;
+}
+#new-task:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+#new-task:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#new-task svg {
+  width: 13px;
+  height: 13px;
+}
+.worktree-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 18px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.worktree-banner[hidden] {
+  display: none;
+}
+.worktree-banner strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.worktree-banner .wt-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.worktree-banner code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.worktree-banner code.wt-path {
+  color: var(--muted);
+}
+.worktree-banner .wt-spacer {
+  flex: 1;
+}
+.wt-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.wt-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.wt-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wt-button.primary {
+  background: var(--accent);
+  color: #252132;
+  border-color: transparent;
+}
+.wt-button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: #252132;
+}
+.wt-button.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+.wt-field {
+  margin-bottom: 16px;
+}
+.wt-field > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.wt-hint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.wt-radio {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.wt-radio {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: start;
+}
+.wt-radio input[type='radio'] {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  justify-self: start;
+}
+.wt-radio > span {
+  min-width: 0;
+}
+.wt-radio strong {
+  font-size: 13px;
+  color: var(--text);
+}
+#worktree-dialog .wt-radio strong,
+#worktree-task-dialog .wt-radio strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.wt-radio small {
+  font-size: 12px;
+  color: var(--text);
+}
+#worktree-dialog .wt-radio small,
+#worktree-task-dialog .wt-radio small {
+  font-size: 12px;
+  color: var(--text);
+}
+.wt-radio:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.wt-radio:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wt-radio strong {
+  display: block;
+  font-size: 12px;
+}
+.wt-radio small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-top: 3px;
+}
+.wt-meta {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px 12px;
+  font-size: 11.5px;
+  margin: 0 0 16px;
+}
+.wt-meta dt {
+  color: var(--faint);
+}
+.wt-meta dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.wt-meta code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+.wt-section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.wt-section h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.wt-files {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.wt-files li {
+  display: flex;
+}
+.wt-files button {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.wt-files li:last-child button {
+  border-bottom: 0;
+}
+.wt-files button:hover,
+.wt-files button[aria-current="true"] {
+  background: var(--surface-hover);
+}
+.wt-files .wt-st {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 88px;
+}
+.wt-files .wt-path {
+  overflow-wrap: anywhere;
+}
+.wt-diff {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0 0 12px;
+}
+.wt-check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  line-height: 1.6;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.wt-check input {
+  margin-top: 3px;
+}
+.wt-status {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+.wt-status.error {
+  color: var(--red);
+}
+@media (max-width: 760px) {
+  .worktree-banner {
+    margin: 8px 10px 0;
+    flex-wrap: wrap;
+  }
+  .worktree-banner code {
+    max-width: 100%;
+  }
+  .wt-meta {
+    grid-template-columns: 96px 1fr;
+  }
+}
+
+/* Wide readable diff panel: beats generic .modal width with higher specificity. */
+#worktree-task-dialog.modal {
+  width: min(1100px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 0;
+}
+#worktree-task-dialog .wt-sticky {
+  position: sticky;
+  top: 0;
+  background: var(--surface-raised);
+  padding: 24px 28px 12px;
+  border-bottom: 1px solid var(--line);
+  z-index: 2;
+}
+#worktree-task-dialog .wt-body {
+  padding: 16px 28px 24px;
+}
+#worktree-task-dialog .wt-layout {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+#worktree-task-dialog .wt-check span {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 400;
+  margin-left: 0;
+}
+#worktree-task-dialog .wt-radio small {
+  font-size: 12px;
+  color: var(--text);
+}
+#worktree-task-dialog .wt-details > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+@media (max-width: 760px) {
+  #worktree-task-dialog .wt-layout {
+    grid-template-columns: 1fr;
+  }
+  #worktree-task-dialog .wt-sticky,
+  #worktree-task-dialog .wt-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
