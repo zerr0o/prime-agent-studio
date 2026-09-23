@@ -6090,4 +6090,30 @@ export const messages = {
     fr: 'Raccourci indisponible. Le bouton Arrêter le bureau reste disponible.',
     en: 'Shortcut unavailable. The Stop desktop button remains available.',
   },
+  'computer.backendLabel': { fr: 'Moteur de bureau', en: 'Desktop engine' },
+  'computer.backendNative': {
+    fr: 'Intégration originale (Windows)',
+    en: 'Original integration (Windows)',
+  },
+  'computer.backendCua': { fr: 'Cua Driver (beta)', en: 'Cua Driver (beta)' },
+  'computer.backendCuaUnavailable': {
+    fr: 'Cua Driver indisponible sur ce serveur. Choisissez l’intégration originale.',
+    en: 'Cua Driver unavailable on this server. Choose the original integration.',
+  },
+  'computer.backendChangeNeedsOff': {
+    fr: 'Désactivez le bureau pour changer de moteur.',
+    en: 'Turn off desktop to change the engine.',
+  },
+  'computer.backendBetaNote': {
+    fr: 'Bêta Windows x64 uniquement.',
+    en: 'Beta for Windows x64 only.',
+  },
+  'computer.cleanupPending': {
+    fr: 'Nettoyage du bureau en cours.',
+    en: 'Desktop cleanup in progress.',
+  },
+  'computer.cleanupFailed': {
+    fr: 'Nettoyage incomplet. Utilisez Arrêter le bureau pour réessayer.',
+    en: 'Cleanup incomplete. Use Stop desktop to retry.',
+  },
 };

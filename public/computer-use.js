@@ -15,6 +15,57 @@ function truncate(text, limit = ACTION_PREVIEW_LIMIT) {
   return `${value.slice(0, limit - 1)}…`;
 }
 
+export const COMPUTER_USE_BACKEND_NATIVE = 'native';
+export const COMPUTER_USE_BACKEND_CUA = 'cua';
+
+export function normalizeBackendId(value) {
+  return value === COMPUTER_USE_BACKEND_CUA ? COMPUTER_USE_BACKEND_CUA : COMPUTER_USE_BACKEND_NATIVE;
+}
+
+function cleanBackendReason(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.trim().slice(0, 500);
+}
+
+export function normalizeComputerBackends(raw, supportedFallback = true) {
+  const fallback = supportedFallback !== false;
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const list = Array.isArray(source.backends) ? source.backends : null;
+  if (!list) {
+    return [
+      { id: COMPUTER_USE_BACKEND_NATIVE, supported: fallback, available: fallback, reason: null },
+      { id: COMPUTER_USE_BACKEND_CUA, supported: false, available: false, reason: null },
+    ];
+  }
+  const byId = new Map();
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (entry.id !== COMPUTER_USE_BACKEND_NATIVE && entry.id !== COMPUTER_USE_BACKEND_CUA) continue;
+    if (byId.has(entry.id)) continue;
+    byId.set(entry.id, {
+      id: entry.id,
+      supported: entry.supported !== false,
+      available: entry.available === true,
+      reason: cleanBackendReason(entry.reason),
+    });
+  }
+  if (!byId.has(COMPUTER_USE_BACKEND_NATIVE))
+    byId.set(COMPUTER_USE_BACKEND_NATIVE, {
+      id: COMPUTER_USE_BACKEND_NATIVE,
+      supported: fallback,
+      available: fallback,
+      reason: null,
+    });
+  if (!byId.has(COMPUTER_USE_BACKEND_CUA))
+    byId.set(COMPUTER_USE_BACKEND_CUA, {
+      id: COMPUTER_USE_BACKEND_CUA,
+      supported: false,
+      available: false,
+      reason: null,
+    });
+  return [byId.get(COMPUTER_USE_BACKEND_NATIVE), byId.get(COMPUTER_USE_BACKEND_CUA)];
+}
+
 export function ownerDisplayName(owner) {
   if (!owner || typeof owner !== 'object') return '';
   if (typeof owner.name === 'string' && owner.name.trim()) return owner.name.trim().slice(0, 60);
@@ -60,8 +111,9 @@ export function normalizeComputerStatus(raw) {
           ...(typeof source.owner.name === 'string' ? { name: source.owner.name } : {}),
         }
       : null;
+  const supported = source.supported !== false;
   return {
-    supported: source.supported !== false,
+    supported,
     enabled: source.enabled === true,
     owner,
     busy: source.busy === true,
@@ -73,12 +125,17 @@ export function normalizeComputerStatus(raw) {
     lastAction: Object.hasOwn(source, 'lastAction') ? source.lastAction : null,
     lastFrame: Object.hasOwn(source, 'lastFrame') ? source.lastFrame : null,
     error: typeof source.error === 'string' ? source.error : null,
+    backend: normalizeBackendId(source.backend),
+    backends: normalizeComputerBackends(source, supported),
+    cleanupPending: source.cleanupPending === true,
+    cleanupFailed: source.cleanupFailed === true,
   };
 }
 
 export function createComputerUse({ api, getContext, toast }) {
   const $ = (id) => document.getElementById(id);
   let draftEnabled = false;
+  let selectedBackend = COMPUTER_USE_BACKEND_NATIVE;
   let lastStatus = null;
   let lastFetchError = null;
   let busyAction = false;
@@ -120,7 +177,17 @@ export function createComputerUse({ api, getContext, toast }) {
 
   function hasController() {
     if (!lastStatus || lastStatus.supported === false) return false;
-    return Boolean(lastStatus.owner || lastStatus.busy || lastStatus.enabled);
+    return Boolean(
+      lastStatus.owner ||
+      lastStatus.busy ||
+      lastStatus.enabled ||
+      lastStatus.cleanupPending === true ||
+      lastStatus.cleanupFailed === true,
+    );
+  }
+
+  function isCleanupBlocked() {
+    return lastStatus != null && (lastStatus.cleanupPending === true || lastStatus.cleanupFailed === true);
   }
 
   function isOn() {
@@ -134,12 +201,90 @@ export function createComputerUse({ api, getContext, toast }) {
     return Boolean(ctx.projectCwd) && ctx.projectOverview !== true;
   }
 
+  function backendEntry(id) {
+    const list = Array.isArray(lastStatus?.backends) ? lastStatus.backends : [];
+    const found = list.find((entry) => entry?.id === id);
+    if (found) return found;
+    if (id === COMPUTER_USE_BACKEND_CUA) return { id, supported: false, available: false, reason: null };
+    const fallback = lastStatus ? lastStatus.supported !== false : true;
+    return { id, supported: fallback, available: fallback, reason: null };
+  }
+
+  function isBackendAvailable(id) {
+    return backendEntry(id).available === true;
+  }
+
+  function backendReason(id) {
+    const reason = backendEntry(id).reason;
+    return typeof reason === 'string' && reason ? reason : null;
+  }
+
+  function isBackendSelectorDisabled() {
+    const ctx = context();
+    if (ctx.readOnly === true) return true;
+    if (ctx.online === false) return true;
+    if (busyAction || stopBusy) return true;
+    if (lastStatus == null) return true;
+    if (lastStatus.supported === false) return true;
+    if (isOn()) return true;
+    return false;
+  }
+
+  function backendHintText() {
+    if (lastStatus == null) return '';
+    if (lastStatus.supported === false) return '';
+    const cua = backendEntry(COMPUTER_USE_BACKEND_CUA);
+    if (cua.available === true) return tr('computer.backendBetaNote');
+    return backendReason(COMPUTER_USE_BACKEND_CUA) || tr('computer.backendCuaUnavailable');
+  }
+
+  function setBackend(id) {
+    if (id !== COMPUTER_USE_BACKEND_NATIVE && id !== COMPUTER_USE_BACKEND_CUA) return false;
+    if (isBackendSelectorDisabled()) return false;
+    if (!isBackendAvailable(id)) return false;
+    if (selectedBackend === id) {
+      update();
+      return true;
+    }
+    selectedBackend = id;
+    update();
+    return true;
+  }
+
+  function getSelectedBackend() {
+    return selectedBackend;
+  }
+
+  function explicitBackendFrom(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.backend === COMPUTER_USE_BACKEND_CUA) return COMPUTER_USE_BACKEND_CUA;
+    if (raw.backend === COMPUTER_USE_BACKEND_NATIVE) return COMPUTER_USE_BACKEND_NATIVE;
+    return null;
+  }
+
+  function syncBackendFromScopedStatus(nextStatus, raw) {
+    if (!nextStatus || nextStatus.enabled !== true) return;
+    const explicit = explicitBackendFrom(raw);
+    if (!explicit) return;
+    if (nextStatus.owner) {
+      const ctxNow = context();
+      const mineNow =
+        (ctxNow.sessionId && nextStatus.owner.sessionId === ctxNow.sessionId) ||
+        (ctxNow.runId && nextStatus.owner.runId === ctxNow.runId);
+      if (mineNow) selectedBackend = explicit;
+      return;
+    }
+    selectedBackend = explicit;
+  }
+
   function statusText() {
     const ctx = context();
     if (ctx.online === false) return tr('computer.offline');
     if (lastStatus == null) return lastFetchError ? tr('computer.statusError') : tr('computer.loading');
     if (lastStatus.supported === false) return tr('computer.unsupported');
+    if (lastStatus.cleanupFailed === true) return tr('computer.cleanupFailed');
     if (stopBusy || busyAction) return tr('computer.working');
+    if (lastStatus.cleanupPending === true) return tr('computer.cleanupPending');
     if (lastStatus.busy && isMine()) return tr('computer.working');
     if (isMine()) return tr('computer.onMine');
     if (isOther()) return tr('computer.onOther', { value1: ownerDisplayName(lastStatus.owner) || '?' });
@@ -176,7 +321,8 @@ export function createComputerUse({ api, getContext, toast }) {
     const online = ctx.online !== false;
     const on = isOn();
     const mine = isMine();
-    const controlDisabled = readOnly || busyAction || stopBusy || !known || !supported || !online;
+    const controlDisabled =
+      readOnly || busyAction || stopBusy || !known || !supported || !online || isCleanupBlocked();
     const box = $('allow-computer-use');
     if (box) {
       if (box.checked !== on) box.checked = on;
@@ -205,13 +351,15 @@ export function createComputerUse({ api, getContext, toast }) {
           ? 'loading'
           : !supported
             ? 'unsupported'
-            : mine
-              ? 'mine'
-              : isOther()
-                ? 'other'
-                : on
-                  ? 'draft'
-                  : 'off';
+            : lastStatus.cleanupFailed === true || lastStatus.cleanupPending === true
+              ? 'cleanup'
+              : mine
+                ? 'mine'
+                : isOther()
+                  ? 'other'
+                  : on
+                    ? 'draft'
+                    : 'off';
     }
     const stopBtn = $('computer-use-stop');
     if (stopBtn) {
@@ -227,6 +375,8 @@ export function createComputerUse({ api, getContext, toast }) {
       if (!known)
         bindText(warning, () => (lastFetchError ? tr('computer.statusError') : tr('computer.loading')));
       else if (!supported) bindText(warning, () => tr('computer.unsupported'));
+      else if (lastStatus.cleanupFailed === true) bindText(warning, () => tr('computer.cleanupFailed'));
+      else if (lastStatus.cleanupPending === true) bindText(warning, () => tr('computer.cleanupPending'));
       else if (readOnly) bindText(warning, () => tr('computer.readonlyNote'));
       else bindText(warning, () => tr('computer.warning'));
     }
@@ -243,6 +393,37 @@ export function createComputerUse({ api, getContext, toast }) {
             ? tr('computer.hotkeyUnavailable')
             : lastStatus.hotkey || '-',
       );
+    const backendLabel = $('computer-use-backend-label');
+    if (backendLabel) bindText(backendLabel, () => tr('computer.backendLabel'));
+    const backendNativeLabel = $('computer-use-backend-native-label');
+    if (backendNativeLabel) bindText(backendNativeLabel, () => tr('computer.backendNative'));
+    const backendCuaLabel = $('computer-use-backend-cua-label');
+    if (backendCuaLabel) bindText(backendCuaLabel, () => tr('computer.backendCua'));
+    const backendNative = $('computer-use-backend-native');
+    const backendCua = $('computer-use-backend-cua');
+    if (backendNative || backendCua) {
+      const selectorDisabled = isBackendSelectorDisabled();
+      if (backendNative) {
+        backendNative.checked = selectedBackend === COMPUTER_USE_BACKEND_NATIVE;
+        backendNative.disabled = selectorDisabled || !isBackendAvailable(COMPUTER_USE_BACKEND_NATIVE);
+        bindAttribute(backendNative, 'title', () =>
+          selectorDisabled ? tr('computer.backendChangeNeedsOff') : tr('computer.backendNative'),
+        );
+        bindAttribute(backendNative, 'aria-label', () => tr('computer.backendNative'));
+      }
+      if (backendCua) {
+        backendCua.checked = selectedBackend === COMPUTER_USE_BACKEND_CUA;
+        backendCua.disabled = selectorDisabled || !isBackendAvailable(COMPUTER_USE_BACKEND_CUA);
+        bindAttribute(backendCua, 'title', () =>
+          selectorDisabled
+            ? tr('computer.backendChangeNeedsOff')
+            : backendReason(COMPUTER_USE_BACKEND_CUA) || tr('computer.backendCua'),
+        );
+        bindAttribute(backendCua, 'aria-label', () => tr('computer.backendCua'));
+      }
+    }
+    const backendHint = $('computer-use-backend-hint');
+    if (backendHint) bindText(backendHint, () => backendHintText());
   }
 
   function queryUrl() {
@@ -263,8 +444,10 @@ export function createComputerUse({ api, getContext, toast }) {
     try {
       const data = await api(queryUrl(), { signal: controller.signal });
       if (turn !== generation || controller.signal.aborted || queryKey() !== key) return null;
-      lastStatus = normalizeComputerStatus(data);
+      const nextStatus = normalizeComputerStatus(data);
+      lastStatus = nextStatus;
       lastFetchError = null;
+      syncBackendFromScopedStatus(nextStatus, data);
       update();
       return lastStatus;
     } catch (error) {
@@ -287,6 +470,7 @@ export function createComputerUse({ api, getContext, toast }) {
   async function setEnabled(next) {
     const ctx = context();
     if (ctx.readOnly === true || busyAction || stopBusy) return false;
+    if (isCleanupBlocked()) return false;
     if (!ctx.projectCwd || ctx.projectOverview === true) return false;
     if (!ctx.sessionId && !ctx.runId) {
       if (next !== true) {
@@ -295,12 +479,14 @@ export function createComputerUse({ api, getContext, toast }) {
         return false;
       }
       if (lastStatus == null || lastStatus.supported === false) return false;
+      if (!isBackendAvailable(selectedBackend)) return false;
       draftEnabled = true;
       update();
       return true;
     }
     if (lastStatus == null || lastStatus.supported === false) return false;
     if (lastStatus.owner && !isMine() && next === false) return false;
+    if (next === true && !isBackendAvailable(selectedBackend)) return false;
     const turn = ++generation;
     const key = queryKey();
     const body = {
@@ -308,14 +494,17 @@ export function createComputerUse({ api, getContext, toast }) {
       ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
       ...(ctx.runId ? { runId: ctx.runId } : {}),
       ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
+      ...(next === true ? { backend: selectedBackend } : {}),
     };
     busyAction = true;
     update();
     try {
       const data = await api('/api/computer-use', { method: 'POST', body });
       if (turn !== generation || queryKey() !== key) return false;
-      lastStatus = normalizeComputerStatus(data);
+      const nextStatus = normalizeComputerStatus(data);
+      lastStatus = nextStatus;
       lastFetchError = null;
+      syncBackendFromScopedStatus(nextStatus, data);
       update();
       return lastStatus.enabled === true;
     } catch (error) {
@@ -371,8 +560,14 @@ export function createComputerUse({ api, getContext, toast }) {
     return draftEnabled === true;
   }
 
+  function getRunBackend() {
+    if (!shouldIncludeInRun()) return null;
+    return selectedBackend;
+  }
+
   function onSessionChange() {
     draftEnabled = false;
+    selectedBackend = COMPUTER_USE_BACKEND_NATIVE;
     lastStatus = null;
     lastFetchError = null;
     generation += 1;
@@ -412,6 +607,16 @@ export function createComputerUse({ api, getContext, toast }) {
     if (toggle) toggle.onclick = () => void setEnabled(!isOn());
     const stopBtn = $('computer-use-stop');
     if (stopBtn) stopBtn.onclick = () => void stopComputer();
+    const backendNative = $('computer-use-backend-native');
+    if (backendNative)
+      backendNative.onchange = () => {
+        if (backendNative.checked) void setBackend(COMPUTER_USE_BACKEND_NATIVE);
+      };
+    const backendCua = $('computer-use-backend-cua');
+    if (backendCua)
+      backendCua.onchange = () => {
+        if (backendCua.checked) void setBackend(COMPUTER_USE_BACKEND_CUA);
+      };
     update();
     void refresh({ silent: true });
     pollTimer = setInterval(tick, POLL_MS);
@@ -435,8 +640,14 @@ export function createComputerUse({ api, getContext, toast }) {
     notifyRunCreated,
     notifyRunFinished,
     shouldIncludeInRun,
+    getRunBackend,
+    getSelectedBackend,
+    setBackend,
     setEnabled,
     stopComputer,
+    get selectedBackend() {
+      return selectedBackend;
+    },
     get draftEnabled() {
       return draftEnabled;
     },

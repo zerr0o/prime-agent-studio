@@ -22,6 +22,7 @@ const EXPECTED_TOOLS = [
   'computer_status',
   'computer_windows',
   'computer_observe',
+  'computer_inspect',
   'computer_act',
   'computer_release',
 ];
@@ -1308,7 +1309,7 @@ function blockedReason(error) {
 }
 
 const MANDATORY_CHECKS = [
-  'five computer tools discovered by the real engine',
+  'six computer tools discovered by the real engine (status, windows, observe, inspect, act, release)',
   'disabled status reports enabled false, disabled observe refuses with enable hint',
   'enabled status returns owner binding, enabled observe pixels arrive in the next model request as an image part',
   'bounded window wait returns the fake driver window without implying application readiness',

@@ -252,6 +252,8 @@ test('worker freshness codes surface with their code', async () => {
     'FOCUS_CHANGED',
     'STALE_GENERATION',
     'WINDOW_MINIMIZED',
+    'WINDOW_NOT_FOUND',
+    'FOCUS_REFUSED',
     'CONTROLLER_BUSY',
   ]) {
     const fake = createFakeProcess();
@@ -288,6 +290,191 @@ test('observe and status results pass through untouched', async () => {
   fake.respond(line.id, payload);
   assert.deepEqual(await pending, payload);
   await driver.close();
+});
+
+test('observe maxWidth 4096 stays valid on the wire (worker caps both sides to 2000)', async () => {
+  const fake = createFakeProcess();
+  const driver = autoDriver(fake);
+  const { pending, line } = await sendRequest(fake, driver, {
+    method: 'observe',
+    params: { maxWidth: 4096 },
+  });
+  assert.equal(line.params.maxWidth, 4096);
+  fake.respond(line.id, {
+    image: { data: 'ZmFrZQ==', mimeType: 'image/jpeg' },
+    frame: {
+      width: 2000,
+      height: 750,
+      bounds: { x: -2560, y: 0, width: 7680, height: 2880 },
+      capturedAt: '2026-09-23T10:00:00.000Z',
+    },
+    desktopBounds: { x: -2560, y: 0, width: 7680, height: 2880 },
+    foregroundWindowId: '1',
+  });
+  const result = await pending;
+  assert.ok(result.frame.width <= 2000 && result.frame.height <= 2000);
+  await driver.close();
+});
+
+test('windows focus refusal surfaces as FOCUS_REFUSED, never as success', async () => {
+  const fake = createFakeProcess();
+  const driver = autoDriver(fake);
+  const { pending, line } = await sendRequest(fake, driver, {
+    method: 'windows',
+    params: { action: 'focus', windowId: '198738' },
+  });
+  assert.equal(line.params.windowId, '198738');
+  fake.fail(line.id, 'FOCUS_REFUSED', 'Windows kept chrome in the foreground instead of Roon.');
+  await assert.rejects(pending, (error) => {
+    assert.equal(error.code, 'FOCUS_REFUSED');
+    assert.match(error.message, /foreground/);
+    return true;
+  });
+  await driver.close();
+});
+
+test('external input methods pass through with generation and never auto-stop', async () => {
+  const fake = createFakeProcess();
+  const events = [];
+  const driver = autoDriver(fake, { onEvent: (event) => events.push(event) });
+  const arm = driver.request({
+    method: 'arm_external_input',
+    params: { buttons: ['left'], keys: ['ctrl'] },
+  });
+  await tick();
+  fake.ready();
+  const armLine = await waitForLine(fake);
+  assert.equal(armLine.method, 'arm_external_input');
+  assert.deepEqual(armLine.params.buttons, ['left']);
+  assert.ok(Number.isInteger(armLine.generation));
+  fake.respond(armLine.id, { armed: true, buttons: 1, keys: 1 });
+  assert.deepEqual(await arm, { armed: true, buttons: 1, keys: 1 });
+  const cleanup = driver.request({ method: 'cleanup_external_input', params: {} }, { timeoutMs: 40 });
+  cleanup.catch(() => {});
+  const cleanupLine = await waitForLine(fake, 1, 'cleanup line');
+  assert.equal(cleanupLine.method, 'cleanup_external_input');
+  await assert.rejects(cleanup, { code: 'TIMEOUT' });
+  await tick(3);
+  assert.equal(fake.received.filter((line) => line.method === 'stop').length, 0);
+  assert.ok(!events.some((event) => event.kind === 'worker_auto_stop'));
+  const disarm = driver.request({ method: 'disarm_external_input', params: {} });
+  const disarmLine = await waitForLine(fake, 2, 'disarm line');
+  assert.equal(disarmLine.method, 'disarm_external_input');
+  fake.respond(disarmLine.id, { disarmed: true, buttons: 0, keys: 0 });
+  assert.deepEqual(await disarm, { disarmed: true, buttons: 0, keys: 0 });
+  await driver.close();
+});
+
+test('external arm busy refusal surfaces as CONTROLLER_BUSY', async () => {
+  const fake = createFakeProcess();
+  const driver = autoDriver(fake);
+  const { pending, line } = await sendRequest(fake, driver, {
+    method: 'arm_external_input',
+    params: { buttons: ['left'], keys: ['ctrl'] },
+  });
+  assert.equal(line.method, 'arm_external_input');
+  fake.fail(line.id, 'CONTROLLER_BUSY', 'The desktop is already controlled by another Studio worker.');
+  await assert.rejects(pending, (error) => {
+    assert.equal(error.code, 'CONTROLLER_BUSY');
+    return true;
+  });
+  await driver.close();
+});
+
+test('external arm validation rejects locally without spawning', async () => {
+  const cases = [
+    { method: 'arm_external_input', params: {} },
+    { method: 'arm_external_input', params: { buttons: ['side'] } },
+    { method: 'arm_external_input', params: { buttons: Array.from({ length: 13 }, () => 'left') } },
+    { method: 'arm_external_input', params: { keys: Array.from({ length: 9 }, () => 'a') } },
+    { method: 'arm_external_input', params: { keys: [''] } },
+  ];
+  for (const command of cases) {
+    const fake = createFakeProcess();
+    const driver = autoDriver(fake);
+    await assert.rejects(driver.request(command), (error) => {
+      assert.equal(error.code, 'INVALID_PARAMS');
+      return true;
+    });
+    assert.equal(fake.spawns.length, 0);
+    await driver.close();
+  }
+});
+
+test('job methods pass through with generation and stay legal after stop', async () => {
+  const fake = createFakeProcess();
+  const events = [];
+  const driver = autoDriver(fake, { onEvent: (event) => events.push(event) });
+  const launch = driver.request({
+    method: 'job_launch',
+    params: {
+      exe: 'C:\\tools\\cua-driver.exe',
+      args: ['serve', '--socket', 'sock'],
+      env: { CUA_DRIVER_RS_HOME: 'C:\\tmp\\home' },
+      nonce: 'adapter-nonce-0001',
+    },
+  });
+  await tick();
+  fake.ready();
+  const launchLine = await waitForLine(fake);
+  assert.equal(launchLine.method, 'job_launch');
+  assert.ok(Number.isInteger(launchLine.generation));
+  fake.respond(launchLine.id, { launched: true, pid: 4242, jobName: 'Local\\job' });
+  assert.deepEqual(await launch, { launched: true, pid: 4242, jobName: 'Local\\job' });
+  const status = driver.request({ method: 'job_status', params: {} }, { timeoutMs: 40 });
+  status.catch(() => {});
+  const statusLine = await waitForLine(fake, 1, 'status line');
+  assert.equal(statusLine.method, 'job_status');
+  await assert.rejects(status, { code: 'TIMEOUT' });
+  await tick(3);
+  assert.equal(fake.received.filter((line) => line.method === 'stop').length, 0);
+  assert.ok(!events.some((event) => event.kind === 'worker_auto_stop'));
+  const kill = driver.request({ method: 'job_kill', params: { timeoutMs: 1000 } });
+  const killLine = await waitForLine(fake, 2, 'kill line');
+  assert.equal(killLine.method, 'job_kill');
+  fake.respond(killLine.id, { treeExited: true, activeProcesses: 0 });
+  assert.deepEqual(await kill, { treeExited: true, activeProcesses: 0 });
+  const reconcile = driver.request({ method: 'job_reconcile', params: { nonce: 'adapter-nonce-0001' } });
+  const reconcileLine = await waitForLine(fake, 3, 'reconcile line');
+  assert.equal(reconcileLine.method, 'job_reconcile');
+  fake.respond(reconcileLine.id, { found: false });
+  const recResult = await reconcile;
+  assert.equal(recResult.found, false);
+  assert.ok(!('treeExited' in recResult));
+  const adopt = driver.request({
+    method: 'job_adopt',
+    params: { pid: 4243, exe: 'C:\\tools\\cua-driver.exe', parentPid: 100, birthMs: 1, socketNonce: 'sock' },
+  });
+  const adoptLine = await waitForLine(fake, 4, 'adopt line');
+  assert.equal(adoptLine.method, 'job_adopt');
+  fake.fail(adoptLine.id, 'ADOPT_REFUSED', 'nonce-mismatch (private socket not in command line).');
+  await assert.rejects(adopt, (error) => {
+    assert.equal(error.code, 'ADOPT_REFUSED');
+    return true;
+  });
+  await driver.close();
+});
+
+test('job validation rejects locally without spawning', async () => {
+  const cases = [
+    { method: 'job_launch', params: {} },
+    { method: 'job_launch', params: { exe: 'x', env: {}, nonce: 'short' } },
+    { method: 'job_launch', params: { exe: 'x', env: {}, nonce: 'adapter-nonce-0001', args: 'nope' } },
+    { method: 'job_adopt', params: { pid: 1, exe: 'x', birthMs: 1 } },
+    { method: 'job_adopt', params: { pid: -2, exe: 'x', birthMs: 1, socketNonce: 's' } },
+    { method: 'job_kill', params: { timeoutMs: 99999 } },
+    { method: 'job_reconcile', params: { nonce: 'bad nonce!' } },
+  ];
+  for (const command of cases) {
+    const fake = createFakeProcess();
+    const driver = autoDriver(fake);
+    await assert.rejects(driver.request(command), (error) => {
+      assert.equal(error.code, 'INVALID_PARAMS');
+      return true;
+    });
+    assert.equal(fake.spawns.length, 0);
+    await driver.close();
+  }
 });
 
 test('a hanging worker triggers TIMEOUT and late answers are ignored', async () => {

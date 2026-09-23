@@ -5,6 +5,7 @@
 
 import { Type } from 'typebox';
 import { request as httpRequest } from 'node:http';
+import { filterComputerUseImagesWithReport } from './computer-use-image-safety.mjs';
 
 const optional = Type.Optional;
 const object = (properties) => Type.Object(properties, { additionalProperties: false });
@@ -60,6 +61,12 @@ function stripImageBytes(value) {
 }
 
 export default function studioComputerUse(pi) {
+  // Normalize only the transient provider context. Never rewrite session logs
+  // or rescale an old screenshot while leaving its coordinate frame intact.
+  pi.on('context', (event) => {
+    const result = filterComputerUseImagesWithReport(event.messages);
+    return result.dropped ? { messages: result.messages } : undefined;
+  });
   if (!process.env.PRIME_STUDIO_COMPUTER_USE_CONFIG) return;
   let config;
   try {
@@ -158,9 +165,21 @@ export default function studioComputerUse(pi) {
     const frame = response.observe.frame;
     const applicationState = applicationStateOf(response);
     const observationError = observationErrorOf(response);
-    const textPayload = { executed: response.executed, frame, applicationState };
+    const { observe, ...safe } = stripImageBytes(response);
+    const textPayload = {
+      ...safe,
+      frame,
+      applicationState,
+      ...(observe?.elements ? { elements: observe.elements, truncated: observe.truncated } : {}),
+    };
     if (observationError) textPayload.observationError = observationError;
-    const details = { action: 'computer_act', executed: response.executed, frame, applicationState };
+    const details = {
+      action: 'computer_act',
+      executed: response.executed,
+      frame,
+      applicationState,
+      ...(response.partial !== undefined ? { partial: response.partial } : {}),
+    };
     if (observationError) details.observationError = observationError;
     return {
       content: [
@@ -218,7 +237,7 @@ export default function studioComputerUse(pi) {
   register(
     'computer_status',
     'Computer status',
-    'Check Computer Use desktop state: owner, busy flag, last action and last frame metadata. Returns the true off state while disabled and tells how to enable. Never returns pixels, never captures, never moves input.',
+    'Check Computer Use desktop state: owner, busy flag, last action and last frame metadata. Returns the true off state while disabled and tells how to enable. Reports the selected backend (native or cua) and availability without enabling or switching it. Never returns pixels, never captures, never moves input.',
     object({}),
     async (_params, state, signal) => textResult('computer_status', await send('status', {}, state, signal)),
     true,
@@ -259,7 +278,7 @@ export default function studioComputerUse(pi) {
   register(
     'computer_observe',
     'Computer observe',
-    'Capture a screenshot of the real Windows desktop. Returns an image plus frame metadata with frameId, width, height and bounds. Coordinates in later actions use screenshot pixels of that exact frame. The image is point-in-time and can show loading or unsettled UI, so after launching an app wait for its window and observe that window before claiming an outcome. Observe again after every action batch. If off, the error explains how to enable in Studio.',
+    'Capture a screenshot of the real Windows desktop. Returns an image plus frame metadata with frameId, width, height and bounds. Coordinates in later actions use screenshot pixels of that exact frame. The image is point-in-time and can show loading or unsettled UI, so after launching an app wait for its window and observe that window before claiming an outcome. Observe again after every action batch. If off, the error explains how to enable in Studio. Images are capped at 2000 pixels on both axes, even when maxWidth is larger, for provider compatibility. With CUA, named-window captures also include accessibility elements; use their elementId for semantic actions. CUA in this beta supports full windows or the primary desktop, not region crops. maxWidth limits the long edge of window captures; primary-desktop captures stay at native resolution and are refused above 2000 pixels on either axis, so select a windowId instead. The original backend supports regions and the full multi-monitor desktop. Inspect or observe is always required after changing backend.',
     object({
       windowId: optional(Type.String({ minLength: 1, maxLength: 500 })),
       region: optional(
@@ -279,27 +298,38 @@ export default function studioComputerUse(pi) {
       return {
         content: [
           { type: 'image', data: response.image.data, mimeType: response.image.mimeType },
-          { type: 'text', text: JSON.stringify({ frame: response.frame }) },
+          { type: 'text', text: JSON.stringify(stripImageBytes({ ...response, image: undefined })) },
         ],
         details: { action: 'computer_observe', frame: response.frame },
       };
     },
   );
 
+  register(
+    'computer_inspect',
+    'Computer inspect',
+    'CUA mode only: read a window accessibility tree without taking a screenshot. Get windowId from computer_windows first. Returns bounded elements with elementId and a fresh accessibility-only frameId. Prefer this for named buttons and text fields when CUA is selected. Use elementId in computer_act, or set_value with elementId and value. This frame has no pixel coordinates. Inspect or observe again after each batch; old tokens are not reusable. Accessibility state is point-in-time, not proof that an app is ready or the task succeeded. Does not enable Computer Use or change the selected backend.',
+    object({ windowId: Type.String({ minLength: 1, maxLength: 500 }) }),
+    async (params, state, signal) =>
+      textResult('computer_inspect', await send('inspect', params, state, signal)),
+  );
+
   const actionSchema = Type.Object(
     {
       type: Type.Union(
-        ['click', 'double_click', 'move', 'drag', 'scroll', 'keypress', 'type', 'wait'].map((value) =>
-          Type.Literal(value),
+        ['click', 'double_click', 'move', 'drag', 'scroll', 'keypress', 'type', 'wait', 'set_value'].map(
+          (value) => Type.Literal(value),
         ),
       ),
       x: optional(Type.Number({ minimum: 0 })),
       y: optional(Type.Number({ minimum: 0 })),
+      elementId: optional(Type.String({ minLength: 1, maxLength: 256 })),
+      value: optional(Type.String({ maxLength: 2000 })),
       button: optional(literal(['left', 'right', 'middle'])),
       text: optional(Type.String({ minLength: 1, maxLength: 2000 })),
       keys: optional(Type.Array(Type.String({ minLength: 1, maxLength: 32 }), { maxItems: 8 })),
-      deltaX: optional(Type.Number({ minimum: -100, maximum: 100 })),
-      deltaY: optional(Type.Number({ minimum: -100, maximum: 100 })),
+      deltaX: optional(Type.Integer({ minimum: -100, maximum: 100 })),
+      deltaY: optional(Type.Integer({ minimum: -100, maximum: 100 })),
       path: optional(
         Type.Array(
           Type.Object(
@@ -317,12 +347,13 @@ export default function studioComputerUse(pi) {
   register(
     'computer_act',
     'Computer act',
-    'Drive the real desktop with a short bounded batch (1 to 12 actions). frameId must come from the latest computer_observe call and is consumed by the act. Coordinates x and y use screenshot pixels of that frame (0 <= x < width, 0 <= y < height); the bridge maps them to physical screen pixels and the native worker revalidates screen layout, window geometry and focus before input. Observe again after acting and never replay a timed out batch blindly. Scroll deltas are wheel ticks: positive deltaY scrolls down, positive deltaX scrolls right, range -100 to 100, at least one nonzero. Drag presses at x,y, moves through each path point in order (up to 20), and releases at the last path point. Key names are 1 to 32 characters, up to 8 per press. Wait accepts 1 to 5000 ms. Set observeAfter true to capture a verification screenshot in the same call. By default the verification reuses the original frame capture options (windowId, region, maxWidth); pass observeOptions {} for a whole desktop capture or a windowId, region, maxWidth object for a scoped capture. observeOptions is valid only with observeAfter true. A new app window can appear on another monitor, so prefer wait plus observe of the new window before acting on it. Every screenshot is point-in-time and can show loading or unsettled UI, so observe the target window before claiming an outcome. Results carry applicationState unverified because sent input is not task success. If verification capture fails after successful input, the result keeps executed plus observationError {code, message} without failing the whole call; observe again instead of replaying the batch.',
+    'Drive the real desktop with a short bounded batch (1 to 12 actions). frameId must come from the latest computer_observe or CUA computer_inspect call and is consumed by the act. Coordinates x and y use screenshot pixels of that frame (0 <= x < width, 0 <= y < height); the bridge maps them to physical screen pixels and the native worker revalidates screen layout, window geometry and focus before input. Observe again after acting and never replay a timed out batch blindly. Scroll deltas are wheel ticks: positive deltaY scrolls down, positive deltaX scrolls right, range -100 to 100, at least one nonzero. Drag presses at x,y, moves through each path point in order (up to 20), and releases at the last path point. Key names are 1 to 32 characters, up to 8 per press. Wait accepts 1 to 5000 ms. Set observeAfter true to capture a verification screenshot in the same call. By default the verification reuses the original frame capture options (windowId, region, maxWidth); pass observeOptions {} for a whole desktop capture or a windowId, region, maxWidth object for a scoped capture. observeOptions is valid only with observeAfter true. A new app window can appear on another monitor, so prefer wait plus observe of the new window before acting on it. Every screenshot is point-in-time and can show loading or unsettled UI, so observe the target window before claiming an outcome. Results carry applicationState unverified because sent input is not task success. If verification capture fails after successful input, the result keeps executed plus observationError {code, message} without failing the whole call; observe again instead of replaying the batch. In CUA mode only, use elementId from the same frame instead of x/y, and set_value with elementId plus value for editable fields (empty value clears). Accessibility-only frames reject pixel coordinates. deliveryMode may explicitly select foreground or background for the batch; by default CUA pixel actions use foreground and element-targeted actions use background; a refusal is not permission to replay in another mode. CUA unsupported operations return explicit errors, never native fallback. CUA results include per-action effects and may be partial or unverifiable: executed does not prove success.',
     object({
       frameId: Type.String({ minLength: 1, maxLength: 60 }),
       actions: Type.Array(actionSchema, { minItems: 1, maxItems: 12 }),
       observeAfter: optional(Type.Boolean()),
       observeOptions: optional(observeScopeSchema()),
+      deliveryMode: optional(literal(['foreground', 'background'])),
     }),
     async (params, state, signal) => {
       if (params?.observeOptions !== undefined && params?.observeAfter !== true) {

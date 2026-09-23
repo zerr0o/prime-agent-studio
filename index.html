@@ -743,6 +743,38 @@
               <section id="computer-use-details" class="context-section computer-use-details" hidden>
                 <div class="context-label" data-i18n="computer.title">BUREAU EXPERT</div>
                 <p id="computer-use-warning" class="computer-use-note"></p>
+                <div class="computer-use-backend" id="computer-use-backend">
+                  <span
+                    class="computer-use-backend-label"
+                    id="computer-use-backend-label"
+                    data-i18n="computer.backendLabel"
+                    >Moteur de bureau</span
+                  >
+                  <label class="computer-use-backend-option">
+                    <input
+                      type="radio"
+                      name="computer-use-backend"
+                      id="computer-use-backend-native"
+                      value="native"
+                      checked
+                    />
+                    <span id="computer-use-backend-native-label" data-i18n="computer.backendNative"
+                      >Intégration originale (Windows)</span
+                    >
+                  </label>
+                  <label class="computer-use-backend-option">
+                    <input
+                      type="radio"
+                      name="computer-use-backend"
+                      id="computer-use-backend-cua"
+                      value="cua"
+                    />
+                    <span id="computer-use-backend-cua-label" data-i18n="computer.backendCua"
+                      >Cua Driver (beta)</span
+                    >
+                  </label>
+                  <p class="computer-use-backend-hint" id="computer-use-backend-hint"></p>
+                </div>
                 <dl class="session-properties computer-use-meta">
                   <div>
                     <dt><span data-i18n="computer.owner">Contrôleur</span></dt>
@@ -1706,7 +1738,9 @@
                 <span>
                   <span data-i18n="updates.prereleases_label">Inclure les prereleases (beta)</span>
                   <br />
-                  <span class="settings-footnote" data-i18n="updates.prereleases_note">Versions beta expérimentales, parfois instables. Aucune vérification automatique.</span>
+                  <span class="settings-footnote" data-i18n="updates.prereleases_note"
+                    >Versions beta expérimentales, parfois instables. Aucune vérification automatique.</span
+                  >
                 </span>
               </label>
               <div class="update-actions">

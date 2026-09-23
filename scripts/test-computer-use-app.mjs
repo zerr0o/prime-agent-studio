@@ -171,9 +171,14 @@ try {
   await expect(page.locator('#stop-button')).toBeVisible();
   const draftBody = runBodies[runBodies.length - 1];
   if (draftBody?.computerUse !== true) throw new Error('draft send must carry computerUse true');
+  if (draftBody?.computerUseBackend !== 'native')
+    throw new Error('draft send must carry computerUseBackend native by default');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#computer-use-stop')).toBeVisible();
-  report.push('Draft activation carries computerUse true on POST /api/runs');
+  await expect(page.locator('#computer-use-backend-native')).toBeVisible();
+  await expect(page.locator('#computer-use-backend-cua-label')).toContainText('Cua Driver (beta)');
+  await expect(page.locator('#computer-use-backend-native-label')).toContainText('ration');
+  report.push('Draft activation carries computerUse true plus backend on POST /api/runs');
   await page.screenshot({
     path: join(shotDir, 'computer-use-app-desktop.png'),
     fullPage: true,
@@ -193,9 +198,42 @@ try {
   // Existing session toggle uses the mode route, then switching never leaks.
   await page.locator('#session-list').getByText('Session A', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeEnabled();
+  await expect(page.locator('#computer-use-backend-hint')).not.toBeEmpty();
+  {
+    const cuaAvailable = await page.evaluate(() =>
+      fetch('/api/computer-use')
+        .then((r) => r.json())
+        .then((s) => s?.backends?.find((b) => b?.id === 'cua')?.available === true)
+        .catch(() => false),
+    );
+    if (cuaAvailable) {
+      await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
+      await expect(page.locator('#computer-use-backend-hint')).toContainText('Windows x64');
+    } else {
+      await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+    }
+  }
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  const enableCalls = [];
+  await page.route('**/api/computer-use', async (route) => {
+    const req = route.request();
+    if (req.method() === 'POST') {
+      try {
+        enableCalls.push(JSON.parse(req.postData() || '{}'));
+      } catch {}
+    }
+    await route.continue();
+  });
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  if (!enableCalls.length || enableCalls[enableCalls.length - 1]?.backend !== 'native')
+    throw new Error('session enable must POST backend native');
+  await expect(page.locator('#computer-use-stop')).toBeEnabled();
+  report.push('Session enable posts backend and locks selector while on');
   await page.locator('#session-list').getByText('Session B', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
@@ -205,10 +243,50 @@ try {
   await expect(page.locator('#stop-button')).toBeVisible();
   const plainBody = runBodies[runBodies.length - 1];
   if (plainBody?.computerUse === true) throw new Error('session switch must not leak computerUse');
+  if (plainBody?.computerUseBackend) throw new Error('session switch must not leak backend');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
   report.push('Session switch never leaks computerUse into next run');
   await page.locator('#stop-button').click();
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
+
+  // Pref survives run end with no owner: returning restores the backend while locked.
+  await page.locator('#session-list').getByText('Session A', { exact: true }).click();
+  await expect(page.locator('#computer-use-toggle')).toBeEnabled();
+  if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
+    await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await page.locator('#composer').fill('Run with desktop pref.');
+  await page.locator('#send-button').click();
+  await expect(page.locator('#stop-button')).toBeVisible();
+  const prefBody = runBodies[runBodies.length - 1];
+  if (prefBody?.computerUse !== true) throw new Error('pref run must carry computerUse true');
+  if (prefBody?.computerUseBackend !== 'native')
+    throw new Error('pref run must carry computerUseBackend native');
+  await expect(page.locator('#stop-button')).toBeHidden({ timeout: 15000 });
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await page.locator('#session-list').getByText('Plain message without desktop.', { exact: true }).click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await page.locator('#session-list').getByText('Run with desktop pref.', { exact: true }).click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  await page.locator('#composer').fill('Next send after return.');
+  await page.locator('#send-button').click();
+  await expect(page.locator('#stop-button')).toBeVisible();
+  const afterReturnBody = runBodies[runBodies.length - 1];
+  if (afterReturnBody?.computerUse !== true) throw new Error('returning must keep computerUse armed');
+  if (afterReturnBody?.computerUseBackend !== 'native')
+    throw new Error('returning must restore native, never silently pass another backend');
+  await page.locator('#stop-button').click();
+  await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
+  report.push('Session pref with no owner restores backend on return');
 
   // New session after a switch carries no stale opt-in.
   await page.keyboard.press('Control+n');
@@ -229,16 +307,18 @@ try {
   await roPage.goto(`http://127.0.0.1:${gateway.address().port}`);
   await roPage.locator('#code').fill(roCode);
   await roPage.getByRole('button', { name: 'Ouvrir le studio' }).click();
-  await roPage.locator('#session-list').getByText('Session A', { exact: true }).click();
+  await roPage.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
   await expect(roPage.locator('#computer-use')).toBeVisible();
   await expect(roPage.locator('#allow-computer-use')).toBeDisabled();
   await expect(roPage.locator('#computer-use-toggle')).toBeDisabled();
   await expect(roPage.locator('#computer-use-warning')).toContainText('Consultation seule');
+  await expect(roPage.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(roPage.locator('#computer-use-backend-cua')).toBeDisabled();
   await roContext.close();
   await new Promise((done) => gateway.close(done));
   report.push('Read only consultation never mutates');
   if (driverCalls.length) throw new Error('smoke must not drive the real desktop');
-  await page.locator('#session-list').getByText('Session A', { exact: true }).click();
+  await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
     await page.locator('#computer-use-toggle').click();
@@ -251,6 +331,9 @@ try {
   await expect(page.locator('#computer-use-toggle')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   await expect(page.locator('#allow-computer-use')).toBeVisible();
+  await expect(page.locator('#computer-use-backend')).toBeAttached();
+  await expect(page.locator('#computer-use-backend-native')).toBeAttached();
+  await expect(page.locator('#computer-use-backend-cua')).toBeAttached();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   const gutterCheck = () =>
     page.evaluate(() => {
@@ -275,6 +358,8 @@ try {
   await page.setViewportSize({ width: 320, height: 844 });
   await expect(page.locator('#computer-use-toggle')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
+  await expect(page.locator('#computer-use-backend-native')).toBeAttached();
+  await expect(page.locator('#computer-use-backend-cua')).toBeAttached();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   for (const g of await gutterCheck()) {
     if (g.left < -1 || g.right < -1) throw new Error(`320px checkbox crosses gutter ${JSON.stringify(g)}`);

@@ -277,6 +277,22 @@ test('window wait deadline is not reported as application failure', async (t) =>
   assert.equal(calls.length, 1);
 });
 
+test(
+  'early timers do not trigger another window listing before the next poll',
+  { timeout: 3000 },
+  async (t) => {
+    const { bridge, calls } = await fixture(t, () => ({ windows: [] }));
+    const originalSetTimeout = globalThis.setTimeout;
+    t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) =>
+      originalSetTimeout(callback, Math.max(1, Number(ms || 0) - 20), ...args),
+    );
+    const result = await call(bridge, 'windows', { action: 'wait', title: 'Qobuz', timeoutMs: 100 });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.timedOut, true);
+    assert.equal(calls.length, 1);
+  },
+);
+
 test('window wait rejects invalid filters and deadlines before touching the worker', async (t) => {
   const env = await fixture(t);
   for (const params of [

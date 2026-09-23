@@ -2062,6 +2062,8 @@ async function sendMessage(event) {
     base = [...activeMessages()],
     token = state.requestId;
   const computerUse = computerUseUI?.shouldIncludeInRun() === true;
+  const computerUseBackend =
+    computerUse && typeof computerUseUI?.getRunBackend === 'function' ? computerUseUI.getRunBackend() : null;
   state.sending = true;
   updateComposer();
   try {
@@ -2073,7 +2075,12 @@ async function sendMessage(event) {
         ...(images.length ? { images } : {}),
         ...(files.length ? { files } : {}),
         ...(sessionId ? { sessionId } : {}),
-        ...(computerUse ? { computerUse: true } : {}),
+        ...(computerUse
+          ? {
+              computerUse: true,
+              ...(computerUseBackend ? { computerUseBackend } : {}),
+            }
+          : {}),
         model: $('model-select').value || state.modelCatalogDefault || '',
         thinking: $('thinking-select').value || state.modelCatalogThinking || '',
         allowQuestions: $('allow-questions').checked,

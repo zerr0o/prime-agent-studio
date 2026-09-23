@@ -76,6 +76,10 @@
   color: var(--amber);
 }
 
+.computer-use-status[data-state='cleanup'] {
+  color: var(--amber);
+}
+
 .computer-use-stop {
   display: inline-flex;
   align-items: center;
@@ -108,6 +112,60 @@
 
 .computer-use-details {
   margin-top: 4px;
+}
+
+.computer-use-backend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.computer-use-backend-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.computer-use-backend-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.computer-use-backend-option input[type='radio'] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.computer-use-backend-option input[type='radio']:disabled + span {
+  opacity: 0.55;
+}
+
+.computer-use-backend-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.computer-use-backend-hint:empty {
+  display: none;
 }
 
 .computer-use-note {

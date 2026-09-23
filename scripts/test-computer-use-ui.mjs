@@ -26,6 +26,12 @@ const fixture = `<!doctype html>
 <label class="questions-toggle"><input id="allow-computer-use" type="checkbox" /><span>Computer</span></label>
 <section id="computer-use-details" class="computer-use-details" hidden>
 <p id="computer-use-warning" class="computer-use-note"></p>
+<div class="computer-use-backend" id="computer-use-backend">
+<span id="computer-use-backend-label">Moteur</span>
+<label><input type="radio" name="computer-use-backend" id="computer-use-backend-native" value="native" checked /><span id="computer-use-backend-native-label">Original</span></label>
+<label><input type="radio" name="computer-use-backend" id="computer-use-backend-cua" value="cua" /><span id="computer-use-backend-cua-label">Cua</span></label>
+<p id="computer-use-backend-hint"></p>
+</div>
 <dl><div><dt>Controller</dt><dd id="computer-use-owner">-</dd></div>
 <div><dt>Action</dt><dd id="computer-use-action">-</dd></div>
 <div><dt>Hotkey</dt><dd id="computer-use-hotkey">-</dd></div></dl>
@@ -54,6 +60,11 @@ window.__mock = {
   lastAction: null,
   controller: null,
   enabledSessions: {},
+  backend: 'native',
+  backends: null,
+  omitBackendFields: false,
+  cleanupPending: false,
+  cleanupFailed: false,
 };
 window.__setController = (owner) => {
   window.__mock.controller = owner ? JSON.parse(JSON.stringify(owner)) : null;
@@ -74,6 +85,19 @@ window.__resetMock = () => {
   window.__mock.lastAction = null;
   window.__mock.controller = null;
   window.__mock.enabledSessions = {};
+  window.__mock.backend = 'native';
+  window.__mock.backends = null;
+  window.__mock.omitBackendFields = false;
+  window.__mock.cleanupPending = false;
+  window.__mock.cleanupFailed = false;
+};
+window.__setBackends = (backends) => {
+  window.__mock.backends = backends ? JSON.parse(JSON.stringify(backends)) : null;
+};
+window.__setBackendFields = (backend, backends, omit) => {
+  if (backend) window.__mock.backend = backend;
+  window.__mock.backends = backends ? JSON.parse(JSON.stringify(backends)) : null;
+  window.__mock.omitBackendFields = omit === true;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sessionOf = (path) => {
@@ -83,17 +107,33 @@ const sessionOf = (path) => {
     return null;
   }
 };
-const snapshotFor = (sessionId) => ({
-  supported: window.__mock.supported,
-  enabled: sessionId ? window.__mock.enabledSessions[sessionId] === true : false,
-  owner: window.__mock.controller ? JSON.parse(JSON.stringify(window.__mock.controller)) : null,
-  busy: window.__mock.busy,
-  hotkey: window.__mock.hotkey,
-  hotkeyError: window.__mock.hotkeyError,
-  lastAction: window.__mock.lastAction,
-  lastFrame: null,
-  error: null,
-});
+const defaultBackends = () => [
+  { id: 'native', supported: window.__mock.supported !== false, available: window.__mock.supported !== false },
+  { id: 'cua', supported: true, available: true, reason: null },
+];
+const snapshotFor = (sessionId) => {
+  const base = {
+    supported: window.__mock.supported,
+    enabled: sessionId ? window.__mock.enabledSessions[sessionId] === true : false,
+    owner: window.__mock.controller ? JSON.parse(JSON.stringify(window.__mock.controller)) : null,
+    busy: window.__mock.busy,
+    hotkey: window.__mock.hotkey,
+    hotkeyError: window.__mock.hotkeyError,
+    lastAction: window.__mock.lastAction,
+    lastFrame: null,
+    error: null,
+    cleanupPending: window.__mock.cleanupPending === true,
+    cleanupFailed: window.__mock.cleanupFailed === true,
+  };
+  if (window.__mock.omitBackendFields) return base;
+  return {
+    ...base,
+    backend: window.__mock.backend || 'native',
+    backends: window.__mock.backends
+      ? JSON.parse(JSON.stringify(window.__mock.backends))
+      : defaultBackends(),
+  };
+};
 const api = async (path, { method = 'GET', body } = {}) => {
   window.__mock.calls.push({ path, method, body: body ? JSON.parse(JSON.stringify(body)) : undefined });
   if (window.__mock.delayMs) await sleep(window.__mock.delayMs);
@@ -114,6 +154,7 @@ const api = async (path, { method = 'GET', body } = {}) => {
     }
     if (sid) {
       if (enabled) {
+        if (body?.backend === 'cua' || body?.backend === 'native') window.__mock.backend = body.backend;
         window.__mock.enabledSessions[sid] = true;
         window.__mock.controller = { sessionId: sid, runId: body?.runId || null, cwd: body?.cwd || null, name: 'Test Session' };
       } else {
@@ -129,6 +170,8 @@ const api = async (path, { method = 'GET', body } = {}) => {
     window.__mock.busy = false;
     window.__mock.lastAction = null;
     window.__mock.enabledSessions = {};
+    window.__mock.cleanupPending = false;
+    window.__mock.cleanupFailed = false;
     return snapshotFor(sessionOf(path));
   }
   const error = new Error('unknown fake route');
@@ -432,6 +475,326 @@ try {
   await page.evaluate(() => window.__setLanguage('fr'));
   await expect(page.locator('#computer-use-label')).toHaveText('Bureau expert');
   await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+
+  // Backend selector: names, no activation on select, payload wiring, poll safety.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = null;
+    window.__ctx.readOnly = false;
+    window.__ctx.online = true;
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-backend-native')).toBeVisible();
+  await expect(page.locator('#computer-use-backend-cua')).toBeVisible();
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native-label')).toContainText('ration');
+  await expect(page.locator('#computer-use-backend-cua-label')).toContainText('Cua Driver (beta)');
+  await expect(page.locator('#computer-use-backend-hint')).toContainText('Windows x64');
+  await page.evaluate(() => window.__setLanguage('en'));
+  await expect(page.locator('#computer-use-backend-native-label')).toContainText('Original integration');
+  await expect(page.locator('#computer-use-backend-label')).toHaveText('Desktop engine');
+  await page.evaluate(() => window.__setLanguage('fr'));
+  await expect(page.locator('#computer-use-backend-label')).toHaveText('Moteur de bureau');
+  await expect(page.locator('#computer-use-backend-native-label')).toContainText('ration originale');
+
+  // Selecting CUA while off never POSTs; it only changes the local choice.
+  await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
+  await expect(page.locator('#computer-use-toggle')).toBeEnabled();
+  const beforeSelect = await postCount();
+  await page.locator('#computer-use-backend-cua').click();
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  if ((await postCount()) !== beforeSelect) throw new Error('backend select must not POST');
+  if ((await page.evaluate(() => window.__cu.getSelectedBackend())) !== 'cua')
+    throw new Error('local backend choice must be cua');
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== null)
+    throw new Error('backend select alone must not arm a run');
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
+    throw new Error('backend select alone must not arm a run');
+  // Draft toggle on keeps the CUA choice, then run payload carries it.
+  await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== 'cua')
+    throw new Error('draft backend must survive toggle');
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
+    throw new Error('draft with backend must arm a run');
+  // Polling preserves the local off/draft choice.
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+
+  // Old server without backend fields defaults to native, CUA unavailable.
+  await page.evaluate(() => {
+    window.__setBackendFields('native', null, true);
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-hint')).toContainText('indisponible');
+  if ((await page.evaluate(() => window.__cu.setBackend('cua'))) !== false)
+    throw new Error('old server must refuse CUA selection');
+  if ((await page.evaluate(() => window.__cu.getSelectedBackend())) !== 'native')
+    throw new Error('old server must stay on native');
+  const helperOld = await page.evaluate(() => window.__helpers.normalizeComputerStatus({ supported: true }));
+  if (helperOld.backend !== 'native') throw new Error('missing backend must default to native');
+  if (!Array.isArray(helperOld.backends) || helperOld.backends.length !== 2)
+    throw new Error('missing backends must default to two entries');
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__cu.onSessionChange();
+  });
+
+  // Actionable missing binary reason is displayed when CUA is unavailable.
+  await page.evaluate(() => {
+    window.__setBackends([
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: false, reason: 'Install Cua Driver beta for Windows x64.' },
+    ]);
+    window.__cu.refresh();
+  });
+  await expect(page.locator('#computer-use-backend-hint')).toContainText('Install Cua Driver');
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
+  await expect(page.locator('#computer-use-backend-hint')).toContainText('Windows x64');
+
+  // Session enable sends the chosen backend; changing backend while on is refused.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-backend';
+    window.__setSessionEnabled('sess-backend', false);
+    window.__setController(null);
+    window.__mock.calls = [];
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
+  await page.evaluate(() => window.__cu.setBackend('cua'));
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  const backendCall = await page.evaluate(() =>
+    window.__mock.calls.find((c) => c.path === '/api/computer-use' && c.method === 'POST'),
+  );
+  if (!backendCall || backendCall.body?.backend !== 'cua') throw new Error('enable must POST chosen backend');
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  if ((await page.evaluate(() => window.__cu.setBackend('native'))) !== false)
+    throw new Error('must disable before changing backend');
+  // Stop stays usable while the selector is locked.
+  await expect(page.locator('#computer-use-stop')).toBeVisible();
+  await expect(page.locator('#computer-use-stop')).toBeEnabled();
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== 'cua')
+    throw new Error('active run backend must be cua');
+  await page.locator('#computer-use-stop').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeEnabled();
+
+  // Stale poll responses never overwrite the fresh backend choice.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-race-a';
+    window.__setSessionEnabled('sess-race-a', false);
+    window.__setController(null);
+    window.__mock.delayMs = 0;
+    window.__mock.calls = [];
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await page.evaluate(() => window.__cu.setBackend('cua'));
+  await page.evaluate(() => {
+    window.__mock.delayMs = 400;
+    window.__cu.refresh();
+  });
+  await page.waitForTimeout(60);
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-race-b';
+    window.__cu.onSessionChange();
+    window.__mock.delayMs = 0;
+  });
+  await page.waitForTimeout(700);
+  if ((await page.evaluate(() => window.__cu.getSelectedBackend())) !== 'native')
+    throw new Error('context switch must reset backend to native');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+
+  // Run end keeps a session pref with no owner: returning restores CUA, never native.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = 'sess-pref-cua';
+    window.__setSessionEnabled('sess-pref-cua', false);
+    window.__setController(null);
+    window.__mock.backend = 'native';
+    window.__mock.calls = [];
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
+  await page.evaluate(() => window.__cu.setBackend('cua'));
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  // Enable CUA, then simulate run finish: owner cleared, pref stays enabled with cua.
+  await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => {
+    window.__setController(null);
+    window.__mock.backend = 'cua';
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== 'cua')
+    throw new Error('pref with no owner must feed cua');
+  // Visit another session: scoped off, local resets to native, no silent cua leak.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-other';
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== null)
+    throw new Error('other session must not inherit cua pref');
+  // Return: scoped pref enabled with cua and no owner must restore cua while locked.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-pref-cua';
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-backend-cua')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  if ((await page.evaluate(() => window.__cu.getSelectedBackend())) !== 'cua')
+    throw new Error('returning must restore cua from scoped pref status');
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== 'cua')
+    throw new Error('next send after return must carry cua, not native');
+  // Foreign live owner must not override the local off choice.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__mock.backend = 'cua';
+    window.__setController({ sessionId: 'sess-foreign', name: 'Foreign' });
+    window.__setSessionEnabled('sess-foreign', true);
+    window.__ctx.sessionId = 'sess-local-off';
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  if ((await page.evaluate(() => window.__cu.getSelectedBackend())) !== 'native')
+    throw new Error('foreign owner must not override local backend');
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = null;
+    window.__cu.onSessionChange();
+  });
+
+  // Orphan cleanup failure keeps an independent Stop; retry clears it.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = 'sess-cleanup';
+    window.__ctx.readOnly = false;
+    window.__ctx.online = true;
+    window.__setSessionEnabled('sess-cleanup', false);
+    window.__setController(null);
+    window.__mock.cleanupFailed = true;
+    window.__mock.calls = [];
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-toggle')).toBeDisabled();
+  await expect(page.locator('#allow-computer-use')).not.toBeChecked();
+  await expect(page.locator('#allow-computer-use')).toBeDisabled();
+  await expect(page.locator('#computer-use-stop')).toBeVisible();
+  await expect(page.locator('#computer-use-stop')).toBeEnabled();
+  await expect(page.locator('#computer-use-status')).toContainText('Nettoyage incomplet');
+  await expect(page.locator('#computer-use-status')).toHaveAttribute('data-state', 'cleanup');
+  await expect(page.locator('#computer-use-warning')).toContainText('réessayer');
+  const beforeCleanupEnable = await postCount();
+  if ((await page.evaluate(() => window.__cu.setEnabled(true))) !== false)
+    throw new Error('enable must be blocked while cleanup failed');
+  if ((await postCount()) !== beforeCleanupEnable) throw new Error('blocked enable must not POST');
+  if ((await page.evaluate(() => window.__cu.getRunBackend())) !== null)
+    throw new Error('failed cleanup must not arm a run');
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
+    throw new Error('failed cleanup must not arm a run');
+  const helperCleanup = await page.evaluate(() =>
+    window.__helpers.normalizeComputerStatus({ supported: true }),
+  );
+  if (helperCleanup.cleanupPending !== false || helperCleanup.cleanupFailed !== false)
+    throw new Error('cleanup flags must default to false for old servers');
+  await page.locator('#computer-use-stop').click();
+  await expect(page.locator('#computer-use-stop')).toBeHidden();
+  await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+  if ((await page.evaluate(() => window.__cu.status?.cleanupFailed)) !== false)
+    throw new Error('retry must clear the failed flag');
+
+  // Pending teardown likewise: Stop stays, enable waits, completion hides Stop.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = 'sess-pend';
+    window.__setSessionEnabled('sess-pend', false);
+    window.__setController(null);
+    window.__mock.cleanupPending = true;
+    window.__mock.calls = [];
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-stop')).toBeVisible();
+  await expect(page.locator('#computer-use-stop')).toBeEnabled();
+  await expect(page.locator('#computer-use-status')).toContainText('en cours');
+  const beforePendingEnable = await postCount();
+  if ((await page.evaluate(() => window.__cu.setEnabled(true))) !== false)
+    throw new Error('enable must be blocked while cleanup pending');
+  if ((await postCount()) !== beforePendingEnable) throw new Error('blocked enable must not POST');
+  await page.evaluate(() => {
+    window.__mock.cleanupPending = false;
+    window.__cu.refresh();
+  });
+  await expect(page.locator('#computer-use-stop')).toBeHidden();
+  await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = null;
+    window.__cu.onSessionChange();
+  });
+
+  // Read only, offline and pending states disallow the selector.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-backend';
+    window.__ctx.readOnly = true;
+    window.__cu.onSessionChange();
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  await page.evaluate(() => {
+    window.__ctx.readOnly = false;
+    window.__ctx.online = false;
+    window.__cu.update();
+  });
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+  await page.evaluate(() => {
+    window.__ctx.online = true;
+    window.__mock.failGet = true;
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await page.evaluate(() => {
+    window.__mock.failGet = false;
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-backend-native')).toBeEnabled();
+
+  // Back to neutral draft state for the remaining checks.
+  await page.evaluate(() => {
+    window.__resetMock();
+    window.__ctx.sessionId = null;
+    window.__ctx.readOnly = false;
+    window.__ctx.online = true;
+    window.__cu.onSessionChange();
+  });
 
   // Pure helpers stay bounded and safe.
   const helperCheck = await page.evaluate(() => {

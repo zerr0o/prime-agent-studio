@@ -463,3 +463,94 @@ test('act without verification still reports unverified state and observe stays 
   const observe = tools.get('computer_observe');
   assert.match(observe.description, /point-in-time/i);
 });
+
+test('context hook removes oversized historical screenshots without changing history or user images', async (t) => {
+  const stub = await startStubBridge(t, async () => ({}));
+  const { events } = await loadExtension(t, stub.config);
+  assert.equal(typeof events.get('context'), 'function');
+  const png = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(png);
+  png.writeUInt32BE(900, 16);
+  png.writeUInt32BE(2400, 20);
+  const part = { type: 'image', data: png.toString('base64'), mimeType: 'image/png' };
+  const historical = {
+    role: 'toolResult',
+    toolName: 'computer_observe',
+    toolCallId: 'old-observe',
+    content: [part, { type: 'text', text: '{"frame":{"frameId":"old-frame"}}' }],
+  };
+  const userImage = { role: 'user', content: [part] };
+  const messages = [historical, userImage];
+  const before = JSON.stringify(messages);
+  const result = await events.get('context')({ messages });
+  assert.equal(JSON.stringify(messages), before);
+  assert.equal(result.messages[0].toolCallId, 'old-observe');
+  assert.equal(result.messages[0].content[0].type, 'text');
+  assert.match(result.messages[0].content[0].text, /900x2400/);
+  assert.match(result.messages[0].content[0].text, /fresh|new observation/i);
+  assert.equal(result.messages[1], userImage);
+  assert.equal(await events.get('context')({ messages: [userImage] }), undefined);
+});
+
+test('CUA inspect schema and requests preserve fresh element frames without images', async (t) => {
+  const stub = await startStubBridge(t, async () => ({
+    frame: { frameId: 'f-ax', kind: 'accessibility', backend: 'cua' },
+    elements: [{ elementId: 's00000001:2', label: 'Play', role: 'button' }],
+    truncated: false,
+  }));
+  const { tools } = await loadExtension(t, stub.config);
+  const inspect = tools.get('computer_inspect');
+  assert.ok(inspect);
+  assert.match(inspect.description, /CUA mode only/);
+  assert.ok(inspect.parameters.properties.windowId);
+  const result = await inspect.execute('id', { windowId: '42:128' }, null, null, ctx);
+  assert.equal(stub.calls[0].action, 'inspect');
+  assert.equal(stub.calls[0].params.windowId, '42:128');
+  assert.equal(result.content.length, 1);
+  assert.equal(result.content[0].type, 'text');
+  const parsed = JSON.parse(result.content[0].text);
+  assert.equal(parsed.frame.kind, 'accessibility');
+  assert.equal(parsed.elements[0].elementId, 's00000001:2');
+});
+
+test('CUA image verification retains partial action evidence and does not duplicate image bytes', async (t) => {
+  const stub = await startStubBridge(t, async () => ({
+    executed: 0,
+    partial: true,
+    applicationState: 'unverified',
+    results: [{ index: 0, effect: 'refused', route: 'none' }],
+    observe: {
+      image: { data: IMAGE, mimeType: 'image/png' },
+      frame: { frameId: 'f-next', backend: 'cua', kind: 'screenshot' },
+      elements: [{ elementId: 's00000002:1', role: 'button', label: 'Play' }],
+      truncated: false,
+    },
+  }));
+  const { tools } = await loadExtension(t, stub.config);
+  const act = tools.get('computer_act');
+  assert.ok(act.parameters.properties.deliveryMode);
+  const actionProperties = act.parameters.properties.actions.items.properties;
+  assert.ok(actionProperties.elementId);
+  assert.ok(actionProperties.value);
+  const result = await act.execute(
+    'id',
+    {
+      frameId: 'f-old',
+      actions: [{ type: 'set_value', elementId: 's00000001:1', value: '' }],
+      deliveryMode: 'background',
+      observeAfter: true,
+    },
+    null,
+    null,
+    ctx,
+  );
+  assert.equal(stub.calls[0].params.actions[0].value, '');
+  assert.equal(stub.calls[0].params.deliveryMode, 'background');
+  const text = JSON.parse(result.content.find((p) => p.type === 'text').text);
+  assert.equal(text.executed, 0);
+  assert.equal(text.partial, true);
+  assert.equal(text.results[0].effect, 'refused');
+  assert.equal(text.elements[0].label, 'Play');
+  assert.equal(result.details.partial, true);
+  assert.ok(!JSON.stringify(text).includes(IMAGE));
+});

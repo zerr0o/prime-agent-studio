@@ -40,7 +40,7 @@ import { createRoadmapService } from './lib/roadmap.mjs';
 import { createRoadmapBridge, createRoadmapCallerResolver } from './lib/roadmap-bridge.mjs';
 import { createRoadmapRoutes } from './lib/roadmap-routes.mjs';
 import { createRoadmapSessionResolver } from './lib/roadmap-session.mjs';
-import { createComputerUseManager, modelSupportsImages } from './lib/computer-use.mjs';
+import { createComputerUseManager, modelSupportsImages, COMPUTER_USE_BACKENDS } from './lib/computer-use.mjs';
 import { createComputerUseBridge } from './lib/computer-use-bridge.mjs';
 import { createProjectArchives } from './lib/project-archives.mjs';
 
@@ -192,9 +192,20 @@ export function createApp(options = {}) {
   // options.computer, options.computerBridge or options.computerDriver.
   const computer =
     options.computer ||
-    createComputerUseManager(
-      options.computerDriver ? { createDriver: options.computerDriver, isSupported: true } : {},
-    );
+    createComputerUseManager({
+      ...(options.computerDriver ? { createDriver: options.computerDriver, isSupported: true } : {}),
+      // Backend availability injection for offline tests and the CUA rollout:
+      // static descriptors win, otherwise the manager queries
+      // lib/cua-driver-runtime.mjs without spawning any desktop worker.
+      ...(options.computerBackends ? { backends: options.computerBackends } : {}),
+      ...(options.cuaAvailability ? { cuaAvailability: options.cuaAvailability } : {}),
+      ...(typeof options.getCuaAvailability === 'function'
+        ? { getCuaAvailability: options.getCuaAvailability }
+        : {}),
+      ...(typeof options.availabilityTtlMs === 'number'
+        ? { availabilityTtlMs: options.availabilityTtlMs }
+        : {}),
+    });
   const computerBridge =
     options.computerBridge ||
     createComputerUseBridge({
@@ -686,6 +697,14 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.demande_invalide'));
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
       throw new HttpError(400, 'Invalid computerUse flag. Send true to enable desktop control for this run.');
+    // Backend selection never enables desktop control on its own: it is only
+    // legitimate alongside computerUse: true. When omitted the session
+    // preference backend (or native) is inherited at admission.
+    if (body.computerUseBackend !== undefined) {
+      if (!COMPUTER_USE_BACKENDS.includes(body.computerUseBackend))
+        throw new HttpError(400, 'Invalid computerUseBackend. Send native or cua with computerUse: true.');
+      if (body.computerUse !== true) throw new HttpError(400, 'computerUseBackend needs computerUse: true.');
+    }
     const allowQuestions =
       body.allowQuestions ?? settings?.allowQuestions ?? (await studioPreferences()).allowQuestionsByDefault;
     if (catalog.models?.find((model) => model.id === selectedModel)?.availability === 'unavailable')
@@ -738,6 +757,7 @@ export function createApp(options = {}) {
           runId: run.id,
           cwd,
           computerUse: body.computerUse === true,
+          ...(body.computerUseBackend ? { backend: body.computerUseBackend } : {}),
           model: selectedModel || undefined,
           imageCapable: computerImageCapable,
         });
@@ -1338,7 +1358,12 @@ export function createApp(options = {}) {
       // Computer Use: session-scoped real desktop lease. Enabling needs a
       // selected existing session or the current run. Disable/stop only
       // clear desktop input, never the agent run or the server.
-      if (method === 'GET' && path === '/api/computer-use')
+      if (method === 'GET' && path === '/api/computer-use') {
+        // Live availability before status: the cached default says CUA is
+        // missing until queried, which would wedge the disabled selector
+        // off forever. Pure file check only, TTL-gated, never a worker
+        // spawn; failures keep the last cached verdict.
+        if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
         return json(
           res,
           200,
@@ -1347,6 +1372,7 @@ export function createApp(options = {}) {
             ...(url.searchParams.get('runId') ? { runId: url.searchParams.get('runId') } : {}),
           }),
         );
+      }
       if (method === 'POST' && path === '/api/computer-use') {
         // Admission revision: slow preflight awaits follow. A stop or
         // disable landing meanwhile must win over this stale grant.
@@ -1362,6 +1388,27 @@ export function createApp(options = {}) {
         if (typeof body.enabled !== 'boolean')
           throw new HttpError(400, 'Computer Use needs an enabled flag.');
         if (body.enabled) {
+          // Backend selector validation happens before any slow preflight
+          // takes another owner offline. The manager revalidates after an
+          // async CUA refresh at admission, so a stale cache can never
+          // grant control to an unavailable backend.
+          let backend = null;
+          if (body.backend !== undefined) {
+            if (!COMPUTER_USE_BACKENDS.includes(body.backend))
+              throw new HttpError(400, 'Unknown Computer Use backend. Send native or cua.');
+            backend = body.backend;
+            if (typeof computer.refreshBackends === 'function')
+              await computer.refreshBackends().catch(() => {});
+            const entries = computer.status().backends;
+            if (Array.isArray(entries)) {
+              const entry = entries.find((candidate) => candidate?.id === backend);
+              if (!entry?.available)
+                throw new HttpError(
+                  409,
+                  entry?.reason || 'The requested Computer Use backend is unavailable.',
+                );
+            }
+          }
           const sessionId = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : null;
           const runId = typeof body.runId === 'string' && body.runId ? body.runId : null;
           if (!sessionId && !runId)
@@ -1394,6 +1441,7 @@ export function createApp(options = {}) {
                   sessionId: ownerSession,
                   runId,
                   cwd,
+                  ...(backend ? { backend } : {}),
                   model: target.model || undefined,
                   imageCapable: capable,
                 }),
@@ -1402,7 +1450,13 @@ export function createApp(options = {}) {
             return json(
               res,
               200,
-              await computer.enable({ runId, cwd, model: target.model || undefined, imageCapable: capable }),
+              await computer.enable({
+                runId,
+                cwd,
+                ...(backend ? { backend } : {}),
+                model: target.model || undefined,
+                imageCapable: capable,
+              }),
             );
           }
           const existing = await store.history(sessionId).catch(() => null);
@@ -1427,14 +1481,18 @@ export function createApp(options = {}) {
                 sessionId,
                 runId: active.id,
                 cwd,
+                ...(backend ? { backend } : {}),
                 model: active.model || undefined,
                 imageCapable: capable,
               }),
             );
           }
           rejectStaleGrant();
-          return json(res, 200, await computer.enable({ sessionId, cwd }));
+          return json(res, 200, await computer.enable({ sessionId, cwd, ...(backend ? { backend } : {}) }));
         }
+        // A backend sent alongside enabled:false is only a local selector
+        // choice: it never enables desktop control and never changes the
+        // stored preference. Only an explicit enable can take control.
         return json(
           res,
           200,
