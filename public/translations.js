@@ -696,6 +696,34 @@ export const messages = {
     fr: 'Demande expirée sans réponse du PC. Renvoyez-la si besoin.',
     en: 'Request expired with no response from the PC. Send it again if needed.',
   },
+  'updates.prereleases_label': {
+    fr: 'Inclure les prereleases (beta)',
+    en: 'Include prereleases (beta)',
+  },
+  'updates.prereleases_note': {
+    fr: 'Versions beta expérimentales, parfois instables. Aucune vérification automatique.',
+    en: 'Beta versions are experimental and may be unstable. No automatic check.',
+  },
+  'updates.prereleases_unsupported': {
+    fr: 'Le moteur natif ne prend pas en charge les versions beta. Mettez à jour l’application pour utiliser ce canal.',
+    en: 'The native core does not support prereleases. Update the application to use this channel.',
+  },
+  'updates.update_channel_changed': {
+    fr: 'Le canal de mise à jour a changé. Relancez la vérification avant d’installer.',
+    en: 'The update channel changed. Check again before installing.',
+  },
+  'updates.prerelease_metadata_failed': {
+    fr: 'Impossible de charger les informations de la version beta. Vérifiez votre connexion et réessayez.',
+    en: 'Could not load the beta release information. Check your connection and try again.',
+  },
+  'updates.prerelease_manifest_failed': {
+    fr: 'Le catalogue signé de la version beta est invalide. Réessayez ou consultez les journaux de l’application.',
+    en: 'The signed beta update catalog is invalid. Retry or check the application logs.',
+  },
+  'updates.prerelease_version_mismatch': {
+    fr: 'La version beta reçue ne correspond pas à la version demandée. Relancez la vérification et réessayez.',
+    en: 'The received beta version does not match the requested release. Check again and retry.',
+  },
   'agents.message_title': { fr: 'Message d’agent', en: 'Agent message' },
   'agents.message_child': { fr: 'Sous-agent', en: 'Subagent' },
   'agents.parent': { fr: 'Agent parent', en: 'Parent agent' },

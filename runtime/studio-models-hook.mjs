@@ -1,6 +1,10 @@
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STUDIO_MODELS, CODEX_CATALOG_CLIENT_VERSION } from '../lib/studio-models.mjs';
+import {
+  STUDIO_MODELS,
+  CODEX_CATALOG_CLIENT_VERSION,
+  ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION,
+} from '../lib/studio-models.mjs';
 
 const catalogLoop = 'for (const [provider, models] of Object.entries(MODELS)) {';
 const alwaysOn = 'function isAlwaysOnAdaptiveThinkingModel(modelId) {';
@@ -48,6 +52,23 @@ ${catalogLoop}`,
     } else if (adapter) {
       throw new Error('Studio Anthropic thinking adapter requires an update.');
     }
+  }
+  // Anthropic gates newer models on the OAuth adapter's Claude Code identity.
+  // Updating a separate CLI does not change this constant in the native engine.
+  // Leave native auth, API-key requests and explicit user header overrides alone.
+  const claudeVersionPattern = /\b(?:const|var)\s+claudeCodeVersion\s*=\s*(["'])(\d+\.\d+\.\d+)\1/g;
+  const claudeVersions = [...source.matchAll(claudeVersionPattern)];
+  if (claudeVersions.length > 1 || ((adapter || source.includes(alwaysOn)) && claudeVersions.length !== 1))
+    throw new Error('Studio Claude Code version adapter requires an update.');
+  if (claudeVersions.length === 1) {
+    const current = claudeVersions[0][2].split('.').map(Number);
+    const required = ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION.split('.').map(Number);
+    const different = current.findIndex((part, index) => part !== required[index]);
+    if (different >= 0 && current[different] < required[different])
+      source = source.replace(
+        claudeVersions[0][0],
+        claudeVersions[0][0].replace(claudeVersions[0][2], ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION),
+      );
   }
   // Codex filters executable models by a versioned server catalog. Raise only
   // older engine client versions, never downgrade an upstream engine update.

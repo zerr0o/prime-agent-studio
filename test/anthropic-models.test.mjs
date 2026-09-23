@@ -5,9 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
+import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { ANTHROPIC_OPUS_55, registerStudioModelSupport } from '../lib/studio-models.mjs';
+import {
+  ANTHROPIC_OPUS_55,
+  ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION,
+  registerStudioModelSupport,
+} from '../lib/studio-models.mjs';
 import { transformStudioModelSupport, studioModelSourceKind } from '../runtime/studio-models-hook.mjs';
 import { discoverCli } from '../lib/agent.mjs';
 import { createNativeModelCatalog } from '../lib/native-model-catalog.mjs';
@@ -62,6 +67,54 @@ test('compatibility transforms stay scoped and fail clearly on unsupported nativ
     registry: false,
     bundle: false,
   });
+});
+
+const thinkingFixture = 'function isAlwaysOnAdaptiveThinkingModel(modelId) { return false; }';
+
+test('Claude Code identity floor is idempotent and never downgrades newer engines', () => {
+  assert.equal(ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION, '2.1.280');
+  for (const declaration of ['const', 'var']) {
+    for (const quote of ['"', "'"]) {
+      for (const [version, expected] of [
+        ['1.99.999', '2.1.280'],
+        ['2.0.999', '2.1.280'],
+        ['2.1.261', '2.1.280'],
+        ['2.1.279', '2.1.280'],
+        ['2.1.280', '2.1.280'],
+        ['2.1.300', '2.1.300'],
+        ['2.2.0', '2.2.0'],
+        ['2.10.0', '2.10.0'],
+        ['3.0.0', '3.0.0'],
+      ]) {
+        const source = `${declaration} claudeCodeVersion = ${quote}${version}${quote};\n${thinkingFixture}\nglobalThis.version = claudeCodeVersion;`;
+        const kind = declaration === 'const' ? { adapter: true } : { bundle: true };
+        const transformed = transformStudioModelSupport(source, kind);
+        const context = {};
+        runInNewContext(transformed, context);
+        assert.equal(context.version, expected);
+        assert.equal(transformStudioModelSupport(transformed, kind), transformed);
+        assert.ok(transformed.includes(`${quote}${expected}${quote}`));
+      }
+    }
+  }
+});
+
+test('Claude Code identity adapter fails explicitly on changed or ambiguous native layouts', () => {
+  for (const kind of [{ adapter: true }, { bundle: true }]) {
+    for (const declaration of [
+      '',
+      'const claudeCodeVersion = "2.1";',
+      'const claudeCodeVersion = getVersion();',
+      'var claudeCodeVersion = "2.1.261"; var claudeCodeVersion = "2.1.280";',
+    ]) {
+      assert.throws(
+        () => transformStudioModelSupport(`${declaration}\n${thinkingFixture}`, kind),
+        /Studio Claude Code version adapter requires an update/,
+      );
+    }
+  }
+  const unrelated = 'export const unrelated = "2.1.261";';
+  assert.equal(transformStudioModelSupport(unrelated, { bundle: true }), unrelated);
 });
 
 async function nativeParts(t) {
@@ -192,6 +245,88 @@ test('native request payload uses adaptive effort and preserves empty signed thi
   const legacy = await payload('off', native.getModel('anthropic', 'claude-opus-5'));
   assert.deepEqual(legacy.thinking, { type: 'disabled' });
   assert.equal(legacy.temperature, 0.3);
+});
+
+test('native Anthropic request headers keep OAuth compatible and API billing separate', async (t) => {
+  const native = await nativeParts(t);
+  if (!native) return;
+  const adapters = [['unbundled', native.streamSimpleAnthropic]];
+  const bundleDir = join(native.cli.packageDir, 'dist', 'bundle');
+  const bundleNames = (await readdir(bundleDir)).filter((name) => /^anthropic-.*\.js$/.test(name));
+  assert.equal(bundleNames.length, 1, 'Expected one native bundled Anthropic adapter');
+  const bundled = await import(pathToFileURL(join(bundleDir, bundleNames[0])).href);
+  assert.equal(typeof bundled.streamSimpleAnthropic, 'function');
+  adapters.push(['bundled', bundled.streamSimpleAnthropic]);
+  const captured = [];
+  // Exercise the actual SDK header construction against loopback only. No
+  // credentials, provider network calls or paid inference are involved.
+  const server = createServer((request, response) => {
+    captured.push({ headers: request.headers, url: request.url });
+    request.resume();
+    response.writeHead(400, { 'content-type': 'application/json', connection: 'close' });
+    response.end(
+      JSON.stringify({
+        type: 'error',
+        error: { type: 'invalid_request_error', message: 'fixture-request-captured' },
+      }),
+    );
+  });
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const context = { messages: [{ role: 'user', content: 'Fixture only', timestamp: 1 }] };
+  async function request(stream, apiKey, modelHeaders, requestHeaders) {
+    const before = captured.length;
+    const model = { ...ANTHROPIC_OPUS_55, baseUrl, headers: modelHeaders };
+    const result = await stream(model, context, {
+      apiKey,
+      reasoning: 'low',
+      headers: requestHeaders,
+    }).result();
+    assert.match(result.errorMessage, /fixture-request-captured/);
+    assert.equal(captured.length, before + 1);
+    assert.match(captured.at(-1).url, /^\/v1\/messages(?:\?|$)/);
+    return captured.at(-1).headers;
+  }
+  for (const [label, stream] of adapters) {
+    await t.test(`${label}: OAuth sends a compatible Claude Code client version`, async () => {
+      const headers = await request(stream, 'sk-ant-oat-fixture-only');
+      const version = headers['user-agent']
+        .match(/^claude-cli\/(\d+)\.(\d+)\.(\d+)$/)
+        ?.slice(1)
+        .map(Number);
+      assert.ok(version, headers['user-agent']);
+      const minimum = ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION.split('.').map(Number);
+      const different = version.findIndex((part, index) => part !== minimum[index]);
+      assert.ok(different < 0 || version[different] > minimum[different], headers['user-agent']);
+      assert.equal(headers.authorization, 'Bearer sk-ant-oat-fixture-only');
+      assert.equal(headers['x-api-key'], undefined);
+      assert.equal(headers['x-app'], 'cli');
+      assert.match(headers['anthropic-beta'], /claude-code-20250219/);
+      assert.match(headers['anthropic-beta'], /oauth-2025-04-20/);
+    });
+    await t.test(`${label}: API-key requests keep native SDK identity and API authentication`, async () => {
+      const headers = await request(stream, 'fixture-api-key-only');
+      assert.doesNotMatch(headers['user-agent'], /claude-cli\//);
+      assert.equal(headers['x-api-key'], 'fixture-api-key-only');
+      assert.equal(headers.authorization, undefined);
+      assert.equal(headers['x-app'], undefined);
+      assert.doesNotMatch(headers['anthropic-beta'] || '', /oauth-2025-04-20/);
+    });
+    await t.test(`${label}: Explicit model and request headers retain native precedence`, async () => {
+      const modelHeaders = { 'user-agent': 'fixture-model-client/9' };
+      const headers = await request(stream, 'sk-ant-oat-fixture-only', modelHeaders);
+      assert.equal(headers['user-agent'], modelHeaders['user-agent']);
+      const override = await request(stream, 'sk-ant-oat-fixture-only', modelHeaders, {
+        'user-agent': 'fixture-request-client/10',
+      });
+      assert.equal(override['user-agent'], 'fixture-request-client/10');
+      assert.equal(override.authorization, 'Bearer sk-ant-oat-fixture-only');
+    });
+  }
 });
 
 test('isolated native catalog includes Opus 5.5 without exposing credentials', async (t) => {
