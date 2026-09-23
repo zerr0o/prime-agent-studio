@@ -1,6 +1,7 @@
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transformNativeUiTransport } from './native-ui-transport.mjs';
+import { studioModelSourceKind, transformStudioModelSupport } from './studio-models-hook.mjs';
 let packageRoot;
 export function initialize(data) {
   packageRoot = resolve(data.packageRoot);
@@ -49,10 +50,20 @@ export async function load(url, context, nextLoad) {
       : path === 'dist/modes/daemon/daemon-supervisor.js'
         ? 'supervisor'
         : undefined;
-  if (!codex && !nativeUi && !/^dist\/bundle\/[^/]+\.m?js$/.test(path)) return result;
-  const source =
+  const modelSupport = studioModelSourceKind(path);
+  if (
+    !codex &&
+    !nativeUi &&
+    !modelSupport.catalog &&
+    !modelSupport.adapter &&
+    !modelSupport.registry &&
+    !modelSupport.bundle
+  )
+    return result;
+  const original =
     typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString('utf8');
+  const source = transformStudioModelSupport(original, modelSupport);
   if (codex) return { ...result, source: transformCodexTransport(source) };
   const transformed = transformNativeUiTransport(source, { required: nativeUi });
-  return transformed.changed ? { ...result, source: transformed.source } : result;
+  return transformed.changed || source !== original ? { ...result, source: transformed.source } : result;
 }
