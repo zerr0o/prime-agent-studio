@@ -696,6 +696,34 @@ export const messages = {
     fr: 'Demande expirée sans réponse du PC. Renvoyez-la si besoin.',
     en: 'Request expired with no response from the PC. Send it again if needed.',
   },
+  'updates.prereleases_label': {
+    fr: 'Inclure les prereleases (beta)',
+    en: 'Include prereleases (beta)',
+  },
+  'updates.prereleases_note': {
+    fr: 'Versions beta expérimentales, parfois instables. Aucune vérification automatique.',
+    en: 'Beta versions are experimental and may be unstable. No automatic check.',
+  },
+  'updates.prereleases_unsupported': {
+    fr: 'Le moteur natif ne prend pas en charge les versions beta. Mettez à jour l’application pour utiliser ce canal.',
+    en: 'The native core does not support prereleases. Update the application to use this channel.',
+  },
+  'updates.update_channel_changed': {
+    fr: 'Le canal de mise à jour a changé. Relancez la vérification avant d’installer.',
+    en: 'The update channel changed. Check again before installing.',
+  },
+  'updates.prerelease_metadata_failed': {
+    fr: 'Impossible de charger les informations de la version beta. Vérifiez votre connexion et réessayez.',
+    en: 'Could not load the beta release information. Check your connection and try again.',
+  },
+  'updates.prerelease_manifest_failed': {
+    fr: 'Le catalogue signé de la version beta est invalide. Réessayez ou consultez les journaux de l’application.',
+    en: 'The signed beta update catalog is invalid. Retry or check the application logs.',
+  },
+  'updates.prerelease_version_mismatch': {
+    fr: 'La version beta reçue ne correspond pas à la version demandée. Relancez la vérification et réessayez.',
+    en: 'The received beta version does not match the requested release. Check again and retry.',
+  },
   'agents.message_title': { fr: 'Message d’agent', en: 'Agent message' },
   'agents.message_child': { fr: 'Sous-agent', en: 'Subagent' },
   'agents.parent': { fr: 'Agent parent', en: 'Parent agent' },
@@ -5899,7 +5927,10 @@ export const messages = {
   'worktrees.etat_modifie': { fr: 'Modifications non commitées', en: 'Uncommitted changes' },
   'worktrees.fichiers_modifies': { fr: 'Fichiers du diff', en: 'Diff files' },
   'worktrees.apercu_modifs': { fr: 'Aperçu du diff', en: 'Diff preview' },
-  'worktrees.apercu_tronque': { fr: 'Aperçu tronqué, borné à des fins de lecture.', en: 'Preview truncated, bounded for reading.' },
+  'worktrees.apercu_tronque': {
+    fr: 'Aperçu tronqué, borné à des fins de lecture.',
+    en: 'Preview truncated, bounded for reading.',
+  },
   'worktrees.fichier_binaire': { fr: 'binaire', en: 'binary' },
   'worktrees.non_suivi': { fr: 'non suivi', en: 'untracked' },
   'worktrees.aucun_changement': {
@@ -5920,7 +5951,10 @@ export const messages = {
     en: 'Merging needs a clean target and a fast-forward. No conflict resolution, no push, no automatic commit.',
   },
   'worktrees.integree': { fr: 'Merge fast-forward effectué.', en: 'Fast-forward merge done.' },
-  'worktrees.deja_integree': { fr: 'Déjà à jour, rien à merger.', en: 'Already up to date, nothing to merge.' },
+  'worktrees.deja_integree': {
+    fr: 'Déjà à jour, rien à merger.',
+    en: 'Already up to date, nothing to merge.',
+  },
   'worktrees.supprimer_tache': { fr: 'Supprimer le worktree', en: 'Remove worktree' },
   'worktrees.supprimer_confirm': {
     fr: 'Je confirme la suppression du dossier worktree. La branche et l’historique Git sont conservés.',
@@ -5998,8 +6032,14 @@ export const messages = {
   },
   'worktrees.worktrees_existants': { fr: 'Worktrees conservés', en: 'Kept worktrees' },
   'worktrees.ouvrir': { fr: 'Ouvrir', en: 'Open' },
-  'worktrees.aucun_worktree': { fr: 'Aucun worktree conservé pour ce projet.', en: 'No kept worktree for this project.' },
-  'worktrees.ouvrir_conversation_tache': { fr: 'Ouvrir la conversation du worktree', en: 'Open worktree conversation' },
+  'worktrees.aucun_worktree': {
+    fr: 'Aucun worktree conservé pour ce projet.',
+    en: 'No kept worktree for this project.',
+  },
+  'worktrees.ouvrir_conversation_tache': {
+    fr: 'Ouvrir la conversation du worktree',
+    en: 'Open worktree conversation',
+  },
   'worktrees.conversation_tache_inconnue': {
     fr: 'Conversation du worktree introuvable, préparez le merge ou envoyez un message dans le dossier du worktree.',
     en: 'Worktree conversation not found, prepare the merge or send a message in the worktree folder.',
@@ -6007,4 +6047,73 @@ export const messages = {
   'worktrees.fichiers_valides': { fr: 'Fichiers des commits', en: 'Committed files' },
   'worktrees.cible': { fr: 'Cible', en: 'Target' },
   'worktrees.base': { fr: 'Base', en: 'Base' },
+  'computer.label': { fr: 'Bureau expert', en: 'Expert desktop' },
+  'computer.allow': { fr: 'Autoriser le Computer Use', en: 'Allow Computer Use' },
+  'computer.toggleOn': { fr: 'Activer le bureau expert', en: 'Enable expert desktop' },
+  'computer.toggleOff': { fr: 'Désactiver le bureau expert', en: 'Disable expert desktop' },
+  'computer.stop': { fr: 'Arrêter le bureau', en: 'Stop desktop' },
+  'computer.stopHint': {
+    fr: 'Arrêter le contrôle du bureau sans arrêter l’agent',
+    en: 'Stop desktop control without stopping the agent',
+  },
+  'computer.off': { fr: 'Inactif', en: 'Off' },
+  'computer.draftOn': { fr: 'Actif au prochain envoi', en: 'On for next send' },
+  'computer.onMine': { fr: 'Actif sur cette session', en: 'Active on this session' },
+  'computer.onOther': {
+    fr: 'Actif sur une autre session ({value1})',
+    en: 'Active on another session ({value1})',
+  },
+  'computer.working': { fr: 'Action en cours', en: 'Action running' },
+  'computer.warning': {
+    fr: 'L’agent déplace la vraie souris et tape au clavier. Surveillez l’écran.',
+    en: 'The agent moves the real mouse and types on the keyboard. Watch the screen.',
+  },
+  'computer.title': { fr: 'BUREAU EXPERT', en: 'EXPERT DESKTOP' },
+  'computer.owner': { fr: 'Contrôleur', en: 'Controller' },
+  'computer.ownerMine': { fr: 'Cette session', en: 'This session' },
+  'computer.ownerNone': { fr: 'Aucun', en: 'None' },
+  'computer.lastAction': { fr: 'Action', en: 'Action' },
+  'computer.noAction': { fr: 'Aucune action', en: 'No action' },
+  'computer.hotkey': { fr: 'Arrêt d’urgence', en: 'Emergency stop' },
+  'computer.unsupported': {
+    fr: 'Bureau indisponible sur ce système.',
+    en: 'Desktop unavailable on this system.',
+  },
+  'computer.readonlyNote': {
+    fr: 'Consultation seule. Le contrôle du bureau est désactivé.',
+    en: 'Read only view. Desktop control is disabled.',
+  },
+  'computer.offline': { fr: 'Hors ligne', en: 'Offline' },
+  'computer.loading': { fr: 'Chargement', en: 'Loading' },
+  'computer.statusError': { fr: 'Etat indisponible', en: 'Status unavailable' },
+  'computer.hotkeyUnavailable': {
+    fr: 'Raccourci indisponible. Le bouton Arrêter le bureau reste disponible.',
+    en: 'Shortcut unavailable. The Stop desktop button remains available.',
+  },
+  'computer.backendLabel': { fr: 'Moteur de bureau', en: 'Desktop engine' },
+  'computer.backendNative': {
+    fr: 'Intégration originale (Windows)',
+    en: 'Original integration (Windows)',
+  },
+  'computer.backendCua': { fr: 'Cua Driver (beta)', en: 'Cua Driver (beta)' },
+  'computer.backendCuaUnavailable': {
+    fr: 'Cua Driver indisponible sur ce serveur. Choisissez l’intégration originale.',
+    en: 'Cua Driver unavailable on this server. Choose the original integration.',
+  },
+  'computer.backendChangeNeedsOff': {
+    fr: 'Désactivez le bureau pour changer de moteur.',
+    en: 'Turn off desktop to change the engine.',
+  },
+  'computer.backendBetaNote': {
+    fr: 'Bêta Windows x64 uniquement.',
+    en: 'Beta for Windows x64 only.',
+  },
+  'computer.cleanupPending': {
+    fr: 'Nettoyage du bureau en cours.',
+    en: 'Desktop cleanup in progress.',
+  },
+  'computer.cleanupFailed': {
+    fr: 'Nettoyage incomplet. Utilisez Arrêter le bureau pour réessayer.',
+    en: 'Cleanup incomplete. Use Stop desktop to retry.',
+  },
 };

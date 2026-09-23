@@ -17,3 +17,5 @@ __pycache__/
 /previews/
 /brag-output
 /graphify-out
+# Pinned CUA driver binaries are staged locally and bundled, never committed.
+/runtime/cua-driver/

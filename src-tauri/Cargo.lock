@@ -2889,7 +2889,7 @@ checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
 name = "prime-agent-studio"
-version = "3.9.0-beta.1"
+version = "3.10.0-beta.5"
 dependencies = [
  "reqwest",
  "rfd",

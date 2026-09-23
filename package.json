@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "3.9.0-beta.1",
+  "version": "3.10.0-beta.5",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -29,6 +29,10 @@
     "test:navigation": "node scripts/test-project-navigation-ui.mjs",
     "test:knowledge": "node scripts/test-knowledge-ui.mjs",
     "test:knowledge:native": "node scripts/test-knowledge-native.mjs",
+    "test:computer-use": "node --test test/computer-use*.test.mjs",
+    "test:computer-use:ui": "node scripts/test-computer-use-ui.mjs && node scripts/test-computer-use-app.mjs",
+    "test:computer-use:native": "node scripts/test-computer-use-native.mjs && node scripts/test-computer-use-native-cua.mjs",
+    "test:computer-use:worker": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File runtime/computer-use-worker.ps1 -SelfTest",
     "test:knowledge:packaged": "node scripts/test-knowledge-packaged.mjs .desktop-build/studio",
     "test:roadmap": "node --test test/roadmap*.test.mjs && node scripts/test-roadmap-ui.mjs && node scripts/test-roadmap-compact-ui.mjs && node scripts/test-roadmap-remaining-ui.mjs",
     "test:roadmap:native": "node scripts/test-roadmap-native.mjs",
@@ -73,7 +77,9 @@
     "test:components:pipeline-native": "node scripts/test-components-pipeline-native.mjs",
     "test:components:download": "node scripts/test-components-download.mjs --download",
     "test:mcp:packaged": "node scripts/test-mcp-packaged.mjs",
-    "test:engine-settings": "node --test test/engine-settings.test.mjs && node scripts/test-engine-settings-ui.mjs"
+    "test:engine-settings": "node --test test/engine-settings.test.mjs && node scripts/test-engine-settings-ui.mjs",
+    "cua:prepare": "node scripts/prepare-cua-driver.mjs",
+    "test:cua": "node --test test/cua-*.test.mjs test/prepare-cua-driver.test.mjs"
   },
   "engines": {
     "node": ">=22.8.0"

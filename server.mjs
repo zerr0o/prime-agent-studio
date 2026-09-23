@@ -40,6 +40,8 @@ import { createRoadmapService } from './lib/roadmap.mjs';
 import { createRoadmapBridge, createRoadmapCallerResolver } from './lib/roadmap-bridge.mjs';
 import { createRoadmapRoutes } from './lib/roadmap-routes.mjs';
 import { createRoadmapSessionResolver } from './lib/roadmap-session.mjs';
+import { createComputerUseManager, modelSupportsImages, COMPUTER_USE_BACKENDS } from './lib/computer-use.mjs';
+import { createComputerUseBridge } from './lib/computer-use-bridge.mjs';
 import { createProjectArchives } from './lib/project-archives.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -69,6 +71,7 @@ const publicRun = ({
   prompt,
   worktreeId,
   projectCwd,
+  computerUse,
 }) => ({
   id,
   sessionId,
@@ -85,6 +88,7 @@ const publicRun = ({
   attachments: splitFileMessage(prompt).attachments,
   ...(typeof worktreeId === 'string' && worktreeId ? { worktreeId } : {}),
   ...(typeof projectCwd === 'string' && projectCwd ? { projectCwd } : {}),
+  ...(computerUse === undefined ? {} : { computerUse: !!computerUse }),
 });
 
 async function readBody(req) {
@@ -183,6 +187,47 @@ export function createApp(options = {}) {
     sessionDir,
     readEdges: options.readInspectorEdges,
   });
+  // Computer Use: opt-in real desktop lease, one shared controller. Never
+  // cancels agent runs: disable/stop only clear desktop input. Tests inject
+  // options.computer, options.computerBridge or options.computerDriver.
+  const computer =
+    options.computer ||
+    createComputerUseManager({
+      ...(options.computerDriver ? { createDriver: options.computerDriver, isSupported: true } : {}),
+      // Backend availability injection for offline tests and the CUA rollout:
+      // static descriptors win, otherwise the manager queries
+      // lib/cua-driver-runtime.mjs without spawning any desktop worker.
+      ...(options.computerBackends ? { backends: options.computerBackends } : {}),
+      ...(options.cuaAvailability ? { cuaAvailability: options.cuaAvailability } : {}),
+      ...(typeof options.getCuaAvailability === 'function'
+        ? { getCuaAvailability: options.getCuaAvailability }
+        : {}),
+      ...(typeof options.availabilityTtlMs === 'number'
+        ? { availabilityTtlMs: options.availabilityTtlMs }
+        : {}),
+    });
+  const computerBridge =
+    options.computerBridge ||
+    createComputerUseBridge({
+      manager: computer,
+      resolveCaller: createRoadmapCallerResolver({
+        getRuns: () => [...runs.values()],
+        store,
+        agentHome,
+        sessionDir,
+        readEdges: options.readInspectorEdges,
+      }),
+      isOwnerActive: (id) => runs.get(id)?.status === 'running',
+    });
+  const withComputerFlag = (run) => {
+    let computerUse = false;
+    try {
+      computerUse = computer.status().owner?.runId === run.id;
+    } catch {
+      computerUse = false;
+    }
+    return { ...publicRun(run), computerUse };
+  };
   // .pastudio portable archives (v1, local-only; never added to the LAN gateway allowlist).
   // getCatalog injects the destination catalog for effective-model finalization
   // (source historical if configured+usable, else destination default if
@@ -219,6 +264,7 @@ export function createApp(options = {}) {
       subagentPolicyFile: subagentDefaults.file,
       knowledge: { dataDir },
       roadmap: { config: roadmapBridge.config },
+      computer: { config: computerBridge.config },
     });
   const modelConfig = options.modelConfig || createModelConfigStore({ agentHome });
   const modelDefaults = options.modelDefaults || createModelDefaultsStore({ agentHome });
@@ -249,7 +295,10 @@ export function createApp(options = {}) {
       err.code = 'worktree_invalid';
       throw err;
     }
-    const found = typeof worktrees.findByPath === 'function' ? await worktrees.findByPath({ path: cwd }).catch(() => null) : null;
+    const found =
+      typeof worktrees.findByPath === 'function'
+        ? await worktrees.findByPath({ path: cwd }).catch(() => null)
+        : null;
     if (!found) {
       const err = new HttpError(404, 'Task worktree not found.');
       err.code = 'worktree_missing';
@@ -418,7 +467,7 @@ export function createApp(options = {}) {
     const exact = (catalog.models || []).find((model) => String(model.id).toLowerCase() === lowered);
     if (exact) return exact;
     // Bare model id: resolve only when unambiguous, mirroring the native resolver.
-    const bare = !(trimmed.includes('/'))
+    const bare = !trimmed.includes('/')
       ? (catalog.models || []).filter((model) => String(model.id).split('/').pop().toLowerCase() === lowered)
       : [];
     if (bare.length === 1) return bare[0];
@@ -435,15 +484,15 @@ export function createApp(options = {}) {
     const catalog = refs.length ? await models() : null;
     for (const field of refs) {
       const selected = findEngineModel(catalog, body[field]);
-      if (!selected)
-        throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
-      if (selected.availability === 'unavailable')
-        throw new HttpError(409, tr('model.unavailableSelection'));
+      if (!selected) throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
+      if (selected.availability === 'unavailable') throw new HttpError(409, tr('model.unavailableSelection'));
     }
     return engineSettings.set(body);
   }
   function activeRuns() {
-    return [...runs.values()].filter((r) => r.status === 'running' || r.status === 'stopping').map(publicRun);
+    return [...runs.values()]
+      .filter((r) => r.status === 'running' || r.status === 'stopping')
+      .map(withComputerFlag);
   }
   function pushEvent(run, event) {
     if (event.kind === 'interaction') {
@@ -453,20 +502,27 @@ export function createApp(options = {}) {
       else run.interactions[index] = event.request;
       if (index < 0 && event.request.status === 'pending') {
         desktopNotifications.publish('question', run, event.request.id);
-        void pushService
-          .notify('question', { sessionId: run.sessionId, runId: run.id })
-          .catch(() => {});
+        void pushService.notify('question', { sessionId: run.sessionId, runId: run.id }).catch(() => {});
       }
     }
     if (event.kind === 'session' && event.sessionId) {
       run.sessionId = event.sessionId;
       sessionLocks.add(event.sessionId);
+      try {
+        computer.noteRunSession(run.id, event.sessionId);
+      } catch {
+        /* Computer lease binding never fails event streaming. */
+      }
       roadmapRoutes.onSession(run);
       if (run._pendingWorktree?.worktreeId) {
         const pending = run._pendingWorktree;
         delete run._pendingWorktree;
         void store
-          .bindSessionWorktree({ id: event.sessionId, worktreeId: pending.worktreeId, projectCwd: pending.projectCwd })
+          .bindSessionWorktree({
+            id: event.sessionId,
+            worktreeId: pending.worktreeId,
+            projectCwd: pending.projectCwd,
+          })
           .catch(() => {});
       }
       if (run.allowQuestions !== undefined)
@@ -478,6 +534,7 @@ export function createApp(options = {}) {
       if (run.finished) return;
       run.finished = true;
       roadmapBridge.revokeOwner(run.id);
+      void computerBridge.revokeOwner(run.id);
       run.status = event.status || ((event.code ?? 0) === 0 ? 'completed' : 'failed');
       run.error = event.error || null;
       if (run.status === 'failed' && isModelAvailabilityError(run.error))
@@ -485,9 +542,7 @@ export function createApp(options = {}) {
       run.endedAt = new Date().toISOString();
       if (['completed', 'failed'].includes(run.status)) {
         desktopNotifications.publish('turnComplete', run);
-        void pushService
-          .notify('turnComplete', { sessionId: run.sessionId, runId: run.id })
-          .catch(() => {});
+        void pushService.notify('turnComplete', { sessionId: run.sessionId, runId: run.id }).catch(() => {});
       }
       if (run.sessionId) sessionLocks.delete(run.sessionId);
     }
@@ -512,6 +567,11 @@ export function createApp(options = {}) {
     }
   }
   async function startRun(body) {
+    // Admission revision for the Computer Use opt-in: slow validation
+    // follows, and a stop landing meanwhile must win. A stale grant is
+    // dropped while the requested run still starts; unrelated runs are
+    // never touched.
+    const computerAdmission = computer.status().controlRevision;
     if (closing) throw new HttpError(503, tr('server.le_serveur_est_en_cours_d_arret'));
     await roadmapBridge.ready;
     if (activeRuns().length >= 8)
@@ -527,9 +587,15 @@ export function createApp(options = {}) {
         inside = c === r || c.startsWith(r + sep);
       } catch {}
       if (inside) {
-        const found = typeof worktrees.findByPath === 'function' ? await worktrees.findByPath({ path: cwd }).catch(() => null) : null;
+        const found =
+          typeof worktrees.findByPath === 'function'
+            ? await worktrees.findByPath({ path: cwd }).catch(() => null)
+            : null;
         if (!found) {
-          const err = new HttpError(404, 'Task worktree was removed or is unknown, cannot start an agent there.');
+          const err = new HttpError(
+            404,
+            'Task worktree was removed or is unknown, cannot start an agent there.',
+          );
           err.code = 'worktree_missing';
           throw err;
         }
@@ -593,7 +659,11 @@ export function createApp(options = {}) {
         throw new HttpError(409, tr('server.cette_session_appartient_a_un_autre_dossier'));
     }
     if (worktreeAuth && existing?.id) {
-      await store.bindSessionWorktree({ id: existing.id, worktreeId: worktreeAuth.entry.id, projectCwd: worktreeAuth.projectCwd });
+      await store.bindSessionWorktree({
+        id: existing.id,
+        worktreeId: worktreeAuth.entry.id,
+        projectCwd: worktreeAuth.projectCwd,
+      });
     }
     const catalog = await models();
     const settings = existing?.generationSettings;
@@ -625,6 +695,16 @@ export function createApp(options = {}) {
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
       throw new HttpError(400, tr('server.demande_invalide'));
+    if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
+      throw new HttpError(400, 'Invalid computerUse flag. Send true to enable desktop control for this run.');
+    // Backend selection never enables desktop control on its own: it is only
+    // legitimate alongside computerUse: true. When omitted the session
+    // preference backend (or native) is inherited at admission.
+    if (body.computerUseBackend !== undefined) {
+      if (!COMPUTER_USE_BACKENDS.includes(body.computerUseBackend))
+        throw new HttpError(400, 'Invalid computerUseBackend. Send native or cua with computerUse: true.');
+      if (body.computerUse !== true) throw new HttpError(400, 'computerUseBackend needs computerUse: true.');
+    }
     const allowQuestions =
       body.allowQuestions ?? settings?.allowQuestions ?? (await studioPreferences()).allowQuestionsByDefault;
     if (catalog.models?.find((model) => model.id === selectedModel)?.availability === 'unavailable')
@@ -659,6 +739,29 @@ export function createApp(options = {}) {
     }
     runs.set(run.id, run);
     try {
+      const computerImageCapable = modelSupportsImages(selectedModel, catalog);
+      if (body.computerUse === true && !computerImageCapable)
+        throw Object.assign(
+          new Error('This model does not support images. Choose an image capable model to use Computer Use.'),
+          { status: 400, code: 'computer_use_no_image_model' },
+        );
+      if (body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled))
+        await computerBridge.ready;
+      // Check after the final preflight await, immediately before admission.
+      if (
+        computer.status().controlRevision === computerAdmission &&
+        (body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled))
+      ) {
+        await computer.noteRunStarted({
+          sessionId: existing?.id || null,
+          runId: run.id,
+          cwd,
+          computerUse: body.computerUse === true,
+          ...(body.computerUseBackend ? { backend: body.computerUseBackend } : {}),
+          model: selectedModel || undefined,
+          imageCapable: computerImageCapable,
+        });
+      }
       run.prompt = appendFileMessage(run.prompt, await fileStore.save(files));
       if (pastudioGated && existing?.id && typeof body.model === 'string' && body.model)
         await store.setConversationSettings(existing.id, { model: body.model });
@@ -697,11 +800,14 @@ export function createApp(options = {}) {
       );
     } catch (error) {
       roadmapBridge.revokeOwner(run.id);
+      void computerBridge.revokeOwner(run.id);
       runs.delete(run.id);
       if (existing) sessionLocks.delete(existing.id);
-      throw new HttpError(503, error.message);
+      const failure = new HttpError(error.status || 503, error.message);
+      if (typeof error.code === 'string') failure.code = error.code;
+      throw failure;
     }
-    return publicRun(run);
+    return withComputerFlag(run);
   }
   const worktreeRoutes =
     worktreeRoutesPlaceholder.current ||
@@ -811,12 +917,18 @@ export function createApp(options = {}) {
       if (path === '/api/remote-access/qr' && method === 'GET')
         return json(res, 200, await remoteNetwork.qr(url.searchParams.get('channel')));
       if (path === '/api/remote-access' && method === 'GET') return json(res, 200, await remoteAccess.get());
-      if (path === '/api/passkeys' && method === 'GET') return json(res, 200, await remoteAccess.listPasskeys());
-      if (path === '/api/passkeys/revoke' && method === 'POST') return json(res, 200, await remoteAccess.revokePasskey((await readBody(req)).id));
+      if (path === '/api/passkeys' && method === 'GET')
+        return json(res, 200, await remoteAccess.listPasskeys());
+      if (path === '/api/passkeys/revoke' && method === 'POST')
+        return json(res, 200, await remoteAccess.revokePasskey((await readBody(req)).id));
       if (path === '/api/remote-access/code' && method === 'POST')
         return json(res, 200, await remoteAccess.changeCode(await readBody(req)));
       if (method === 'GET' && path === '/api/updates/metadata')
-        return json(res, 200, await remoteUpdates.metadata({ force: url.searchParams.get('refresh') === '1' }));
+        return json(
+          res,
+          200,
+          await remoteUpdates.metadata({ force: url.searchParams.get('refresh') === '1' }),
+        );
       if (method === 'POST' && path === '/api/updates/request')
         return json(res, 200, await remoteUpdates.requestUpdate(await readBody(req)));
       if (method === 'GET' && path === '/api/models') return json(res, 200, await models());
@@ -1100,13 +1212,14 @@ export function createApp(options = {}) {
       // State-changing import is POST only, never GET. Raw octet-stream uploads only.
       if (method === 'GET' && path === '/api/project-archives/export') {
         const result = await projectArchives.exportArchive(url.searchParams.get('cwd'));
-        const safeName = String(result.manifest?.sourceProject?.name || 'projet')
-          .normalize('NFKD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-          .slice(0, 60) || 'projet';
+        const safeName =
+          String(result.manifest?.sourceProject?.name || 'projet')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 60) || 'projet';
         const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         res.writeHead(200, {
           'Content-Type': 'application/octet-stream',
@@ -1129,7 +1242,11 @@ export function createApp(options = {}) {
         return json(
           res,
           200,
-          await projectArchives.importArchive(raw, url.searchParams.get('cwd'), url.searchParams.get('token')),
+          await projectArchives.importArchive(
+            raw,
+            url.searchParams.get('cwd'),
+            url.searchParams.get('token'),
+          ),
         );
       }
       if (method === 'GET' && path === '/api/knowledge')
@@ -1194,9 +1311,8 @@ export function createApp(options = {}) {
       if (method === 'POST' && path === '/api/projects/open') {
         const body = await readBody(req);
         const project = await store.findProject(body.cwd);
-        const folder = body.path === undefined
-          ? project.cwd
-          : await projectFiles.localDirectory(project.cwd, body.path);
+        const folder =
+          body.path === undefined ? project.cwd : await projectFiles.localDirectory(project.cwd, body.path);
         return json(res, 200, await (options.openDirectory || openDirectory)(folder));
       }
       if (method === 'DELETE' && path === '/api/projects') {
@@ -1228,7 +1344,8 @@ export function createApp(options = {}) {
             return json(res, 200, await worktreeRoutes.inspect({ id, cwd: url.searchParams.get('cwd') }));
           if (action && method === 'POST') {
             const body = await readBody(req);
-            if (action === 'integrate') return json(res, 200, await worktreeRoutes.integrate({ id, ...body }));
+            if (action === 'integrate')
+              return json(res, 200, await worktreeRoutes.integrate({ id, ...body }));
             if (action === 'remove') return json(res, 200, await worktreeRoutes.remove({ id, ...body }));
             if (action === 'prepare') {
               const run = await worktreeRoutes.prepare({ id, ...body });
@@ -1237,6 +1354,157 @@ export function createApp(options = {}) {
             }
           }
         }
+      }
+      // Computer Use: session-scoped real desktop lease. Enabling needs a
+      // selected existing session or the current run. Disable/stop only
+      // clear desktop input, never the agent run or the server.
+      if (method === 'GET' && path === '/api/computer-use') {
+        // Live availability before status: the cached default says CUA is
+        // missing until queried, which would wedge the disabled selector
+        // off forever. Pure file check only, TTL-gated, never a worker
+        // spawn; failures keep the last cached verdict.
+        if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
+        return json(
+          res,
+          200,
+          computer.status({
+            ...(url.searchParams.get('sessionId') ? { sessionId: url.searchParams.get('sessionId') } : {}),
+            ...(url.searchParams.get('runId') ? { runId: url.searchParams.get('runId') } : {}),
+          }),
+        );
+      }
+      if (method === 'POST' && path === '/api/computer-use') {
+        // Admission revision: slow preflight awaits follow. A stop or
+        // disable landing meanwhile must win over this stale grant.
+        const admission = computer.status().controlRevision;
+        const rejectStaleGrant = () => {
+          if (computer.status().controlRevision !== admission)
+            throw new HttpError(
+              409,
+              'Computer Use was stopped while enabling. The desktop stays off; enable again if still needed.',
+            );
+        };
+        const body = await readBody(req);
+        if (typeof body.enabled !== 'boolean')
+          throw new HttpError(400, 'Computer Use needs an enabled flag.');
+        if (body.enabled) {
+          // Backend selector validation happens before any slow preflight
+          // takes another owner offline. The manager revalidates after an
+          // async CUA refresh at admission, so a stale cache can never
+          // grant control to an unavailable backend.
+          let backend = null;
+          if (body.backend !== undefined) {
+            if (!COMPUTER_USE_BACKENDS.includes(body.backend))
+              throw new HttpError(400, 'Unknown Computer Use backend. Send native or cua.');
+            backend = body.backend;
+            if (typeof computer.refreshBackends === 'function')
+              await computer.refreshBackends().catch(() => {});
+            const entries = computer.status().backends;
+            if (Array.isArray(entries)) {
+              const entry = entries.find((candidate) => candidate?.id === backend);
+              if (!entry?.available)
+                throw new HttpError(
+                  409,
+                  entry?.reason || 'The requested Computer Use backend is unavailable.',
+                );
+            }
+          }
+          const sessionId = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : null;
+          const runId = typeof body.runId === 'string' && body.runId ? body.runId : null;
+          if (!sessionId && !runId)
+            throw new HttpError(400, 'Select a session or use the current run to enable Computer Use.');
+          let cwd;
+          if (runId) {
+            const target = runs.get(runId);
+            if (!target || target.status === 'finished')
+              throw new HttpError(404, 'The requested run is no longer active.');
+            if (sessionId && target.sessionId && target.sessionId !== sessionId)
+              throw new HttpError(409, 'The run does not belong to the requested session.');
+            cwd = target.cwd;
+            const catalog = await models();
+            const capable = modelSupportsImages(target.model, catalog);
+            if (!capable)
+              throw new HttpError(
+                409,
+                'The current model does not support images. Choose an image capable model to use Computer Use.',
+              );
+            // A run without a native session yet binds by run only; the real
+            // session arrives through the session event. A body sessionId is
+            // never trusted over it.
+            rejectStaleGrant();
+            const ownerSession = target.sessionId || null;
+            if (ownerSession)
+              return json(
+                res,
+                200,
+                await computer.enable({
+                  sessionId: ownerSession,
+                  runId,
+                  cwd,
+                  ...(backend ? { backend } : {}),
+                  model: target.model || undefined,
+                  imageCapable: capable,
+                }),
+              );
+            rejectStaleGrant();
+            return json(
+              res,
+              200,
+              await computer.enable({
+                runId,
+                cwd,
+                ...(backend ? { backend } : {}),
+                model: target.model || undefined,
+                imageCapable: capable,
+              }),
+            );
+          }
+          const existing = await store.history(sessionId).catch(() => null);
+          if (!existing?.cwd) throw new HttpError(404, 'The requested session does not exist.');
+          cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : existing.cwd;
+          const active = [...runs.values()].find(
+            (candidate) => candidate.sessionId === sessionId && candidate.status === 'running',
+          );
+          if (active) {
+            const catalog = await models();
+            const capable = modelSupportsImages(active.model, catalog);
+            if (!capable)
+              throw new HttpError(
+                409,
+                'The current model does not support images. Choose an image capable model to use Computer Use.',
+              );
+            rejectStaleGrant();
+            return json(
+              res,
+              200,
+              await computer.enable({
+                sessionId,
+                runId: active.id,
+                cwd,
+                ...(backend ? { backend } : {}),
+                model: active.model || undefined,
+                imageCapable: capable,
+              }),
+            );
+          }
+          rejectStaleGrant();
+          return json(res, 200, await computer.enable({ sessionId, cwd, ...(backend ? { backend } : {}) }));
+        }
+        // A backend sent alongside enabled:false is only a local selector
+        // choice: it never enables desktop control and never changes the
+        // stored preference. Only an explicit enable can take control.
+        return json(
+          res,
+          200,
+          await computer.disable({
+            ...(typeof body.sessionId === 'string' && body.sessionId ? { sessionId: body.sessionId } : {}),
+            ...(typeof body.runId === 'string' && body.runId ? { runId: body.runId } : {}),
+          }),
+        );
+      }
+      if (method === 'POST' && path === '/api/computer-use/stop') {
+        const body = await readBody(req).catch(() => ({}));
+        return json(res, 200, await computer.stop(typeof body?.reason === 'string' ? body.reason : 'user'));
       }
       if (method === 'GET' && path === '/api/runs') return json(res, 200, { runs: activeRuns() });
       if (method === 'POST' && path === '/api/runs')
@@ -1260,9 +1528,10 @@ export function createApp(options = {}) {
           if (!run.finished) {
             run.status = 'stopping';
             roadmapBridge.revokeOwner(run.id);
+            await computerBridge.revokeOwner(run.id);
             await run.handle?.cancel();
           }
-          return json(res, 200, { stopped: true, ...publicRun(run) });
+          return json(res, 200, { stopped: true, ...withComputerFlag(run) });
         }
       }
       if (method === 'GET' || method === 'HEAD') {
@@ -1273,7 +1542,15 @@ export function createApp(options = {}) {
         else if (path === '/vendor/purify.js')
           file = join(ROOT, 'node_modules', 'dompurify', 'dist', 'purify.es.mjs');
         else if (path === '/vendor/passkeys.js')
-          file = join(ROOT, 'node_modules', '@simplewebauthn', 'browser', 'dist', 'bundle', 'index.umd.min.js');
+          file = join(
+            ROOT,
+            'node_modules',
+            '@simplewebauthn',
+            'browser',
+            'dist',
+            'bundle',
+            'index.umd.min.js',
+          );
         else if (path === '/favicon.ico') file = join(ROOT, 'assets', 'prime-agent.ico');
         else if (path === '/manifest.webmanifest') {
           const locale = requestLanguage(req.headers, url.searchParams.get('lang'));
@@ -1322,6 +1599,7 @@ export function createApp(options = {}) {
         ...(typeof error.code === 'string' &&
         (error.code.startsWith('roadmap_') ||
           error.code.startsWith('pastudio_') ||
+          error.code.startsWith('computer_use_') ||
           error.code.startsWith('worktree_'))
           ? {
               code: error.code,
@@ -1363,6 +1641,8 @@ export function createApp(options = {}) {
     closing = true;
     clearInterval(cleanup);
     await roadmapBridge.close();
+    await computerBridge.close();
+    await computer.close();
     await runtime.close();
     await roadmapRoutes.close();
     await roadmap.close();
@@ -1383,6 +1663,8 @@ export function createApp(options = {}) {
     remoteNetwork,
     roadmap,
     roadmapBridge,
+    computer,
+    computerBridge,
     projectArchives,
     runs,
     pushService,

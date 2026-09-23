@@ -8,11 +8,27 @@ import { updateView, operationActive, progressNumbers } from './desktop-update-s
 export function createDesktopUpdates({ api, getContext }) {
   const $ = (id) => document.getElementById('studio-update-' + id);
   const core = window.__PRIME_STUDIO_DESKTOP__ === true && window.__TAURI__?.core;
+  const PRERELEASE_KEY = 'prime-studio.updates.includePrereleases';
+  const readPrereleases = () => {
+    try {
+      const raw = localStorage.getItem(PRERELEASE_KEY);
+      return raw === 'true' || raw === '1';
+    } catch {
+      return false;
+    }
+  };
+  const writePrereleases = (value) => {
+    try {
+      localStorage.setItem(PRERELEASE_KEY, JSON.stringify(Boolean(value)));
+    } catch {}
+  };
   let snapshot,
     components,
     operation,
     version,
+    versionChannel = null,
     checked = false;
+  let includePrereleases = readPrereleases();
   let localKind = null,
     localStartedAt = 0,
     localEpoch = 0,
@@ -45,6 +61,11 @@ export function createDesktopUpdates({ api, getContext }) {
     'server_start_failed',
     'agents_running',
     'setup_busy',
+    'update_channel_changed',
+    'prereleases_unsupported',
+    'prerelease_metadata_failed',
+    'prerelease_manifest_failed',
+    'prerelease_version_mismatch',
   ]);
   const codeOf = (error) =>
     String(error?.message || error || '')
@@ -91,12 +112,27 @@ export function createDesktopUpdates({ api, getContext }) {
       return 'updates.operation_' + op.kind;
     return 'updates.working';
   }
+  function clearStaleSelection() {
+    version = undefined;
+    versionChannel = null;
+    checked = false;
+    errorCode = '';
+    const notes = $('notes');
+    if (notes) notes.hidden = true;
+    const body = $('notes-body');
+    if (body) body.replaceChildren();
+  }
   function render() {
     const v = view();
     $('native').setAttribute('aria-busy', String(v.busy));
     $('check').disabled = v.busy || !allowed();
     $('install').disabled = v.busy || !allowed();
     $('repair').disabled = v.busy || !allowed();
+    const prereleaseBox = $('prereleases');
+    if (prereleaseBox) {
+      prereleaseBox.checked = includePrereleases === true;
+      prereleaseBox.disabled = v.busy || Boolean(actionFlight) || !allowed();
+    }
     $('install').hidden = !version;
     $('repair').hidden = !v.repair || Boolean(version);
     $('restart').disabled = v.restartDisabled || !allowed();
@@ -461,13 +497,39 @@ export function createDesktopUpdates({ api, getContext }) {
     }
     render();
   }
+  const prereleaseBoxInit = $('prereleases');
+  if (prereleaseBoxInit) {
+    prereleaseBoxInit.checked = includePrereleases === true;
+    prereleaseBoxInit.onchange = () => {
+      if (prereleaseBoxInit.disabled || view().busy || Boolean(actionFlight) || !allowed()) {
+        prereleaseBoxInit.checked = includePrereleases === true;
+        return;
+      }
+      includePrereleases = prereleaseBoxInit.checked === true;
+      writePrereleases(includePrereleases);
+      clearStaleSelection();
+      render();
+    };
+  }
   $('check').onclick = async () => {
     if (view().busy || !allowed()) return;
+    clearStaleSelection();
     const epoch = beginLocal('check');
+    const wantPrereleases = includePrereleases === true;
     try {
-      const update = await core.invoke('desktop_update_check');
+      const update = await core.invoke('desktop_update_check', { includePrereleases: wantPrereleases });
       if (epoch !== localEpoch) return;
+      if (wantPrereleases === true && update?.includePrereleases !== true) {
+        checked = true;
+        version = undefined;
+        versionChannel = null;
+        renderNotesInto($('notes-body'), '');
+        $('notes').hidden = true;
+        if (epoch === localEpoch) failure('prereleases_unsupported');
+        return;
+      }
       checked = true;
+      versionChannel = wantPrereleases;
       version = update.available ? update.version : undefined;
       renderNotesInto($('notes-body'), update.notes || '');
       $('notes').hidden = !update.notes;
@@ -509,7 +571,13 @@ export function createDesktopUpdates({ api, getContext }) {
         };
         render();
       };
-      await core.invoke('desktop_update_install', { version, onEvent, restartServer: true });
+      const installChannel = versionChannel ?? includePrereleases === true;
+      await core.invoke('desktop_update_install', {
+        version,
+        onEvent,
+        restartServer: true,
+        includePrereleases: installChannel,
+      });
     } catch (error) {
       if (epoch === undefined || epoch === localEpoch) failure(error);
     } finally {

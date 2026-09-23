@@ -35,6 +35,7 @@ import { createRoadmap } from './roadmap.js';
 import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
 import { createQuestions } from './questions.js';
+import { createComputerUse } from './computer-use.js';
 import { createPushSettings } from './push.js';
 import {
   isDesktopComponentsAvailable,
@@ -57,6 +58,7 @@ let inspectorUI;
 let roadmapUI;
 let archivesUI;
 let worktreesUI;
+let computerUseUI;
 let roadmapNavigationSequence = 0;
 let modelPickerTarget = null;
 let modelCatalogRequest = null;
@@ -659,9 +661,12 @@ function showComponentsUpdateBanner(result, kind) {
     result.installedEngine !== undefined && result.installedEngine !== null
       ? result.installedEngine
       : result.components && result.components.engine && result.components.engine.version;
-  const mode = kind === 'activate'
-    ? result.server?.running && result.server?.canRestart === false ? 'unverified' : 'activate'
-    : 'install';
+  const mode =
+    kind === 'activate'
+      ? result.server?.running && result.server?.canRestart === false
+        ? 'unverified'
+        : 'activate'
+      : 'install';
   componentsBannerState = {
     required: required ? String(required) : '',
     installed: installed ? String(installed) : '',
@@ -961,6 +966,7 @@ function updateComposer() {
         : tr('ui.ajoutez_un_projet_pour_commencer'),
   );
   liveMessagesUI?.update();
+  computerUseUI?.update();
 }
 function renderProjects() {
   const pendingQuestionRuns = [...state.runs.values()].filter(hasPendingQuestion);
@@ -1272,6 +1278,7 @@ function renderDetails() {
       );
     else if ($('global-banner').dataset.persistent !== 'true') banner('');
   }
+  computerUseUI?.update();
   inspectorUI?.update();
 }
 function renderNavigation() {
@@ -1688,6 +1695,7 @@ function newSession(execCwd) {
   renderNavigation();
   renderMessages(true);
   closeSidebar();
+  computerUseUI?.onSessionChange();
   if (!state.projectCwd) openProjectDialog();
   else $('composer').focus();
 }
@@ -1707,6 +1715,7 @@ function selectProject(cwd) {
   renderNavigation();
   renderMessages(true);
   closeSidebar();
+  computerUseUI?.onSessionChange();
   $('project-overview-title').focus({ preventScroll: true });
 }
 function historyBeforeRun(messages, run) {
@@ -1722,8 +1731,7 @@ async function selectSession(id, cwd) {
   const token = ++state.requestId;
   state.sessionId = id;
   state.projectOverview = false;
-  const knownOwner =
-    cwd && state.projects.some((p) => samePath(p.cwd, cwd)) ? cwd : state.projectCwd;
+  const knownOwner = cwd && state.projects.some((p) => samePath(p.cwd, cwd)) ? cwd : state.projectCwd;
   state.projectCwd = knownOwner;
   state.execCwd = session(id)?.cwd || cwd || state.projectCwd;
   projectNavigation?.reveal(state.projectCwd);
@@ -1740,6 +1748,7 @@ async function selectSession(id, cwd) {
   restoreDraft();
   renderNavigation();
   renderMessages(true);
+  computerUseUI?.onSessionChange();
   const running = [...state.runs.values()].find((r) => r.sessionId === id && isRunning(r));
   try {
     let h;
@@ -1788,6 +1797,7 @@ async function selectRun(run) {
   renderNavigation();
   renderMessages(true);
   closeSidebar();
+  computerUseUI?.onSessionChange();
 }
 function initializeRun(run, history) {
   run.initialized = true;
@@ -2032,6 +2042,7 @@ async function finishRun(run, e) {
   }
   await refreshOverview();
   renderNavigation();
+  computerUseUI?.notifyRunFinished();
 }
 async function sendMessage(event) {
   event?.preventDefault();
@@ -2050,6 +2061,9 @@ async function sendMessage(event) {
     sessionId = state.sessionId,
     base = [...activeMessages()],
     token = state.requestId;
+  const computerUse = computerUseUI?.shouldIncludeInRun() === true;
+  const computerUseBackend =
+    computerUse && typeof computerUseUI?.getRunBackend === 'function' ? computerUseUI.getRunBackend() : null;
   state.sending = true;
   updateComposer();
   try {
@@ -2061,6 +2075,12 @@ async function sendMessage(event) {
         ...(images.length ? { images } : {}),
         ...(files.length ? { files } : {}),
         ...(sessionId ? { sessionId } : {}),
+        ...(computerUse
+          ? {
+              computerUse: true,
+              ...(computerUseBackend ? { computerUseBackend } : {}),
+            }
+          : {}),
         model: $('model-select').value || state.modelCatalogDefault || '',
         thinking: $('thinking-select').value || state.modelCatalogThinking || '',
         allowQuestions: $('allow-questions').checked,
@@ -2095,6 +2115,7 @@ async function sendMessage(event) {
       renderMessages(true);
     }
     subscribe(run);
+    computerUseUI?.notifyRunCreated(run);
     renderNavigation();
   } catch (e) {
     toast(translateKnown(e.message), true);
@@ -3532,4 +3553,18 @@ pushSettings.listenMessages((sessionId) => selectSession(sessionId));
 $('settings-tab-notifications')?.addEventListener('click', () => void pushSettings.refresh().catch(() => {}));
 void pushSettings.refresh().catch(() => {});
 void pushSettings.consumeDeepLink((sessionId) => selectSession(sessionId)).catch(() => {});
+computerUseUI = createComputerUse({
+  api,
+  toast,
+  getContext: () => ({
+    sessionId: state.sessionId,
+    runId: activeRun()?.id || null,
+    cwd: state.execCwd || state.projectCwd,
+    projectCwd: state.projectCwd,
+    projectOverview: state.projectOverview,
+    readOnly: state.readOnly,
+    online: state.online,
+  }),
+});
+computerUseUI.start();
 void bootstrap();

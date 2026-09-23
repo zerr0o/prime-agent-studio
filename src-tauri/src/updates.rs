@@ -15,6 +15,9 @@ use tokio::sync::Notify;
 #[path = "update_operation.rs"]
 pub mod update_operation;
 
+#[path = "update_channel.rs"]
+pub mod update_channel;
+
 #[cfg(test)]
 #[path = "update_tracker_tests.rs"]
 mod update_tracker_tests;
@@ -31,15 +34,24 @@ use update_operation::{
 const CHECK_METADATA_TIMEOUT: Duration = Duration::from_secs(20);
 const UPDATER_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TOTAL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const PRERELEASE_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+const RELEASES_MAX_BYTES: usize = 2 * 1024 * 1024;
+const MANIFEST_MAX_BYTES: usize = 256 * 1024;
 const CANCEL_WAIT_BUDGET: Duration = Duration::from_secs(5);
 const CANCEL_WAIT_POLL: Duration = Duration::from_millis(50);
 const PROGRESS_PERSIST_THROTTLE_MS: u64 = 500;
 const UNKNOWN_TOTAL_EMIT_BYTES: u64 = 64 * 1024;
 const UNKNOWN_TOTAL_EMIT_MS: u128 = 500;
 
+#[derive(Clone)]
+struct PendingUpdate {
+    update: Update,
+    include_prereleases: bool,
+}
+
 pub struct Updates {
     busy: AtomicBool,
-    pending: Mutex<Option<Update>>,
+    pending: Mutex<Option<PendingUpdate>>,
     current: Mutex<Option<OperationSnapshot>>,
     log: Mutex<VecDeque<OperationSnapshot>>,
     cancel: Mutex<Option<Arc<Notify>>>,
@@ -596,12 +608,133 @@ pub async fn desktop_update_cancel(
     request_cancel_inner(&app)
 }
 
+// --- Prerelease (beta) channel helpers (fixed GitHub metadata, trusted URLs) ---
+//
+// includePrereleases=false (default) keeps the configured latest.json flow.
+// includePrereleases=true uses fixed public GitHub releases metadata, picks
+// newest eligible stable-or-beta strictly greater than current, builds a
+// trusted fixed .../releases/download/v<version>/(beta.json|latest.json) URL,
+// validates manifest version == selected tag, then goes through the signed
+// updater (signature verification preserved). Drafts, unsupported tags and
+// releases missing their manifest asset are skipped. Explicit prerelease
+// error codes, bounded timeout/size, cancellation via the shared tracked job.
+// Poller stays stable-only (no change here).
+
+async fn http_get_bounded(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    accept: &str,
+) -> Result<Vec<u8>, String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent("prime-agent-studio-updater")
+        .build()
+        .map_err(|_| "fetch_failed".to_string())?;
+    let mut resp = client
+        .get(url)
+        .header("Accept", accept)
+        .send()
+        .await
+        .map_err(|_| "fetch_failed".to_string())?;
+    if !resp.status().is_success() {
+        return Err("fetch_failed".to_string());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|_| "fetch_failed".to_string())?
+    {
+        if bytes.len() + chunk.len() > max_bytes {
+            return Err("fetch_failed".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+async fn prerelease_check_task(
+    app: AppHandle,
+    current: update_channel::ChannelVersion,
+) -> Result<Option<Update>, String> {
+    use crate::updates::update_channel as ch;
+    let bytes = http_get_bounded(
+        ch::RELEASES_API_URL,
+        RELEASES_MAX_BYTES,
+        PRERELEASE_FETCH_TIMEOUT,
+        "application/vnd.github+json",
+    )
+    .await
+    .map_err(|_| ch::ERR_METADATA_FAILED.to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| ch::ERR_METADATA_FAILED.to_string())?;
+    if !json.is_array() {
+        return Err(ch::ERR_METADATA_FAILED.to_string());
+    }
+    let eligible = ch::collect_eligible(&json);
+    let selected = match ch::select_newest(&eligible, &current) {
+        None => return Ok(None),
+        Some(s) => s.clone(),
+    };
+    let trusted_str = ch::build_manifest_url(&selected);
+    if !ch::manifest_url_is_trusted(&trusted_str) {
+        return Err(ch::ERR_MANIFEST_FAILED.to_string());
+    }
+    let m_bytes = http_get_bounded(
+        &trusted_str,
+        MANIFEST_MAX_BYTES,
+        PRERELEASE_FETCH_TIMEOUT,
+        "application/json",
+    )
+    .await
+    .map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?;
+    let m_json: serde_json::Value =
+        serde_json::from_slice(&m_bytes).map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?;
+    let m_ver = m_json.get("version").and_then(|v| v.as_str()).unwrap_or("");
+    if !ch::validate_manifest_version(m_ver, &selected) {
+        return Err(ch::ERR_VERSION_MISMATCH.to_string());
+    }
+    let trusted_url = trusted_str
+        .parse()
+        .map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![trusted_url])
+        .map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?
+        .timeout(UPDATER_CLIENT_TIMEOUT)
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?;
+    let checked = updater
+        .check()
+        .await
+        .map_err(|_| ch::ERR_MANIFEST_FAILED.to_string())?;
+    match checked {
+        None => Err(ch::ERR_VERSION_MISMATCH.to_string()),
+        Some(update) => {
+            if update.version != selected.version_string {
+                return Err(ch::ERR_VERSION_MISMATCH.to_string());
+            }
+            let upd_parsed = ch::parse_version_string(&update.version)
+                .ok_or_else(|| ch::ERR_VERSION_MISMATCH.to_string())?;
+            if ch::cmp_versions(&upd_parsed, &current) != std::cmp::Ordering::Greater {
+                return Err(ch::ERR_VERSION_MISMATCH.to_string());
+            }
+            Ok(Some(update))
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn desktop_update_check(
     window: WebviewWindow,
     app: AppHandle,
+    include_prereleases: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     super::update_window_only(&window, &app)?;
+    let include_prereleases = update_channel::include_prereleases_or_default(include_prereleases);
     let state = app.state::<Updates>();
     let _operation = begin(&state)?;
     *state.pending.lock().map_err(|_| "update_failed")? = None;
@@ -610,28 +743,95 @@ pub async fn desktop_update_check(
             // _operation drops here, freeing guard only after no work started (no leak).
             e
         })?;
-    let updater = app
-        .updater_builder()
-        .timeout(UPDATER_CLIENT_TIMEOUT)
-        .build()
-        .map_err(|e| {
-            let code = "check_failed";
-            let _ = failure(&app, &e, code);
+    if !include_prereleases {
+        let updater = app
+            .updater_builder()
+            .timeout(UPDATER_CLIENT_TIMEOUT)
+            .build()
+            .map_err(|e| {
+                let code = "check_failed";
+                let _ = failure(&app, &e, code);
+                let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+                code.to_string()
+            })?;
+        // Bound metadata (20s) + real cancellation via productive helper.
+        // Helper aborts + awaits settlement BEFORE terminal/guard release (all paths).
+        let check_handle = tokio::spawn(async move { updater.check().await });
+        let checked = await_cancellable(
+            &app,
+            check_handle,
+            CHECK_METADATA_TIMEOUT,
+            "download_cancelled",
+            "check_failed",
+        )
+        .await;
+        let checked = match checked {
+            Ok(v) => v,
+            Err(code) => {
+                if code == "download_cancelled" {
+                    let _ = track_operation_finish(&app, &op_id, "cancelled", Some(&code));
+                    clear_cancel_slot(&app);
+                    return Err(code);
+                }
+                let _ = failure(&app, "check timed out after 20s", &code);
+                let _ = track_operation_finish(&app, &op_id, "error", Some(&code));
+                clear_cancel_slot(&app);
+                return Err(code);
+            }
+        };
+        let update: Option<Update> = match checked {
+            Ok(u) => u,
+            Err(e) => {
+                let code = "check_failed";
+                let _ = failure(&app, e, code);
+                let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+                clear_cancel_slot(&app);
+                return Err(code.into());
+            }
+        };
+        let response = match &update {
+            Some(update) => {
+                serde_json::json!({"available":true,"version":update.version,"notes":update.body,"includePrereleases":false})
+            }
+            None => serde_json::json!({"available":false,"includePrereleases":false}),
+        };
+        let pending = update.map(|u| PendingUpdate {
+            update: u,
+            include_prereleases: false,
+        });
+        *state.pending.lock().map_err(|_| "update_failed")? = pending;
+        let _ = track_operation_finish(&app, &op_id, "done", None);
+        clear_cancel_slot(&app);
+        return Ok(response);
+    }
+    // Prerelease channel: fixed GitHub metadata + trusted manifest + signed updater.
+    // Entire network + manifest validation lives inside the same tracked
+    // cancellable bounded job (20s outer). Never downgrade/equal; a selected
+    // newer tag with mismatched/older/equal manifest is an explicit version
+    // mismatch error, never silent available=false.
+    let current_str = app.package_info().version.to_string();
+    let current = match update_channel::parse_version_string(&current_str) {
+        Some(v) => v,
+        None => {
+            let code = update_channel::ERR_METADATA_FAILED;
+            let _ = failure(&app, "invalid current version", code);
             let _ = track_operation_finish(&app, &op_id, "error", Some(code));
-            code.to_string()
-        })?;
-    // Bound metadata (20s) + real cancellation via productive helper.
-    // Helper aborts + awaits settlement BEFORE terminal/guard release (all paths).
-    let check_handle = tokio::spawn(async move { updater.check().await });
-    let checked = await_cancellable(
+            clear_cancel_slot(&app);
+            return Err(code.into());
+        }
+    };
+    let app_task = app.clone();
+    let check_handle =
+        tokio::spawn(async move { prerelease_check_task(app_task, current).await });
+    let checked_outer = await_cancellable(
         &app,
         check_handle,
         CHECK_METADATA_TIMEOUT,
         "download_cancelled",
-        "check_failed",
+        update_channel::ERR_METADATA_FAILED,
     )
     .await;
-    let checked = match checked {
+    let inner: Result<Option<Update>, String> = match checked_outer {
         Ok(v) => v,
         Err(code) => {
             if code == "download_cancelled" {
@@ -639,29 +839,32 @@ pub async fn desktop_update_check(
                 clear_cancel_slot(&app);
                 return Err(code);
             }
-            let _ = failure(&app, "check timed out after 20s", &code);
+            let _ = failure(&app, "prerelease check timed out after 20s", &code);
             let _ = track_operation_finish(&app, &op_id, "error", Some(&code));
             clear_cancel_slot(&app);
             return Err(code);
         }
     };
-    let update: Option<Update> = match checked {
+    let update: Option<Update> = match inner {
         Ok(u) => u,
-        Err(e) => {
-            let code = "check_failed";
-            let _ = failure(&app, e, code);
-            let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+        Err(code) => {
+            let _ = failure(&app, &code, &code);
+            let _ = track_operation_finish(&app, &op_id, "error", Some(&code));
             clear_cancel_slot(&app);
-            return Err(code.into());
+            return Err(code);
         }
     };
     let response = match &update {
         Some(update) => {
-            serde_json::json!({"available":true,"version":update.version,"notes":update.body})
+            serde_json::json!({"available":true,"version":update.version,"notes":update.body,"includePrereleases":true})
         }
-        None => serde_json::json!({"available":false}),
+        None => serde_json::json!({"available":false,"includePrereleases":true}),
     };
-    *state.pending.lock().map_err(|_| "update_failed")? = update;
+    let pending = update.map(|u| PendingUpdate {
+        update: u,
+        include_prereleases: true,
+    });
+    *state.pending.lock().map_err(|_| "update_failed")? = pending;
     let _ = track_operation_finish(&app, &op_id, "done", None);
     clear_cancel_slot(&app);
     Ok(response)
@@ -673,6 +876,7 @@ pub async fn desktop_update_install(
     app: AppHandle,
     version: String,
     restart_server: Option<bool>,
+    include_prereleases: Option<bool>,
     on_event: Channel<serde_json::Value>,
 ) -> Result<(), String> {
     super::update_window_only(&window, &app)?;
@@ -683,10 +887,12 @@ pub async fn desktop_update_install(
     {
         return Err("update_busy".into());
     }
+    let include_prereleases =
+        update_channel::include_prereleases_or_default(include_prereleases);
     let state = app.state::<Updates>();
     let _operation = begin(&state)?;
     let op_id = track_operation_start(&app, "install", "downloading", true)?;
-    let update = state
+    let pending = state
         .pending
         .lock()
         .map_err(|_| {
@@ -698,6 +904,17 @@ pub async fn desktop_update_install(
             let _ = track_operation_finish(&app, &op_id, "error", Some("check_required"));
             "check_required".to_string()
         })?;
+    if update_channel::verify_channel(
+        pending.include_prereleases,
+        include_prereleases,
+    )
+    .is_err()
+    {
+        let code = update_channel::ERR_CHANNEL_CHANGED;
+        let _ = track_operation_finish(&app, &op_id, "error", Some(code));
+        return Err(code.into());
+    }
+    let update = pending.update;
     if update.version != version {
         let _ = track_operation_finish(&app, &op_id, "error", Some("check_required"));
         return Err("check_required".into());

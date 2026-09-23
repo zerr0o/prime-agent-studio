@@ -96,3 +96,67 @@ test('native scope adapter preserves session records and fails closed on incompa
   );
   assert.equal(transformSessionPreferences('export const unrelated = 1;').changed, false);
 });
+
+test('native scope adapter supports the installed 0.9.5 guarded thinking shape', () => {
+  const source = `class AgentSession {
+    async _startRlmChildRun() {}
+    setThinkingLevel(level) { const effectiveLevel = level;
+      this.agent.state.thinkingLevel = effectiveLevel;
+      this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+      if (this.supportsThinking() || effectiveLevel !== "off") {
+        this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+      }
+    }
+    a(model) { this.settingsManager.setDefaultModelAndProvider(model.provider, model.id); }
+    b(next) { this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id); }
+    c(nextModel) { this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id); }
+  }`;
+  const transformed = transformSessionPreferences(source, { required: true });
+  assert.equal(transformed.changed, true);
+  const Session = new Function(transformed.source + '; return AgentSession;')();
+  const session = new Session(),
+    entries = [];
+  session.agent = { state: {} };
+  session.supportsThinking = () => true;
+  session.sessionManager = { appendThinkingLevelChange: (level) => entries.push(level) };
+  session.settingsManager = {
+    setDefaultThinkingLevel: () => assert.fail('global write'),
+    setDefaultModelAndProvider: () => assert.fail('global write'),
+  };
+  session.setThinkingLevel('high');
+  assert.deepEqual(entries, ['high']);
+  assert.equal(session.agent.state.thinkingLevel, 'high');
+});
+
+test('native scope adapter is idempotent on already scoped engine modules', () => {
+  const raw = `class AgentSession {
+    async _startRlmChildRun() {}
+    setThinkingLevel(level) { const effectiveLevel = level;
+      this.agent.state.thinkingLevel = effectiveLevel;
+      this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+      this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+    }
+    a(model) { this.settingsManager.setDefaultModelAndProvider(model.provider, model.id); }
+    b(next) { this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id); }
+    c(nextModel) { this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id); }
+  }`;
+  const once = transformSessionPreferences(raw, { required: true });
+  assert.equal(once.changed, true);
+  const twice = transformSessionPreferences(once.source, { required: true });
+  assert.equal(twice.changed, false);
+  assert.equal(twice.source, once.source);
+  assert.match(once.source, /session preference only/);
+});
+
+test('native scope adapter still fails closed on partial engine shapes', () => {
+  const partial = `class AgentSession {
+    setThinkingLevel(level) { const effectiveLevel = level;
+      this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+    }
+    a(model) { this.settingsManager.setDefaultModelAndProvider(model.provider, model.id); }
+  }`;
+  assert.throws(
+    () => transformSessionPreferences(partial, { required: true }),
+    /thinking=1 models=1 scoped=0/,
+  );
+});
