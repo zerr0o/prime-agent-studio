@@ -74,7 +74,7 @@ async function fixture(t, spec, credentials = { enabled: true, team: 'a' }, extr
   await writeFile(join(packageDir, 'dist', 'index.js'), nativeFixture);
   await writeFile(
     join(ai, 'models.js'),
-    'export const getSupportedThinkingLevels = (model) => model.reasoning ? ["off", "high", "max", "invalid"] : ["off"];',
+    'const MODELS = {}; for (const [provider, models] of Object.entries(MODELS)) {} export const getSupportedThinkingLevels = (model) => model.reasoning ? ["off", "high", "max", "invalid"] : ["off"];',
   );
   await writeFile(join(agentHome, 'auth.json'), JSON.stringify(credentials));
   await writeFile(join(agentHome, 'settings.json'), '{}');

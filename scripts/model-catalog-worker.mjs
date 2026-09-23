@@ -2,6 +2,7 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { registerStudioModelSupport } from '../lib/studio-models.mjs';
 import {
   META_PROVIDER_ID,
   META_REAL_AUTH_SOURCES,
@@ -33,6 +34,7 @@ let initializing;
 let requests = Promise.resolve();
 
 async function initialize({ packageDir, agentHome }) {
+  registerStudioModelSupport(packageDir);
   native = await import(pathToFileURL(join(packageDir, 'dist', 'index.js')).href);
   const ai = await import(
     pathToFileURL(join(packageDir, 'node_modules', '@earendil-works', 'pi-ai', 'dist', 'models.js')).href
