@@ -26,4 +26,4 @@
 
 ## Distribution scope
 
-Local Windows x64 build completed. The 40,784,259-byte installer and its updater signature were verified. Resource fingerprint: `163256b08b97a347f806ac06955202cc63e7ff7100390f92a5002dc0c97622d2`. The installer has no Windows Authenticode signature; the updater signature is verified separately. No publication, push, tag, installation or Studio restart authorized. Main integration and safe worktree consolidation follow successful validation.
+Local Windows x64 build completed. The 40,784,259-byte installer and its updater signature were verified. Resource fingerprint: `163256b08b97a347f806ac06955202cc63e7ff7100390f92a5002dc0c97622d2`. The installer has no Windows Authenticode signature; the updater signature is verified separately. No publication, push, tag, installation or Studio restart authorized. The validated code is merged into `main`. Three obsolete worktrees were removed after verified backups; `workrteetest` and all branches were retained.
