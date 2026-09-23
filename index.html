@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="/public/inspector.css" />
     <link rel="stylesheet" href="/public/settings.css" />
     <link rel="stylesheet" href="/public/worktrees.css" />
+    <link rel="stylesheet" href="/public/computer-use.css" />
   </head>
   <body>
     <a class="skip-link" href="#composer" data-i18n="ui.aller_au_message">Aller au message</a>
@@ -71,8 +72,9 @@
             title="Créer une tâche isolée"
             data-i18n-title="worktrees.creer_tache_title"
           >
-            <span data-icon="plus"></span><span data-i18n="worktrees.nouvelle_tache">Nouvelle tâche</span>
-          </button><label class="search-field"
+            <span data-icon="plus"></span
+            ><span data-i18n="worktrees.nouvelle_tache">Nouvelle tâche</span></button
+          ><label class="search-field"
             ><span data-icon="search"></span
             ><input
               id="session-search"
@@ -171,8 +173,24 @@
               <span data-icon="map" aria-hidden="true"></span><span>Roadmap</span
               ><span id="roadmap-progress" class="roadmap-progress" hidden></span>
             </button>
-            <span id="session-state" class="session-state" hidden></span
-            ><button
+            <span id="session-state" class="session-state" hidden></span>
+            <div id="computer-use" class="computer-use" hidden>
+              <button id="computer-use-toggle" class="computer-use-toggle" type="button" aria-pressed="false">
+                <span id="computer-use-dot" class="computer-use-dot" aria-hidden="true"></span
+                ><span id="computer-use-label" data-i18n="computer.label">Bureau expert</span>
+              </button>
+              <span id="computer-use-status" class="computer-use-status" role="status"></span>
+              <button
+                id="computer-use-stop"
+                class="computer-use-stop"
+                type="button"
+                data-i18n="computer.stop"
+                hidden
+              >
+                Arrêter le bureau
+              </button>
+            </div>
+            <button
               id="session-menu-button"
               class="icon-button"
               aria-label="Options de la session"
@@ -198,8 +216,7 @@
         <div id="worktree-banner" class="worktree-banner" role="status" hidden>
           <strong data-i18n="worktrees.bandeau_tache">Worktree</strong>
           <span class="wt-lines"
-            ><code id="worktree-banner-branch"></code
-            ><code id="worktree-banner-path" class="wt-path"></code
+            ><code id="worktree-banner-branch"></code><code id="worktree-banner-path" class="wt-path"></code
           ></span>
           <span class="wt-spacer"></span>
           <button
@@ -211,7 +228,12 @@
           >
             Copier le chemin du dossier
           </button>
-          <button id="worktree-banner-button" class="wt-button" type="button" data-i18n="worktrees.voir_tache">
+          <button
+            id="worktree-banner-button"
+            class="wt-button"
+            type="button"
+            data-i18n="worktrees.voir_tache"
+          >
             Ouvrir le diff
           </button>
         </div>
@@ -550,6 +572,19 @@
                       />
                       <span data-i18n="questions.toggle">Autoriser les questions</span>
                     </label>
+                    <label
+                      class="questions-toggle"
+                      data-i18n-title="questions.scope"
+                      title="Propre à cette conversation · modifiable entre deux exécutions"
+                    >
+                      <input
+                        id="allow-computer-use"
+                        type="checkbox"
+                        aria-label="Autoriser le Computer Use"
+                        data-i18n-aria-label="computer.allow"
+                      />
+                      <span data-i18n="computer.allow">Autoriser le Computer Use</span>
+                    </label>
                   </div>
                   <button
                     id="stop-button"
@@ -704,6 +739,24 @@
                   <span data-icon="download"></span
                   ><span data-i18n="ui.exporter_la_conversation">Exporter la conversation </span>
                 </button>
+              </section>
+              <section id="computer-use-details" class="context-section computer-use-details" hidden>
+                <div class="context-label" data-i18n="computer.title">BUREAU EXPERT</div>
+                <p id="computer-use-warning" class="computer-use-note"></p>
+                <dl class="session-properties computer-use-meta">
+                  <div>
+                    <dt><span data-i18n="computer.owner">Contrôleur</span></dt>
+                    <dd id="computer-use-owner">-</dd>
+                  </div>
+                  <div>
+                    <dt><span data-i18n="computer.lastAction">Action</span></dt>
+                    <dd id="computer-use-action">-</dd>
+                  </div>
+                  <div>
+                    <dt><span data-i18n="computer.hotkey">Arrêt d’urgence</span></dt>
+                    <dd id="computer-use-hotkey">-</dd>
+                  </div>
+                </dl>
               </section>
               <section id="active-runs-section" class="context-section" hidden>
                 <div class="context-label" data-i18n="ui.en_cours_2">EN COURS</div>
@@ -2161,10 +2214,21 @@
             ></label
           >
           <div class="modal-actions">
-            <button id="wt-prepare-open" class="wt-button" type="button" data-i18n="worktrees.ouvrir_conversation_tache" hidden>
+            <button
+              id="wt-prepare-open"
+              class="wt-button"
+              type="button"
+              data-i18n="worktrees.ouvrir_conversation_tache"
+              hidden
+            >
               Ouvrir la conversation du worktree
             </button>
-            <button id="wt-prepare-button" class="wt-button primary" type="button" data-i18n="worktrees.preparer">
+            <button
+              id="wt-prepare-button"
+              class="wt-button primary"
+              type="button"
+              data-i18n="worktrees.preparer"
+            >
               Préparer le merge avec l’agent
             </button>
           </div>
@@ -2172,8 +2236,8 @@
         <details id="wt-integrate-box" class="wt-section wt-details">
           <summary data-i18n="worktrees.integrer">Merge fast-forward</summary>
           <p class="wt-hint" data-i18n="worktrees.integrer_note">
-            Le merge exige une cible propre et un fast-forward. Aucune résolution de conflit, aucun push, aucun
-            commit automatique.
+            Le merge exige une cible propre et un fast-forward. Aucune résolution de conflit, aucun push,
+            aucun commit automatique.
           </p>
           <p class="wt-hint" data-i18n="worktrees.commits_requis_note">
             Seuls les commits du worktree peuvent être mergés. Les changements non commités bloquent le merge.
@@ -2184,7 +2248,12 @@
             ></label
           >
           <div class="modal-actions">
-            <button id="wt-integrate-button" class="primary-button" type="button" data-i18n="worktrees.integrer">
+            <button
+              id="wt-integrate-button"
+              class="primary-button"
+              type="button"
+              data-i18n="worktrees.integrer"
+            >
               Merge fast-forward
             </button>
           </div>
@@ -2207,7 +2276,12 @@
             ></label
           >
           <div class="modal-actions">
-            <button id="wt-remove-button" class="wt-button danger" type="button" data-i18n="worktrees.supprimer_tache">
+            <button
+              id="wt-remove-button"
+              class="wt-button danger"
+              type="button"
+              data-i18n="worktrees.supprimer_tache"
+            >
               Supprimer le worktree
             </button>
           </div>

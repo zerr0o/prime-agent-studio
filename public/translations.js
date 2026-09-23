@@ -5899,7 +5899,10 @@ export const messages = {
   'worktrees.etat_modifie': { fr: 'Modifications non commitées', en: 'Uncommitted changes' },
   'worktrees.fichiers_modifies': { fr: 'Fichiers du diff', en: 'Diff files' },
   'worktrees.apercu_modifs': { fr: 'Aperçu du diff', en: 'Diff preview' },
-  'worktrees.apercu_tronque': { fr: 'Aperçu tronqué, borné à des fins de lecture.', en: 'Preview truncated, bounded for reading.' },
+  'worktrees.apercu_tronque': {
+    fr: 'Aperçu tronqué, borné à des fins de lecture.',
+    en: 'Preview truncated, bounded for reading.',
+  },
   'worktrees.fichier_binaire': { fr: 'binaire', en: 'binary' },
   'worktrees.non_suivi': { fr: 'non suivi', en: 'untracked' },
   'worktrees.aucun_changement': {
@@ -5920,7 +5923,10 @@ export const messages = {
     en: 'Merging needs a clean target and a fast-forward. No conflict resolution, no push, no automatic commit.',
   },
   'worktrees.integree': { fr: 'Merge fast-forward effectué.', en: 'Fast-forward merge done.' },
-  'worktrees.deja_integree': { fr: 'Déjà à jour, rien à merger.', en: 'Already up to date, nothing to merge.' },
+  'worktrees.deja_integree': {
+    fr: 'Déjà à jour, rien à merger.',
+    en: 'Already up to date, nothing to merge.',
+  },
   'worktrees.supprimer_tache': { fr: 'Supprimer le worktree', en: 'Remove worktree' },
   'worktrees.supprimer_confirm': {
     fr: 'Je confirme la suppression du dossier worktree. La branche et l’historique Git sont conservés.',
@@ -5998,8 +6004,14 @@ export const messages = {
   },
   'worktrees.worktrees_existants': { fr: 'Worktrees conservés', en: 'Kept worktrees' },
   'worktrees.ouvrir': { fr: 'Ouvrir', en: 'Open' },
-  'worktrees.aucun_worktree': { fr: 'Aucun worktree conservé pour ce projet.', en: 'No kept worktree for this project.' },
-  'worktrees.ouvrir_conversation_tache': { fr: 'Ouvrir la conversation du worktree', en: 'Open worktree conversation' },
+  'worktrees.aucun_worktree': {
+    fr: 'Aucun worktree conservé pour ce projet.',
+    en: 'No kept worktree for this project.',
+  },
+  'worktrees.ouvrir_conversation_tache': {
+    fr: 'Ouvrir la conversation du worktree',
+    en: 'Open worktree conversation',
+  },
   'worktrees.conversation_tache_inconnue': {
     fr: 'Conversation du worktree introuvable, préparez le merge ou envoyez un message dans le dossier du worktree.',
     en: 'Worktree conversation not found, prepare the merge or send a message in the worktree folder.',
@@ -6007,4 +6019,47 @@ export const messages = {
   'worktrees.fichiers_valides': { fr: 'Fichiers des commits', en: 'Committed files' },
   'worktrees.cible': { fr: 'Cible', en: 'Target' },
   'worktrees.base': { fr: 'Base', en: 'Base' },
+  'computer.label': { fr: 'Bureau expert', en: 'Expert desktop' },
+  'computer.allow': { fr: 'Autoriser le Computer Use', en: 'Allow Computer Use' },
+  'computer.toggleOn': { fr: 'Activer le bureau expert', en: 'Enable expert desktop' },
+  'computer.toggleOff': { fr: 'Désactiver le bureau expert', en: 'Disable expert desktop' },
+  'computer.stop': { fr: 'Arrêter le bureau', en: 'Stop desktop' },
+  'computer.stopHint': {
+    fr: 'Arrêter le contrôle du bureau sans arrêter l’agent',
+    en: 'Stop desktop control without stopping the agent',
+  },
+  'computer.off': { fr: 'Inactif', en: 'Off' },
+  'computer.draftOn': { fr: 'Actif au prochain envoi', en: 'On for next send' },
+  'computer.onMine': { fr: 'Actif sur cette session', en: 'Active on this session' },
+  'computer.onOther': {
+    fr: 'Actif sur une autre session ({value1})',
+    en: 'Active on another session ({value1})',
+  },
+  'computer.working': { fr: 'Action en cours', en: 'Action running' },
+  'computer.warning': {
+    fr: 'L’agent déplace la vraie souris et tape au clavier. Surveillez l’écran.',
+    en: 'The agent moves the real mouse and types on the keyboard. Watch the screen.',
+  },
+  'computer.title': { fr: 'BUREAU EXPERT', en: 'EXPERT DESKTOP' },
+  'computer.owner': { fr: 'Contrôleur', en: 'Controller' },
+  'computer.ownerMine': { fr: 'Cette session', en: 'This session' },
+  'computer.ownerNone': { fr: 'Aucun', en: 'None' },
+  'computer.lastAction': { fr: 'Action', en: 'Action' },
+  'computer.noAction': { fr: 'Aucune action', en: 'No action' },
+  'computer.hotkey': { fr: 'Arrêt d’urgence', en: 'Emergency stop' },
+  'computer.unsupported': {
+    fr: 'Bureau indisponible sur ce système.',
+    en: 'Desktop unavailable on this system.',
+  },
+  'computer.readonlyNote': {
+    fr: 'Consultation seule. Le contrôle du bureau est désactivé.',
+    en: 'Read only view. Desktop control is disabled.',
+  },
+  'computer.offline': { fr: 'Hors ligne', en: 'Offline' },
+  'computer.loading': { fr: 'Chargement', en: 'Loading' },
+  'computer.statusError': { fr: 'Etat indisponible', en: 'Status unavailable' },
+  'computer.hotkeyUnavailable': {
+    fr: 'Raccourci indisponible. Le bouton Arrêter le bureau reste disponible.',
+    en: 'Shortcut unavailable. The Stop desktop button remains available.',
+  },
 };

@@ -3,6 +3,15 @@
   "languages": ["fr", "en"],
   "pages": [
     {
+      "id": "computer-use",
+      "fr": "docs/computer-use.md",
+      "en": "docs/en/computer-use.md",
+      "reviewed": {
+        "fr": "b4e8df945f64446975112e8e7f80ebfe8c8a5c7dc7efb9bb09f4fcc2c858ada3",
+        "en": "fb853be74f5d443c75442a9d17c76a1ddea259bf21c63949b5ce8aa216e410a8"
+      }
+    },
+    {
       "id": "roadmap",
       "fr": "docs/roadmap.md",
       "en": "docs/en/roadmap.md",
@@ -25,8 +34,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "5dc1b72df9b389678a9a8e37d8ec0196de2aa8ccd4c1f9e1d58b52c36c47f784",
-        "en": "087135f928976aaaad8f27c4723a1c981d2045fb7abf2b95b6a1d559cdb825a1"
+        "fr": "e6900d0119873ac9e9c2fbddb0851d16b528c21815a09f35824a8f9076f9b51a",
+        "en": "77256d3b010943d46df53fd1087934a71dff74dd6ff0959f0b93f78ef7ae43ef"
       }
     },
     {

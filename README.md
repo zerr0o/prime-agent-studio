@@ -283,6 +283,7 @@ In Studio, open **Preferences → Updates → Check for updates**: this check is
 | [Projects and conversations](docs/en/navigation.md)   | Expandable projects, search, archives, menus and reordering.             |
 | [Project knowledge](docs/en/knowledge.md)             | Past work, native memories, refinements and agent history tools.         |
 | [Project roadmap](docs/en/roadmap.md)                 | Shared plans, checklists, backlog, native tools and conversation links.  |
+| [Computer Use](docs/en/computer-use.md)               | Opt-in real Windows desktop observation and input for agents.            |
 | [Providers](docs/en/providers.md)                     | Account connections, API keys, sign-out and PC-only access.              |
 | [Mobile access](docs/en/lan.md)                       | Activation, network address, authentication and permissions.             |
 | [Installable application](docs/en/pwa.md)             | PWA installation, private HTTPS and reconnection.                        |

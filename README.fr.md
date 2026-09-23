@@ -283,6 +283,7 @@ Dans le Studio, ouvrez **Préférences → Mise à jour → Vérifier les mises 
 | [Projets et conversations](docs/navigation.md)    | Projets dépliables, recherche, archives, menus et réorganisation.                   |
 | [Connaissances du projet](docs/knowledge.md)      | Travaux passés, mémoires natives, refinements et outils d’historique des agents.    |
 | [Roadmap du projet](docs/roadmap.md)              | Plans partagés, checklists, backlog, outils natifs et liens vers les conversations. |
+| [Computer Use](docs/computer-use.md)              | Observation et contrôle du vrai bureau Windows, activables pour les agents.         |
 | [Fournisseurs](docs/providers.md)                 | Connexions par compte, clés API, déconnexion et accès réservé au PC.                |
 | [Accès mobile](docs/lan.md)                       | Activation, adresse réseau, authentification et permissions.                        |
 | [Application installable](docs/pwa.md)            | Installation PWA, HTTPS privé et reconnexion.                                       |
