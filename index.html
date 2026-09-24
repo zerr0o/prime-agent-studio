@@ -1534,26 +1534,29 @@
               </div>
             </div>
             <div class="settings-row computer-prefs-row">
-              <div>
+              <div class="engine-field">
                 <label for="computer-model-button" data-i18n="computer.modelLabel"
                   >Modèle Computer Use</label
                 >
                 <p data-i18n="computer.modelNote">
                   Utilisé pour les exécutions avec bureau autorisé. Vide : même modèle que la conversation.
                 </p>
+                <button
+                  id="computer-model-button"
+                  type="button"
+                  class="model-picker-button"
+                  aria-haspopup="dialog"
+                  aria-controls="model-dialog"
+                  aria-expanded="false"
+                >
+                  <span class="subagent-model-icon" data-icon="model" aria-hidden="true"></span>
+                  <span class="model-picker-selection">
+                    <span class="model-picker-name" id="computer-model-name"></span>
+                    <span class="model-picker-provider" id="computer-model-provider"></span>
+                  </span>
+                  <span class="model-picker-chevron" data-icon="chevron" aria-hidden="true"></span>
+                </button>
               </div>
-              <button
-                id="computer-model-button"
-                type="button"
-                class="secondary-button model-picker-button"
-                aria-haspopup="dialog"
-                aria-controls="model-dialog"
-              >
-                <span class="model-picker-selection">
-                  <span class="model-picker-name" id="computer-model-name"></span>
-                  <span class="model-picker-provider" id="computer-model-provider"></span>
-                </span>
-              </button>
             </div>
             <p id="computer-prefs-error" class="form-error" role="alert" hidden></p>
             <p id="settings-resource-note" class="settings-footnote" data-i18n="settings.resources_scope"></p>

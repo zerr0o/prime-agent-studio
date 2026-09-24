@@ -81,32 +81,52 @@ try {
   await expect(menu).toBeHidden();
   await expect(row('Documents')).toHaveAttribute('data-project-color', '#8fb49e');
   await expect(row('Atelier')).toHaveAttribute('data-project-color', 'transparent');
-  const tint = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.project-row')];
-    const get = (label) => rows.find((r) => r.textContent.includes(label));
-    return {
-      second: get('Documents').querySelector('.project-folder-icon')?.style.color || '',
-      first: get('Atelier').querySelector('.project-folder-icon')?.style.color || '',
-    };
-  });
-  expect(tint.second).not.toBe('');
-  expect(tint.first).toBe('');
+  const defaultStroke = await row('Atelier').locator('.project-folder-icon path').evaluate((path) => getComputedStyle(path).stroke);
+  await expect(row('Atelier').locator('.project-folder-icon svg')).not.toHaveAttribute('style', /color/);
+  const folderShape = await row('Atelier').locator('.project-folder-icon path').getAttribute('d');
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveAttribute('d', folderShape);
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('stroke', defaultStroke);
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('fill', 'rgb(143, 180, 158)');
   checks.push('Swatch tints only the targeted folder icon');
 
   // Persist across reload.
   await page.reload();
   await expect(row('Documents')).toHaveAttribute('data-project-color', '#8fb49e');
   await expect(row('Atelier')).toHaveAttribute('data-project-color', 'transparent');
-  checks.push('Tint persists across reload');
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('fill', 'rgb(143, 180, 158)');
+  await expect(row('Atelier').locator('.project-folder-icon path')).toHaveCSS('stroke', defaultStroke);
+  await mkdir(resolve('.local'), { recursive: true });
+  await page.screenshot({ path: resolve('.local/project-folder-color-rendered.png'), animations: 'disabled' });
+  checks.push('Rendered tint persists across reload without affecting other folder icons');
+
+  // All five colors must actually paint the SVG, not just update metadata.
+  for (const [hex, rgb] of [
+    ['#7fa6c9', 'rgb(127, 166, 201)'],
+    ['#8fb49e', 'rgb(143, 180, 158)'],
+    ['#d0a75e', 'rgb(208, 167, 94)'],
+    ['#c98a7d', 'rgb(201, 138, 125)'],
+    ['#a99ac9', 'rgb(169, 154, 201)'],
+  ]) {
+    await row('Documents').click({ button: 'right' });
+    await menu.locator(`[data-project-color="${hex}"]`).click();
+    await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('fill', rgb);
+    await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('stroke', defaultStroke);
+    await expect(row('Documents').locator('.project-folder-icon path')).toHaveAttribute('d', folderShape);
+    await expect(row('Atelier').locator('.project-folder-icon path')).toHaveCSS('fill', 'none');
+    await expect(row('Atelier').locator('.project-folder-icon path')).toHaveCSS('stroke', defaultStroke);
+  }
+  checks.push('All five swatches fill the original folder shape without changing its outline');
 
   // Reset restores the default icon.
   await row('Documents').click({ button: 'right' });
   await expect(menu).toBeVisible();
-  await expect(menu.locator('[data-project-color="#8fb49e"]')).toHaveAttribute('aria-checked', 'true');
+  await expect(menu.locator('[data-project-color="#a99ac9"]')).toHaveAttribute('aria-checked', 'true');
   await menu.locator('[data-project-color="transparent"]').click();
   await expect(menu).toBeHidden();
   await expect(row('Documents')).toHaveAttribute('data-project-color', 'transparent');
-  checks.push('Transparent reset restores the default icon');
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('stroke', defaultStroke);
+  await expect(row('Documents').locator('.project-folder-icon path')).toHaveCSS('fill', 'none');
+  checks.push('Transparent reset removes the fill and keeps the original outline');
 
   // Keyboard: arrows move through every visible item including swatches, Enter selects.
   await row('Documents').locator('..').locator('.project-more').click();

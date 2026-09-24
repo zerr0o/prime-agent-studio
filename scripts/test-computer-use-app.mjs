@@ -401,6 +401,34 @@ try {
   await page.locator('#open-settings').click();
   await page.locator('#settings-tab-tools').click();
   await expect(page.locator('#computer-model-name')).toContainText('Vision Two');
+  const computerModelButton = page.locator('#computer-model-button');
+  await expect(computerModelButton).not.toHaveClass(/secondary-button/);
+  await expect(computerModelButton.locator('.subagent-model-icon svg')).toBeVisible();
+  await expect(computerModelButton.locator('.model-picker-chevron svg')).toBeVisible();
+  const pickerStyle = await computerModelButton.evaluate((button) => {
+    const css = getComputedStyle(button);
+    return { border: css.borderTopWidth, radius: css.borderRadius, height: css.minHeight };
+  });
+  expect(pickerStyle).toEqual({ border: '1px', radius: '8px', height: '43px' });
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await computerModelButton.scrollIntoViewIfNeeded();
+    await expect(computerModelButton.locator('.model-picker-chevron svg')).toBeVisible();
+    expect(await computerModelButton.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.left >= 0 && rect.right <= innerWidth;
+    })).toBe(true);
+    await page.screenshot({ path: join(shotDir, `computer-model-picker-${width}.png`), animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await computerModelButton.click();
+  await expect(page.locator('#model-dialog')).toBeVisible();
+  await expect(computerModelButton).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#model-dialog')).toBeHidden();
+  await expect(computerModelButton).toHaveAttribute('aria-expanded', 'false');
+  await expect(computerModelButton).toBeFocused();
+  report.push('Computer Use model reuses the shared selector styling, icons and dialog on desktop and mobile');
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-dialog')).toBeHidden();
   if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')

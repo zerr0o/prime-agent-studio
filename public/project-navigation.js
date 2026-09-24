@@ -175,7 +175,7 @@ export function createProjectNavigation({
       const folderIcon = icon('folder');
       folderIcon.classList.add('project-folder-icon');
       const folderTint = projectFolderColor(p);
-      if (folderTint) folderIcon.style.color = folderTint;
+      if (folderTint) folderIcon.querySelector('svg').style.fill = folderTint;
       row.dataset.projectColor = folderTint || 'transparent';
       row.append(folderIcon, el('span', 'project-label', () => name));
       if (pinned) row.append(icon('pin', 'project-pin'));
