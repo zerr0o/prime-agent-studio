@@ -181,7 +181,7 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
         button(
           () =>
             entry.credentialType === 'oauth' ? tr('ui.reconnecter_le_compte') : tr('ui.connecter_un_compte'),
-          () => museCodeLogin(entry),
+          () => providerLogin(entry),
         ),
       );
     if (entry.methods.includes('api_key'))
@@ -241,7 +241,8 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
     if (!result || result.available !== true || (!result.short && !result.weekly))
       return tr('ui.quota_indisponible');
     const parts = [];
-    if (typeof result.plan === 'string' && result.plan) parts.push(tr('ui.quota_plan', { plan: result.plan }));
+    if (typeof result.plan === 'string' && result.plan)
+      parts.push(tr('ui.quota_plan', { plan: result.plan }));
     for (const [window, key] of [
       [result.short, 'ui.quota_courte'],
       [result.weekly, 'ui.quota_hebdo'],
@@ -292,8 +293,7 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
       [result.short, () => tr('ui.quota_short_label')],
       [result.weekly, () => tr('ui.quota_weekly_label')],
     ]) {
-      if (!window || typeof window.usedPercent !== 'number' || !Number.isFinite(window.usedPercent))
-        continue;
+      if (!window || typeof window.usedPercent !== 'number' || !Number.isFinite(window.usedPercent)) continue;
       const used = Math.min(100, Math.max(0, Math.round(window.usedPercent * 10) / 10));
       container.append(quotaBar(label, used));
     }
@@ -348,7 +348,12 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
       'secondary-button provider-quota-refresh',
     );
     refresh.type = 'button';
-    wrap.append(node('p', 'provider-quota-label', () => tr('ui.quota_codex_label')), line, bars, refresh);
+    wrap.append(
+      node('p', 'provider-quota-label', () => tr('ui.quota_codex_label')),
+      line,
+      bars,
+      refresh,
+    );
     return wrap;
   }
   function formShell(title) {
@@ -474,21 +479,24 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
       }
     };
   }
-  // Muse Code (experimental subscription) requires explicit acknowledgment
-  // of its warning before any login request is sent. Other providers keep
-  // their direct login flow.
-  function museCodeLogin(entry) {
-    if (entry && entry.id === 'muse-code') museCodeConsentForm(entry);
+  // Subscription flows with account risks require acknowledgment before login.
+  // API-key entry remains separate and never shows subscription consent.
+  function providerLogin(entry) {
+    if (entry && ['muse-code', 'anthropic'].includes(entry.id)) subscriptionConsentForm(entry);
     else startLogin(entry);
   }
-  function museCodeConsentForm(entry) {
+  function subscriptionConsentForm(entry) {
+    const prefix = entry.id === 'anthropic' ? 'providers.anthropic_subscription' : 'providers.muse_code';
     const form = formShell(entry.name);
-    form.append(node('p', 'provider-notice', () => tr('providers.muse_code_guidance')));
+    form.append(node('p', 'provider-notice', () => tr(`${prefix}_guidance`)));
     const check = node('input');
     check.type = 'checkbox';
     check.checked = false;
     const consent = node('label', 'provider-consent');
-    consent.append(check, node('span', '', () => tr('providers.muse_code_ack')));
+    consent.append(
+      check,
+      node('span', '', () => tr(`${prefix}_ack`)),
+    );
     form.append(consent);
     const actions = node('div', 'provider-form-actions'),
       start = button(() => tr('ui.connecter_un_compte'), null, 'primary-button');
@@ -497,7 +505,10 @@ export function createProviderSettings({ api, toast, allowed, onChanged }) {
     check.onchange = () => {
       start.disabled = !check.checked;
     };
-    actions.append(button(() => tr('ui.retour'), renderList), start);
+    actions.append(
+      button(() => tr('ui.retour'), renderList),
+      start,
+    );
     form.append(actions);
     check.focus();
     form.onsubmit = (event) => {

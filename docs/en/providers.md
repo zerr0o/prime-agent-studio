@@ -12,11 +12,15 @@ The list uses the installed Prime Agent catalog, with search by name or ID. It s
 - **Add an API key** saves a key in Prime Agent’s native storage. An already-saved key is never prefilled or returned to the browser.
 - **Environment variable** stores the name of an existing variable in the server’s environment. The variable must already be defined and nonempty. This panel does not change system variables.
 
-With Prime Agent 0.9.5, account flows are those exposed by the native registry: OpenAI Codex, Anthropic, GitHub Copilot and xAI (Grok). Studio keeps no frozen list and follows the installed engine. For xAI, the same `xai` entry accepts an account connection (eligible subscription) or an existing API key (`XAI_API_KEY`); access and billing rules remain those of the provider, see the [native provider documentation](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.5/packages/coding-agent/docs/providers.md).
+With Prime Agent 0.9.6, account flows are those exposed by the native registry: OpenAI Codex, Anthropic, GitHub Copilot and xAI (Grok). Studio keeps no frozen list and follows the installed engine. For xAI, the same `xai` entry accepts an account connection (eligible subscription) or an existing API key (`XAI_API_KEY`); access and billing rules remain those of the provider, see the [native provider documentation](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.6/packages/coding-agent/docs/providers.md).
 
 In ordinary use, Prime Inference uses `PRIME_API_KEY` then the `auth.json` entry; the Prime CLI configuration (`~/.prime/config.json`) is no longer read and is reused only during an explicit upstream login. If you only relied on the CLI, reconnect that provider (existing API key supported). Studio never silently imports CLI credentials and never really opens an external login.
 
 Azure and Cloudflare require additional environment settings. Bedrock and Vertex use their existing cloud settings; guidance in each card explains where to configure them. Custom providers must first be defined in **Models and defaults**.
+
+## Anthropic subscription warning
+
+Before Anthropic account login, Studio shows a warning and requires confirmation. The native subscription flow identifies as Claude Code. It may violate Anthropic’s terms and lead to account restrictions or a ban. An API key avoids this specific subscription-auth risk and keeps its separate entry form. Studio does not automatically reconnect an existing account.
 
 ## Meta Model API (Muse Spark)
 

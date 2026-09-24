@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, appendFile, rm, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
-import { ensureLocalKernel, localKernelPython } from '../lib/kernel.mjs';
+import { join, dirname, resolve, delimiter } from 'node:path';
+import { ensureLocalKernel, checkCode, localKernelPython } from '../lib/kernel.mjs';
 import { discoverPythonSkills, resolveSkillPackages } from '../lib/kernel-skills.mjs';
 import { discoverCli, agentEnvironment } from '../lib/agent.mjs';
 import { transformKernelBootstrap } from '../runtime/kernel-hook.mjs';
@@ -282,5 +283,113 @@ test(
       if (name.endsWith('.js'))
         changed += Number(transformKernelBootstrap(await readFile(join(bundleDir, name), 'utf8')).changed);
     assert.equal(changed, 1);
+  },
+);
+
+const MCP_DISCOVERY_METHODS = [
+  'list_plugins',
+  'search_plugins',
+  'list_connections',
+  'search_tools',
+  'describe_tool',
+];
+
+test('kernel readiness gate requires the five 0.9.6 MCP discovery methods', async () => {
+  const code = checkCode([]);
+  for (const name of MCP_DISCOVERY_METHODS) assert.ok(code.includes(name), `checkCode missing ${name}`);
+  assert.ok(code.includes('prime-agent-runtime'), 'gate error must name the stale runtime package');
+});
+
+function findTestPython() {
+  for (const command of ['python3', 'python', 'py']) {
+    try {
+      execFileSync(command, ['--version'], { stdio: 'pipe' });
+      return command;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
+function runCheckCode(python, code, pythonPath) {
+  return new Promise((resolvePromise, reject) => {
+    execFile(
+      python,
+      ['-c', code],
+      {
+        env: {
+          ...process.env,
+          PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter),
+          PYTHONDONTWRITEBYTECODE: '1',
+        },
+        windowsHide: true,
+        timeout: 120000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
+      (error, stdout, stderr) =>
+        error ? reject(Object.assign(error, { stdout, stderr })) : resolvePromise(stdout),
+    );
+  });
+}
+
+async function stubRuntime(root, withDiscovery) {
+  const pkg = join(root, 'rlm');
+  await mkdir(pkg, { recursive: true });
+  await writeFile(
+    join(pkg, '__init__.py'),
+    [
+      'async def host_request(*args, **kwargs): raise RuntimeError("no host")',
+      'async def spawn(prompt, *, name, model=None, thinking=None): raise RuntimeError("no host")',
+      'async def progress_note(*args, **kwargs): raise RuntimeError("no host")',
+      'class _NS:',
+      '    async def spawn(self, *args, **kwargs): raise RuntimeError("no host")',
+      'rlm = _NS()',
+      '',
+    ].join('\n'),
+  );
+  const methods = withDiscovery
+    ? ['list_tools', 'call_tool', ...MCP_DISCOVERY_METHODS]
+    : ['list_tools', 'call_tool'];
+  await writeFile(
+    join(pkg, 'mcp.py'),
+    methods.map((name) => `def ${name}(*args, **kwargs): raise RuntimeError("no host")`).join('\n') + '\n',
+  );
+}
+
+test(
+  'stale 0.9.5-shaped runtime fails readiness on the missing discovery methods',
+  { skip: !findTestPython() },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'prime-mcp-gate-'));
+    t.after(async () => {
+      assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    });
+    await stubRuntime(root, false);
+    const stdout = await runCheckCode(findTestPython(), checkCode([]), root);
+    const failures = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)).failures;
+    const rlm = failures.filter((failure) => failure.name === 'rlm');
+    assert.equal(rlm.length, 1);
+    assert.match(rlm[0].error, /rlm\.mcp\.list_plugins must be callable/);
+  },
+);
+
+test(
+  'current runtime shape with all discovery methods passes the rlm readiness block',
+  { skip: !findTestPython() },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'prime-mcp-gate-'));
+    t.after(async () => {
+      assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    });
+    await stubRuntime(root, true);
+    const stdout = await runCheckCode(findTestPython(), checkCode([]), root);
+    const failures = JSON.parse(stdout.trim().split(/\r?\n/).at(-1)).failures;
+    assert.ok(
+      failures.every((failure) => failure.name !== 'rlm'),
+      `unexpected rlm failure: ${JSON.stringify(failures.filter((f) => f.name === 'rlm')).slice(0, 500)}`,
+    );
   },
 );

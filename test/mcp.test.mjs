@@ -363,7 +363,18 @@ test(
             response_types_supported: ['code'],
             code_challenge_methods_supported: ['S256'],
           });
-        if (req.url === '/register') return json({ client_id: 'fixture-client' });
+        if (req.url === '/register') {
+          // RFC 7591 + SDK FullSchema require redirect_uris in the response;
+          // echo the request's URIs (0.9.6 rejects a bare client_id).
+          let requested = {};
+          try {
+            requested = JSON.parse(raw);
+          } catch {}
+          return json({
+            client_id: 'fixture-client',
+            redirect_uris: requested.redirect_uris || ['http://localhost:53700/callback'],
+          });
+        }
         if (req.url === '/token') {
           exchanges++;
           const form = new URLSearchParams(raw);

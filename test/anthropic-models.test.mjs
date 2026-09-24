@@ -149,18 +149,21 @@ test('native registry exposes Opus 5.5 with existing auth and honors model overr
   );
   const registry = native.ModelRegistry.inMemory(auth);
   const model = registry.find('anthropic', ANTHROPIC_OPUS_55.id);
-  assert.deepEqual(model, ANTHROPIC_OPUS_55);
-  assert.ok(registry.find('anthropic', 'claude-opus-5'));
+  // 0.9.6 seeds the registry from its generated catalog. Newer upstream
+  // metadata wins over Studio's additive fallback (covered above).
+  assert.equal(model.id, ANTHROPIC_OPUS_55.id);
+  assert.equal(model.provider, 'anthropic');
+  assert.equal(model.reasoning, true);
+  assert.ok(model.input.includes('image'));
   assert.ok(registry.getAvailable().some((item) => item.id === model.id && item.provider === 'anthropic'));
-  assert.deepEqual(native.getSupportedThinkingLevels(model), [
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-    'max',
-  ]);
-  assert.equal(native.clampThinkingLevel(model, 'off'), 'minimal');
+  const levels = native.getSupportedThinkingLevels(model);
+  assert.deepEqual(
+    levels,
+    ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].filter(
+      (level) => model.thinkingLevelMap?.[level] !== null,
+    ),
+  );
+  assert.equal(native.clampThinkingLevel(model, 'off'), levels[0]);
   assert.equal((await registry.getApiKeyAndHeaders(model)).apiKey, 'test-only-key');
 
   const dir = await tempHome(t);
@@ -242,7 +245,9 @@ test('native request payload uses adaptive effort and preserves empty signed thi
     assert.equal('thinking' in request, false);
     assert.equal('temperature' in request, false);
   }
-  const legacy = await payload('off', native.getModel('anthropic', 'claude-opus-5'));
+  // A generated minimal catalog need not contain this older model. Use an
+  // explicit legacy model identity so undefined cannot default to Opus 5.5.
+  const legacy = await payload('off', { ...ANTHROPIC_OPUS_55, id: 'claude-opus-5' });
   assert.deepEqual(legacy.thinking, { type: 'disabled' });
   assert.equal(legacy.temperature, 0.3);
 });

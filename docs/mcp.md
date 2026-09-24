@@ -2,16 +2,16 @@
 
 [English](en/mcp.md) · **Français** · [← Retour au README](../README.fr.md)
 
-Ouvrez **Préférences → Outils → Gérer les MCP**, sur le PC ou dans le Studio distant en contrôle complet. Le gestionnaire utilise la configuration native de **Prime Agent 0.9.1** : les connexions sont communes aux projets du PC.
+Ouvrez **Préférences → Outils → Gérer les MCP**, sur le PC ou dans le Studio distant en contrôle complet. Le gestionnaire utilise la configuration native de **Prime Agent 0.9.6** : les connexions sont communes aux projets du PC.
 
 ## Ajouter une connexion
 
 Choisissez **Ajouter un MCP**, donnez-lui un nom unique, puis sélectionnez son transport.
 
-| Transport | Configuration                                                                                                                                                        |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transport | Configuration                                                                                                                                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **HTTP**  | L’adresse du point d’accès MCP, par exemple `https://service.example/mcp`. Authentification sans identifiant, par jeton direct (secret enregistré comme en-tête privé), par variable contenant un jeton Bearer, ou avec OAuth. |
-| **stdio** | L’exécutable installé sur le PC, ses arguments — un par ligne, sans guillemets de shell — et, si nécessaire, son dossier de travail absolu.                          |
+| **stdio** | L’exécutable installé sur le PC, ses arguments (un par ligne, sans guillemets de shell) et, si nécessaire, son dossier de travail absolu.                                                                                      |
 
 Un serveur stdio fonctionne sur le **PC qui héberge Prime Agent**, même si vous le configurez depuis votre téléphone. L’enregistrement ne l’exécute pas. Le bouton **Tester** le lance dans un processus distinct et masqué sous Windows, puis le ferme après la découverte des outils. Installez d’abord l’exécutable requis sur le PC ; le Studio ne télécharge pas de serveur à votre place.
 
@@ -27,7 +27,7 @@ Les options avancées permettent de définir les délais de démarrage et d’ap
 
 Dans l’application Windows, le test retrouve le Python du dossier persistant, conservé entre les mises à jour. S’il n’existe pas encore, le Studio le prépare automatiquement avec Prime Agent et uv ; ce premier test peut donc prendre plus de temps. Aucune commande manuelle de préparation n’est nécessaire. Une configuration Python explicitement définie reste prioritaire.
 
-Vous pouvez rechercher, modifier, activer, désactiver ou supprimer les serveurs ajoutés. Une suppression demande confirmation et retire aussi les identifiants OAuth de ce seul serveur. Linear et Notion sont les intégrations natives de Prime Agent : connectez-les ou déconnectez-les depuis leur carte. Leurs noms sont réservés.
+Vous pouvez rechercher, modifier, activer, désactiver ou supprimer les serveurs ajoutés. Une suppression demande confirmation et retire aussi les identifiants OAuth de ce seul serveur. Studio conserve les cartes Linear et Notion, dont les noms sont réservés. En 0.9.6, ces services utilisent le module générique `mcp` plutôt que des intégrations Python distinctes. Les serveurs HTTP et stdio personnalisés restent pris en charge. Ce panneau ne reproduit pas le catalogue `/plugins` du terminal ni son gestionnaire multicomptes.
 
 Les nouveaux réglages s’appliquent aux **nouvelles sessions**. Les sessions déjà chargées conservent leur configuration jusqu’à leur rechargement natif ; le Studio ne les interrompt pas pour appliquer un changement. Pour essayer immédiatement une connexion ajoutée, ouvrez une nouvelle session et demandez à Prime Agent d’utiliser ce MCP.
 
@@ -38,9 +38,16 @@ Pour un serveur HTTP compatible OAuth, choisissez **Connecter**, puis **Autorise
 - **Sur le PC** : le retour vers le serveur local de Prime Agent est automatique.
 - **Sur un téléphone** : après l’autorisation, le navigateur peut aboutir à une adresse `http://localhost:5370…/callback?…` inaccessible. Copiez cette **adresse complète**, revenez dans le gestionnaire MCP, collez-la dans **Adresse complète de retour** et validez. Le Studio vérifie qu’elle correspond à la connexion en cours.
 
-Vous pouvez annuler la connexion ; elle expire après trois minutes. Les serveurs exigeant un identifiant de client OAuth préenregistré ne sont pas pris en charge par le formulaire, conformément aux options persistantes exposées par Prime Agent 0.9.1. Utilisez une authentification par jeton si le service la propose.
+Vous pouvez annuler la connexion ; elle expire après trois minutes. Dans **Options avancées**, le mode OAuth accepte aussi les champs natifs facultatifs :
 
-Certains serveurs (Supabase, par exemple) délivrent à l’enregistrement dynamique un client **confidentiel** avec secret : l’échange du code puis le renouvellement exigent ce secret, que le moteur OAuth actuel ne conserve pas. La connexion échoue alors après le retour du navigateur, et le gestionnaire affiche désormais le motif réel au lieu d’un message générique. Dans ce cas, utilisez le mode **Jeton direct** avec un jeton d’accès personnel du service.
+- **Client ID** (`oauthClientId`) pour une application préenregistrée.
+- **Variable du secret client** (`oauthClientSecretEnvVar`), uniquement le nom. Une valeur absente ou vide bloque la connexion avant toute requête réseau.
+- **URL des métadonnées client** (`oauthClientMetadataUrl`), un document HTTPS si le serveur le prend en charge.
+- **Scopes** (`oauthScopes`), un jeton par ligne. Laissez vide pour la découverte native des scopes.
+
+Ces champs sont conservés lorsque vous modifiez d’autres options. Videz un champ pour le supprimer. Modifier l’adresse ou l’identité retire l’ancien jeton OAuth et exige une nouvelle connexion.
+
+Prime Agent 0.9.6 conserve l’identité confidentielle reçue lors de l’inscription dynamique et l’utilise pour l’échange du code et le renouvellement du jeton. Cela corrige la cause du secret manquant derrière l’ancienne erreur HTTP 422 de Supabase. Des serveurs HTTPS locaux de test valident l’échange et le renouvellement, pas une connexion réelle à un compte Supabase. Reconnectez une ancienne inscription en échec après activation de 0.9.6. Le retrait de Supabase du catalogue intégré ne bloque pas une adresse de serveur personnalisée. **Jeton direct** reste une option si le service l’accepte.
 
 ## Configuration et confidentialité
 

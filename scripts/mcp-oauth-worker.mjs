@@ -1,6 +1,6 @@
 // Own process so cancellation also closes the native OAuth callback server.
 import { createInterface } from 'node:readline';
-import { createMcpConfigStore, mcpRevision } from '../lib/mcp-config.mjs';
+import { buildMcpOAuthProvider, createMcpConfigStore, mcpRevision } from '../lib/mcp-config.mjs';
 import { oauthErrorMessage } from '../lib/mcp-oauth-errors.mjs';
 
 const send = (data) => process.stdout.write(JSON.stringify(data) + '\n');
@@ -23,12 +23,12 @@ async function login({ agentHome, name, revision }) {
     if (mcpRevision(selected.config) !== revision) throw new Error('Configuration changed');
     const { config, builtin, loaded } = selected;
     if (!config.oauth || config.enabled === false) throw new Error('OAuth unavailable');
-    const provider = loaded.createMcpOAuthProvider({
-      server: name,
+    const provider = buildMcpOAuthProvider(loaded, {
+      name,
       label: builtin?.label || name,
       url: config.url,
-      scopes: builtin?.oauth?.scopes,
-      clientId: builtin?.oauth?.clientId,
+      builtin,
+      config,
     });
     const credentials = await provider.login({
       onAuth: ({ url }) => send({ status: 'waiting', url }),

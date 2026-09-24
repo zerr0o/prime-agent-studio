@@ -17,13 +17,21 @@ export function createSettings({
   copyText,
   toast,
   onStudioPreferences = () => {},
+  onEngineSettings = () => {},
   getModels,
   openModelPicker,
   icon,
 }) {
   const updates = createDesktopUpdates({ api, getContext });
   const interactions = createInteractionSettings({ api, getContext, onStudioPreferences });
-  const engineSettings = createEngineSettings({ api, getContext, getModels, openModelPicker, icon });
+  const engineSettings = createEngineSettings({
+    api,
+    getContext,
+    getModels,
+    openModelPicker,
+    icon,
+    onChanged: onEngineSettings,
+  });
   const computerPreferences = createComputerPreferences({ api, getContext, getModels, openModelPicker });
   computerPreferences.start();
   const $ = (id) => document.getElementById(id);

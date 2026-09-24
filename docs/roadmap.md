@@ -34,7 +34,7 @@ Les notes et le journal court d’un plan donnent le contexte du résultat sans 
 
 ## Outils disponibles pour les agents
 
-Les nouvelles exécutions du Studio et leurs sous-agents reçoivent six outils via l’extension native de Prime Agent 0.9.5. Aucun fork du moteur n’est nécessaire.
+Les nouvelles exécutions du Studio et leurs sous-agents reçoivent six outils via l’extension native de Prime Agent 0.9.6. Aucun fork du moteur n’est nécessaire.
 
 | Outil               | Rôle                                                                                                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

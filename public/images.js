@@ -153,13 +153,14 @@ export function createImageComposer({ getContext, onChange, onError }) {
     }
     return drafts.get(key);
   }
+  // A server-validated native imageModel id routes the image turn on the
+  // engine side, so attachments stay allowed; otherwise the truthful
+  // refusal stands. The gate is a single id-or-null value by design.
   const incompatible = () => {
     const context = getContext();
-    return (
-      entry().items.some((item) => item.type === 'image') &&
-      Array.isArray(context.input) &&
-      !context.input.includes('image')
-    );
+    if (!entry().items.some((item) => item.type === 'image')) return false;
+    if (typeof context.imageModel === 'string' && context.imageModel) return false;
+    return Array.isArray(context.input) && !context.input.includes('image');
   };
   function update() {
     const context = getContext(),

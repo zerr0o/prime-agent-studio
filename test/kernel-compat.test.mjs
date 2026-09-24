@@ -44,6 +44,27 @@ function findPython() {
 
 const anyPython = findPython();
 
+// Deterministic 0.9.5 withdrawal reconstruction: splice the compat script's
+// embedded official EXPECTED_OLD_BLOCK into the shipped section span. No
+// machine-local 0.9.5 tarball paths; the shipped 0.9.6 tree keeps every name
+// the old block needs (asyncio, _consume_notice_task, repl.host_request).
+async function unpatchedBash(shippedBashPath) {
+  let text = await readFile(shippedBashPath, 'utf8');
+  const start = text.indexOf('    def _arm_consumed_notice');
+  const end = text.indexOf('    async def _wait_reaped', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  text = text.slice(0, start) + (await compatBlock('EXPECTED_OLD_BLOCK')) + text.slice(end);
+  // 0.9.6 binds asyncio lazily at handle init; 0.9.5 carried it top-level and
+  // the old withdrawal needs it. Restore the top-level import deterministically.
+  if (!/^import asyncio$/m.test(text))
+    text = text.replace(
+      'from __future__ import annotations\n',
+      'from __future__ import annotations\n\nimport asyncio\n',
+    );
+  return text;
+}
+
 async function compatBlock(name) {
   const source = await readFile(KERNEL_COMPAT_SCRIPT, 'utf8');
   const marker = name + " = '''";
@@ -391,6 +412,10 @@ test(
     });
     await cp(eng.rlmDir, join(dir, 'patched', 'rlm'), { recursive: true });
     await cp(eng.rlmDir, join(dir, 'unpatched', 'rlm'), { recursive: true });
+    await writeFile(
+      join(dir, 'unpatched', 'rlm', 'bash.py'),
+      await unpatchedBash(join(dir, 'unpatched', 'rlm', 'bash.py')),
+    );
     await runFile(eng.fullPython, [
       KERNEL_COMPAT_SCRIPT,
       '--file',
@@ -447,6 +472,10 @@ test(
     });
     await cp(eng.rlmDir, join(dir, 'patched', 'rlm'), { recursive: true });
     await cp(eng.rlmDir, join(dir, 'unpatched', 'rlm'), { recursive: true });
+    await writeFile(
+      join(dir, 'unpatched', 'rlm', 'bash.py'),
+      await unpatchedBash(join(dir, 'unpatched', 'rlm', 'bash.py')),
+    );
     const patchedBash = join(dir, 'patched', 'rlm', 'bash.py');
     await runFile(eng.protoPython, [KERNEL_COMPAT_SCRIPT, '--file', patchedBash, '--json']);
     const probePath = join(dir, 'probe.py');

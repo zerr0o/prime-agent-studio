@@ -12,11 +12,15 @@ La liste utilise le catalogue de l’installation Prime Agent, avec une recherch
 - **Ajouter une clé API** enregistre une clé dans le stockage natif de Prime Agent. Une clé déjà enregistrée n’est jamais préremplie ni renvoyée au navigateur.
 - **Variable d’environnement** enregistre le nom d’une variable existante dans l’environnement du serveur. La variable doit déjà être définie et non vide. Ce panneau ne modifie pas les variables système.
 
-Avec Prime Agent 0.9.5, les parcours par compte sont ceux exposés par le registre natif : OpenAI Codex, Anthropic, GitHub Copilot et xAI (Grok). Le Studio ne maintient pas de liste figée et suit le moteur installé. Pour xAI, la même entrée `xai` accepte une connexion par compte (abonnement éligible) ou une clé API existante (`XAI_API_KEY`) ; les règles d’accès et de facturation restent celles du fournisseur, consultez la [documentation native des fournisseurs](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.5/packages/coding-agent/docs/providers.md).
+Avec Prime Agent 0.9.6, les parcours par compte sont ceux exposés par le registre natif : OpenAI Codex, Anthropic, GitHub Copilot et xAI (Grok). Le Studio ne maintient pas de liste figée et suit le moteur installé. Pour xAI, la même entrée `xai` accepte une connexion par compte (abonnement éligible) ou une clé API existante (`XAI_API_KEY`) ; les règles d’accès et de facturation restent celles du fournisseur, consultez la [documentation native des fournisseurs](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.9.6/packages/coding-agent/docs/providers.md).
 
 En usage ordinaire, Prime Inference utilise `PRIME_API_KEY` puis l’entrée `auth.json` ; la configuration Prime CLI (`~/.prime/config.json`) n’est plus lue et n’est réutilisée que lors d’une connexion explicite en amont. Si vous ne dépendiez que de la CLI, reconnectez ce fournisseur (clé API existante prise en charge). Le Studio n’importe jamais silencieusement les identifiants CLI et n’ouvre réellement aucune connexion externe.
 
 Azure et Cloudflare demandent des paramètres d’environnement complémentaires. Bedrock et Vertex utilisent leurs réglages cloud existants ; une indication dans leur carte explique où les configurer. Les fournisseurs personnalisés doivent d’abord être définis dans **Modèles et valeurs par défaut**.
+
+## Avertissement sur l’abonnement Anthropic
+
+Avant une connexion au compte Anthropic, Studio affiche un avertissement et exige une confirmation. Le parcours natif par abonnement se présente comme Claude Code. Il peut enfreindre les conditions d’Anthropic et entraîner une restriction ou un bannissement du compte. Une clé API évite ce risque spécifique et conserve son formulaire distinct. Studio ne reconnecte pas automatiquement un compte existant.
 
 ## Meta Model API (Muse Spark)
 

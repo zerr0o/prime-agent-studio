@@ -1,16 +1,18 @@
 import { t as tr, bindText, bindAttribute, translateKnown, onLanguageChange } from './i18n.js';
 
 const AUTONOMOUS_FIELDS = ['maxContinuations', 'maxTurns', 'maxTokens', 'timeoutMs'];
-const MODEL_FIELDS = ['auxiliaryModel', 'providerBackupModel', 'nativeSubagentDefaultModel'];
+const MODEL_FIELDS = ['auxiliaryModel', 'imageModel', 'providerBackupModel', 'nativeSubagentDefaultModel'];
 
 function fieldLabel(field) {
   if (field === 'auxiliaryModel') return 'engine.auxiliary_label';
+  if (field === 'imageModel') return 'engine.image_label';
   if (field === 'providerBackupModel') return 'engine.backup_label';
   return 'engine.native_subagent_label';
 }
 
 function fieldNote(field) {
   if (field === 'auxiliaryModel') return 'engine.auxiliary_note';
+  if (field === 'imageModel') return 'engine.image_note';
   if (field === 'providerBackupModel') return 'engine.backup_note';
   return 'engine.native_subagent_note';
 }
@@ -29,7 +31,14 @@ function budgetLabel(field) {
 // Empty ("Défaut du moteur") means native engine default and is sent as
 // null on save; drafts are never auto-filled and no autonomous mode is
 // implied.
-export function createEngineSettings({ api, getContext = () => ({}), getModels, openModelPicker, icon }) {
+export function createEngineSettings({
+  api,
+  getContext = () => ({}),
+  getModels,
+  openModelPicker,
+  icon,
+  onChanged = () => {},
+}) {
   const root = document.getElementById('engine-settings');
   if (!root) return { open: async () => {}, update: () => {} };
   let data = null;
@@ -38,12 +47,17 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
   let generation = 0;
   let needsLoad = true;
   // Unsaved model choices. '' stays '' (clear = native engine default).
-  const drafts = { auxiliaryModel: '', providerBackupModel: '', nativeSubagentDefaultModel: '' };
+  const drafts = {
+    auxiliaryModel: '',
+    imageModel: '',
+    providerBackupModel: '',
+    nativeSubagentDefaultModel: '',
+  };
 
   root.innerHTML = `
     <div class="model-defaults-heading">
       <div>
-        <h3 id="engine-settings-heading" data-i18n="engine.advanced_models">Modèles avancés (Prime Agent 0.9.5)</h3>
+        <h3 id="engine-settings-heading" data-i18n="engine.advanced_models">Modèles avancés (Prime Agent 0.9.6)</h3>
       </div>
       <button id="save-engine-settings" class="primary-button" type="button" data-i18n="engine.save_engine">Enregistrer les réglages moteur</button>
     </div>
@@ -196,6 +210,21 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
     button.onclick = () => openPicker(field);
   }
 
+  const tierField = document.createElement('div');
+  tierField.className = 'engine-field';
+  tierField.innerHTML = `<label for="engine-defaultServiceTier" data-i18n="engine.service_tier_label"></label>
+    <select id="engine-defaultServiceTier">
+      <option value="default" data-i18n="engine.tier_default"></option>
+      <option value="flex">Flex</option>
+      <option value="priority">Priority</option>
+      <option value="auto">Auto</option>
+    </select>
+    <p class="model-defaults-note" data-i18n="engine.service_tier_note"></p>`;
+  modelGrid.append(tierField);
+  const tierSelect = $('#engine-defaultServiceTier');
+  tierSelect.onchange = refreshSave;
+  const tierDirty = () => tierSelect.value !== (data?.defaultServiceTier || 'default');
+
   // Cross billing warning for the fallback field. The native backup switch is
   // automatic on quota or outage once the configured model is authenticated,
   // so pairing Muse subscription with paid Meta API billing must stay an
@@ -304,7 +333,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
     return budgetDraft(field) !== budgetStored(field);
   }
   function isDirty() {
-    return !!data && (MODEL_FIELDS.some(modelDirty) || AUTONOMOUS_FIELDS.some(budgetDirty));
+    return !!data && (MODEL_FIELDS.some(modelDirty) || tierDirty() || AUTONOMOUS_FIELDS.some(budgetDirty));
   }
   function refreshSave() {
     saveButton.disabled = busy || !data || readOnly() || !isDirty();
@@ -313,6 +342,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
   function applyReadOnly() {
     const locked = readOnly() || busy || !data;
     for (const entry of pickerButtons.values()) entry.button.disabled = locked;
+    tierSelect.disabled = locked;
     for (const field of AUTONOMOUS_FIELDS) {
       budgetInputs.get(field).disabled = locked || budgetChecks.get(field).checked;
       budgetChecks.get(field).disabled = locked;
@@ -324,6 +354,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
 
   function syncDraftsFromData() {
     for (const field of MODEL_FIELDS) drafts[field] = data?.[field] || '';
+    tierSelect.value = data?.defaultServiceTier || 'default';
   }
 
   function fillBudgets() {
@@ -416,6 +447,7 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
       return;
     }
     const body = { revision: data.revision };
+    if (tierDirty()) body.defaultServiceTier = tierSelect.value === 'default' ? null : tierSelect.value;
     for (const field of MODEL_FIELDS) if (modelDirty(field)) body[field] = drafts[field] || null;
     const autonomous = {};
     try {
@@ -454,6 +486,9 @@ export function createEngineSettings({ api, getContext = () => ({}), getModels, 
       render();
       status('engine.saved_engine');
       error();
+      try {
+        await onChanged();
+      } catch {}
     } catch (e) {
       if (turn !== generation) return;
       status('engine.unsaved_engine');

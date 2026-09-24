@@ -58,6 +58,13 @@ export function createMcpSettings({ api, toast }) {
             <label><span data-i18n="ui.delai_par_appel_ms">Délai par appel · ms</span><input id="mcp-timeout" type="number" min="1000" max="300000" step="1000" value="60000"></label>
             <label><span data-i18n="ui.acces_aux_outils">Accès aux outils</span><select id="mcp-tools-mode"><option value="all" data-i18n="ui.tous_sauf_les_outils_interdits">Tous sauf les outils interdits</option><option value="selected" data-i18n="ui.seulement_la_liste_autorisee">Seulement la liste autorisée</option></select><textarea id="mcp-enabled-tools" aria-label="Outils autorisés, un par ligne" data-i18n-aria-label="ui.outils_autorises_un_par_ligne" rows="3" placeholder="Un outil par ligne" data-i18n-placeholder="ui.un_outil_par_ligne" spellcheck="false" hidden></textarea><small id="mcp-tools-note" hidden data-i18n="ui.une_liste_vide_n_autorise_aucun_outil">Une liste vide n’autorise aucun outil.</small></label>
             <label><span data-i18n="ui.outils_interdits_un_par_ligne">Outils interdits · un par ligne</span><textarea id="mcp-disabled-tools" rows="3" spellcheck="false"></textarea></label>
+            <div id="mcp-oauth-identity" class="mcp-wide mcp-form-grid" hidden>
+              <label><span data-i18n="mcp.oauthClientId">Client OAuth ID</span><input id="mcp-oauth-client-id" maxlength="512" autocomplete="off" spellcheck="false"></label>
+              <label><span data-i18n="mcp.oauthClientSecretEnv">Variable du secret client</span><input id="mcp-oauth-client-secret-env" maxlength="128" autocomplete="off" spellcheck="false" placeholder="MY_OAUTH_CLIENT_SECRET"></label>
+              <label class="mcp-wide"><span data-i18n="mcp.oauthMetadataUrl">URL des métadonnées client</span><input id="mcp-oauth-metadata-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/client.json"></label>
+              <label class="mcp-wide"><span data-i18n="mcp.oauthScopes">Scopes OAuth, un par ligne</span><textarea id="mcp-oauth-scopes" rows="2" spellcheck="false"></textarea></label>
+              <p class="mcp-wide mcp-note" data-i18n="mcp.oauthIdentityNote"></p>
+            </div>
             <label id="mcp-headers-row" class="mcp-wide"><span data-i18n="ui.en_tetes_http_objet_json">En-têtes HTTP · objet JSON</span><textarea id="mcp-headers" rows="3" spellcheck="false" placeholder='{"X-Service": "valeur"}' data-i18n-placeholder="example.mcpHeaders"></textarea><small data-i18n="ui.une_valeur_null_conserve_l_en_tete_prive_existant_les_valeurs_enr">Une valeur null conserve l’en-tête privé existant. Les valeurs enregistrées ne sont pas renvoyées au navigateur.</small></label>
           </div>
         </details>
@@ -248,11 +255,11 @@ export function createMcpSettings({ api, toast }) {
   function tokenHint() {
     const mode = $('mcp-auth').value;
     if (mode === 'token') {
-      const kept =
-        !!editing?.config.headers && Object.hasOwn(editing.config.headers, 'Authorization');
+      const kept = !!editing?.config.headers && Object.hasOwn(editing.config.headers, 'Authorization');
       return kept ? tr('ui.secret_enregistre_laissez_vide_pour_conserver') : tr('ui.collez_le_jeton_secret');
     }
-    if (mode === 'bearer' && looksLikeToken($('mcp-token').value)) return tr('ui.cela_ressemble_a_un_jeton_basculez');
+    if (mode === 'bearer' && looksLikeToken($('mcp-token').value))
+      return tr('ui.cela_ressemble_a_un_jeton_basculez');
     if (mode === 'bearer') return tr('ui.nom_de_variable_exemple_jeton_direct');
     return '';
   }
@@ -263,11 +270,10 @@ export function createMcpSettings({ api, toast }) {
     $('mcp-http').hidden = !http;
     $('mcp-stdio').hidden = http;
     $('mcp-headers-row').hidden = !http;
+    $('mcp-oauth-identity').hidden = !http || mode !== 'oauth';
     $('mcp-token-row').hidden = !showToken;
     const keptSecret =
-      mode === 'token' &&
-      !!editing?.config.headers &&
-      Object.hasOwn(editing.config.headers, 'Authorization');
+      mode === 'token' && !!editing?.config.headers && Object.hasOwn(editing.config.headers, 'Authorization');
     $('mcp-token').required = showToken && !(mode === 'token' && keptSecret);
     // Mask pasted secrets. Variable names stay readable.
     $('mcp-token').type = mode === 'token' ? 'password' : 'text';
@@ -304,9 +310,19 @@ export function createMcpSettings({ api, toast }) {
     // returned to the browser: an empty field keeps it, a new value replaces it.
     const hasPrivateAuth =
       !!c.headers && typeof c.headers === 'object' && Object.hasOwn(c.headers, 'Authorization');
-    $('mcp-auth').value = c.oauth ? 'oauth' : c.bearerTokenEnvVar ? 'bearer' : hasPrivateAuth ? 'token' : 'none';
+    $('mcp-auth').value = c.oauth
+      ? 'oauth'
+      : c.bearerTokenEnvVar
+        ? 'bearer'
+        : hasPrivateAuth
+          ? 'token'
+          : 'none';
     editingTokenMode = $('mcp-auth').value === 'token';
     $('mcp-token').value = c.bearerTokenEnvVar || '';
+    $('mcp-oauth-client-id').value = c.oauthClientId || '';
+    $('mcp-oauth-client-secret-env').value = c.oauthClientSecretEnvVar || '';
+    $('mcp-oauth-metadata-url').value = c.oauthClientMetadataUrl || '';
+    $('mcp-oauth-scopes').value = (c.oauthScopes || []).join('\n');
     $('mcp-startup').value = c.startupTimeoutMs ?? 20000;
     $('mcp-timeout').value = c.callTimeoutMs ?? 60000;
     $('mcp-enabled-tools').value = (c.enabledTools || []).join('\n');
@@ -349,7 +365,19 @@ export function createMcpSettings({ api, toast }) {
             throw new Error(tr('ui.les_en_tetes_doivent_etre_un_objet_json_valide'));
           }
         }
-        if (mode === 'oauth') config.oauth = true;
+        if (mode === 'oauth') {
+          config.oauth = true;
+          for (const [key, id] of [
+            ['oauthClientId', 'mcp-oauth-client-id'],
+            ['oauthClientSecretEnvVar', 'mcp-oauth-client-secret-env'],
+            ['oauthClientMetadataUrl', 'mcp-oauth-metadata-url'],
+          ]) {
+            const value = $(id).value.trim();
+            if (value) config[key] = value;
+          }
+          const scopes = lines('mcp-oauth-scopes').map((value) => value.trim());
+          if (scopes.length) config.oauthScopes = scopes;
+        }
         if (mode === 'bearer') {
           const name = $('mcp-token').value.trim();
           if (name && looksLikeToken(name)) throw new Error(tr('ui.cela_ressemble_a_un_jeton_basculez'));
@@ -359,8 +387,7 @@ export function createMcpSettings({ api, toast }) {
           // Direct secret, stored as a private Authorization header. The value
           // is never returned to the browser and never logged.
           const secret = $('mcp-token').value.trim();
-          const kept =
-            !!editing?.config.headers && Object.hasOwn(editing.config.headers, 'Authorization');
+          const kept = !!editing?.config.headers && Object.hasOwn(editing.config.headers, 'Authorization');
           if (!secret) {
             if (!kept) throw new Error(tr('ui.indiquez_le_jeton_secret'));
           } else {

@@ -18,6 +18,7 @@ Strict safety rules:
 
 Upstream: https://github.com/PrimeIntellect-ai/prime-agent/pull/2372
 Engine without the fix: 0.9.5 (released before the merge).
+Engine 0.9.6 already ships the fix natively; the overlay reports already-patched and writes nothing.
 """
 
 from __future__ import annotations

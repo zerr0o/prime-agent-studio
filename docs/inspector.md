@@ -26,7 +26,7 @@ Pendant une exécution lancée par le Studio, la liste se rafraîchit toutes les
 
 Hors exécution, le Studio affiche les délégations conservées dans le registre natif de Prime Agent. **Historique** signifie que des échanges ont été retrouvés mais que l’état actuel de cet agent n’est pas connu. Certaines anciennes sessions n’ont plus de délégations enregistrées. L’indication d’indisponibilité du suivi ne provoque aucun redémarrage.
 
-Le suivi utilise le protocole de Prime Agent **0.9.5**. Consulter une carte ne reprend pas, n’arrête pas et ne détache pas l’agent. La liste présente au plus 200 sous-agents et chaque aperçu les 150 derniers messages ; les raisonnements internes ne sont pas développés dans cet aperçu.
+Le suivi utilise le protocole de Prime Agent **0.9.6**. Consulter une carte ne reprend pas, n’arrête pas et ne détache pas l’agent. La liste présente au plus 200 sous-agents et chaque aperçu les 150 derniers messages ; les raisonnements internes ne sont pas développés dans cet aperçu.
 
 ## Fichiers
 

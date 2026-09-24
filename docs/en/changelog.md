@@ -4,6 +4,15 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.1.0 (pre-release)
+
+- **Prime Agent 0.9.6**: pinned engine preparation with a separate managed Python environment. Runtime checks require the new generic MCP discovery methods. The upstream background-command fix is recognized without rewriting its native implementation.
+- **Native model settings**: the shared model picker now exposes `imageModel` for image turns on text-only models. Auxiliary-model guidance covers refinement, compaction and branch summaries. The default service tier offers Standard, Flex, Priority and Auto without changing active sessions. Routed image turns preserve the configured conversation model on later resume, with append-only native metadata.
+- **MCP OAuth compatibility**: confidential dynamic registration retains the client identity for code exchange and refresh. Advanced options support a client ID, a secret environment variable name, metadata URL and scopes. Custom servers and the existing Linear/Notion cards remain supported.
+- **Anthropic subscription warning**: explicit acknowledgment of the Claude Code identity and possible account restrictions before subscription login. API-key entry stays separate.
+- **Startup and Roadmap reliability**: isolated child processes no longer inherit an older Studio installation’s loaders. Brief Windows file-access refusals during Roadmap saves are retried without dropping path checks or hiding persistent errors.
+- **Preserved behavior**: no new delegated screenshot-analysis agent, no automatic installation or restart, and no change to Computer Use authorization or Stop controls. Upstream speed and cost changes are not Studio benchmark results.
+
 ## 3.8.1
 
 - **Muse Code subscription login (experimental)**: separate `muse-code` provider using browser device-code login, with no API key and no CLI install. Requires an active subscription and fails closed with no fallback to paid usage.

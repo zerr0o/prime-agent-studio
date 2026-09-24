@@ -35,6 +35,61 @@ test('starts unset without enabling backup or autonomous', async (t) => {
   assert.deepEqual(state.defaults.autonomous, DEFAULT_AUTONOMOUS_LIMITS);
 });
 
+test('0.9.6 image model and service tier stay opt-in and preserve unrelated settings', async (t) => {
+  const { agentHome, store } = await fixture(t, JSON.stringify({ theme: 'light' }));
+  const initial = await store.get();
+  assert.equal(initial.imageModel, '');
+  assert.equal(initial.defaultServiceTier, 'default');
+  const saved = await store.set({
+    revision: initial.revision,
+    imageModel: 'openai/vision-model',
+    defaultServiceTier: 'priority',
+  });
+  assert.equal(saved.imageModel, 'openai/vision-model');
+  assert.equal(saved.defaultServiceTier, 'priority');
+  await store.set({ autonomous: { maxTurns: 6 } });
+  const kept = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
+  assert.equal(kept.imageModel, 'openai/vision-model');
+  assert.equal(kept.defaultServiceTier, 'priority');
+  assert.equal(kept.theme, 'light');
+  await assert.rejects(store.set({ revision: initial.revision, imageModel: null }), { status: 409 });
+  const cleared = await store.set({ imageModel: null, defaultServiceTier: null });
+  assert.equal(cleared.imageModel, '');
+  assert.equal(cleared.defaultServiceTier, 'default');
+  const raw = JSON.parse(await readFile(join(agentHome, 'settings.json'), 'utf8'));
+  assert.equal('imageModel' in raw, false);
+  assert.equal('defaultServiceTier' in raw, false);
+});
+
+test('0.9.6 settings validate image references and native service tier values before writing', async (t) => {
+  const { store } = await fixture(t);
+  for (const tier of ['default', 'flex', 'priority', 'auto']) {
+    assert.equal((await store.set({ defaultServiceTier: tier })).defaultServiceTier, tier);
+  }
+  const before = await store.get();
+  for (const bad of ['fast', 'Priority', true, 2, {}, []]) {
+    await assert.rejects(store.set({ defaultServiceTier: bad }), { status: 400 });
+  }
+  for (const bad of [42, {}, [], '__proto__/x', 'two words']) {
+    await assert.rejects(store.set({ imageModel: bad }), { status: 400 });
+  }
+  assert.equal((await store.get()).revision, before.revision);
+});
+
+test('official engine reads the stored image model and service tier defaults', async (t) => {
+  const { loadPrimeNative } = await import('../lib/prime-native.mjs');
+  const { SettingsManager } = await loadPrimeNative();
+  const { agentHome, store } = await fixture(t);
+  await store.set({ imageModel: 'test/vision', defaultServiceTier: 'flex' });
+  const native = SettingsManager.create(agentHome, agentHome);
+  assert.equal(native.getImageModel(), 'test/vision');
+  assert.equal(native.getDefaultServiceTier(), 'flex');
+  await store.set({ imageModel: null, defaultServiceTier: null });
+  const cleared = SettingsManager.create(agentHome, agentHome);
+  assert.equal(cleared.getImageModel(), undefined);
+  assert.equal(cleared.getDefaultServiceTier(), 'default');
+});
+
 test('writes native fields, merges unknown keys and keeps a backup', async (t) => {
   const initial = JSON.stringify(
     {

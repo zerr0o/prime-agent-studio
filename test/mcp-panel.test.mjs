@@ -86,7 +86,7 @@ test('OAuth errors stay truthful: real detail, confidential hint, clean cancel',
   const confidential = oauthErrorMessage(
     new Error('Token request to https://api.supabase.com/v1/oauth/token failed: 422'),
   );
-  assert.match(confidential, /confidentiel/);
+  assert.match(confidential, /identité du client OAuth/);
   assert.ok(confidential.includes('failed: 422'));
   assert.ok(
     isConfidentialClientError('invalid_client: missing client_secret') &&
@@ -298,7 +298,9 @@ test('fake confidential OAuth server: discovery, DCR, PKCE, redirect, exchange',
         redirect: url.searchParams.get('redirect_uri'),
         client: url.searchParams.get('client_id'),
       });
-      res.writeHead(302, { Location: `${url.searchParams.get('redirect_uri')}?code=${code}&state=${url.searchParams.get('state')}` });
+      res.writeHead(302, {
+        Location: `${url.searchParams.get('redirect_uri')}?code=${code}&state=${url.searchParams.get('state')}`,
+      });
       return res.end();
     }
     if (url.pathname === '/token') {
@@ -391,8 +393,15 @@ test('fake confidential OAuth server: discovery, DCR, PKCE, redirect, exchange',
     resource: 'http://fake.test/mcp',
   });
   assert.equal(missing.status, 422);
-  assert.match(oauthErrorMessage(new Error(`Token request to ${origin}/token failed: 422`)), /confidentiel/);
-  assert.ok(!JSON.stringify(oauthErrorMessage(new Error(`Token request to ${origin}/token failed: 422`))).includes(client.client_secret));
+  assert.match(
+    oauthErrorMessage(new Error(`Token request to ${origin}/token failed: 422`)),
+    /identité du client OAuth/,
+  );
+  assert.ok(
+    !JSON.stringify(oauthErrorMessage(new Error(`Token request to ${origin}/token failed: 422`))).includes(
+      client.client_secret,
+    ),
+  );
   // With the secret the same code exchanges cleanly.
   const ok = await exchange({
     grant_type: 'authorization_code',

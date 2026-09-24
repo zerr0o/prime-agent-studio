@@ -25,7 +25,12 @@ import { openTerminal } from './lib/open-terminal.mjs';
 import { createDirectoryPicker } from './lib/pick-directory.mjs';
 import { createMcpService } from './lib/mcp-service.mjs';
 import { createProviderService } from './lib/provider-service.mjs';
-import { createCommandService, parseCommand, parseMultiSkillCommand, validateCommand } from './lib/commands.mjs';
+import {
+  createCommandService,
+  parseCommand,
+  parseMultiSkillCommand,
+  validateCommand,
+} from './lib/commands.mjs';
 import { expandMultiSkillMessage } from './lib/skill-expansion.mjs';
 import { createLiveMessages, routeLiveMessages } from './lib/live-messages.mjs';
 import { createLiveSessionClient } from './lib/live-session-client.mjs';
@@ -172,7 +177,13 @@ export function createApp(options = {}) {
       const prefs = await store.getStudioPreferences?.();
       if (prefs && typeof prefs === 'object') return prefs;
     } catch {}
-    return { allowQuestionsByDefault: true, computerBackend: 'native', computerModel: '', computerThinking: '', revision: 0 };
+    return {
+      allowQuestionsByDefault: true,
+      computerBackend: 'native',
+      computerModel: '',
+      computerThinking: '',
+      revision: 0,
+    };
   };
   const roadmap =
     options.roadmap || createRoadmapService({ resolveProject: (cwd) => store.knowledgeProject(cwd) });
@@ -348,6 +359,10 @@ export function createApp(options = {}) {
   });
   const filesFor = (cwd) => (isTaskFilesCwd(cwd) ? taskProjectFiles : projectFiles);
   const knowledge = options.knowledge || createKnowledge({ store, dataDir, agentHome, sessionDir });
+  // Live image turns use the same native imageModel route as new runs; the
+  // resolver is read-only and the engine applies settings.json itself.
+  const liveClient = (endpoint) =>
+    endpoint ? createLiveSessionClient({ ...endpoint, imageRoute: () => imageRouteModel() }) : null;
   const inspector = createSessionInspector({
     store,
     agentHome,
@@ -356,7 +371,7 @@ export function createApp(options = {}) {
     getClient: () => {
       if (options.inspectorClient) return options.inspectorClient;
       const endpoint = runtime.getLiveEndpoint?.();
-      return endpoint ? createLiveSessionClient(endpoint) : null;
+      return liveClient(endpoint);
     },
     readEdges: options.readInspectorEdges,
   });
@@ -373,7 +388,7 @@ export function createApp(options = {}) {
         )
           return null;
         const endpoint = runtime.getLiveEndpoint?.();
-        return endpoint ? createLiveSessionClient(endpoint) : null;
+        return liveClient(endpoint);
       },
     });
   const conversationSettings = createConversationSettings({
@@ -383,7 +398,7 @@ export function createApp(options = {}) {
     getClient: () => {
       if (options.liveClient) return options.liveClient;
       const endpoint = runtime.getLiveEndpoint?.();
-      return endpoint ? createLiveSessionClient(endpoint) : null;
+      return liveClient(endpoint);
     },
   });
   const liveMessages = createLiveMessages({
@@ -400,7 +415,7 @@ export function createApp(options = {}) {
     getClient: () => {
       if (options.liveClient) return options.liveClient;
       const endpoint = runtime.getLiveEndpoint?.();
-      return endpoint ? createLiveSessionClient(endpoint) : null;
+      return liveClient(endpoint);
     },
   });
   const roadmapRoutes = createRoadmapRoutes({
@@ -510,10 +525,7 @@ export function createApp(options = {}) {
           ? entries.find((candidate) => candidate?.id === wanted)
           : null;
         if (!entry?.available)
-          throw new HttpError(
-            409,
-            entry?.reason || 'The requested Computer Use backend is unavailable.',
-          );
+          throw new HttpError(409, entry?.reason || 'The requested Computer Use backend is unavailable.');
       }
     }
     // The decision model (computerModel) must read screenshots when it
@@ -565,7 +577,7 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.reglages_moteur_invalides'));
     // The catalog is only required to validate non-empty model references;
     // budget-only writes must succeed even when the catalog is down.
-    const refs = ['auxiliaryModel', 'providerBackupModel', 'nativeSubagentDefaultModel'].filter(
+    const refs = ['auxiliaryModel', 'imageModel', 'providerBackupModel', 'nativeSubagentDefaultModel'].filter(
       (field) => typeof body[field] === 'string' && body[field].trim(),
     );
     const catalog = refs.length ? await models() : null;
@@ -573,8 +585,29 @@ export function createApp(options = {}) {
       const selected = findEngineModel(catalog, body[field]);
       if (!selected) throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
       if (selected.availability === 'unavailable') throw new HttpError(409, tr('model.unavailableSelection'));
+      if (field === 'imageModel' && !modelSupportsImages(selected.id, catalog))
+        throw new HttpError(400, tr('engine.image_unsupported'));
     }
     return engineSettings.set(body);
+  }
+  // Native imageModel route (Prime Agent 0.9.6): an image-attaching turn on a
+  // text-only model is served on settings.imageModel instead, and the
+  // conversation model is preserved after. Returns the usable imageModel id
+  // or null when unset, unresolvable, unavailable or text-only, in which case
+  // the explicit refusal stays. Uses the existing catalog and helper only.
+  async function imageRouteModel(catalog) {
+    const ref = (await engineSettings.get().catch(() => null))?.imageModel?.trim();
+    if (!ref) return null;
+    const list = catalog || (await models().catch(() => null));
+    if (!list) return null;
+    const found = findEngineModel(list, ref);
+    if (!found || found.availability === 'unavailable' || !modelSupportsImages(found.id, list)) return null;
+    return found.id;
+  }
+  async function modelsWithImageRoute({ refresh = false } = {}) {
+    const catalog = await models({ refresh });
+    const imageModel = await imageRouteModel(catalog).catch(() => null);
+    return { ...catalog, imageModel };
   }
   function activeRuns() {
     return [...runs.values()]
@@ -731,7 +764,13 @@ export function createApp(options = {}) {
     if (images.length) {
       const catalog = await models();
       const selected = catalog.models?.find((model) => model.id === (body.model || catalog.default?.model));
-      if (selected?.input && !selected.input.includes('image'))
+      // A usable native imageModel routes the image turn on the engine side;
+      // the conversation model is never replaced here. Otherwise refuse as before.
+      if (
+        selected?.input &&
+        !selected.input.includes('image') &&
+        !(await imageRouteModel(catalog).catch(() => null))
+      )
         throw new HttpError(400, tr('ui.ce_modele_ne_prend_pas_en_charge_les_images_choisissez_un_modele'));
     }
     if (
@@ -799,15 +838,9 @@ export function createApp(options = {}) {
     // Decision thinking override (Preferences > Tools, default inherit).
     // Stored values are PATCH-validated; an unexpected value stays lenient
     // and inherits instead of failing the run.
-    const globalComputerThinking = [
-      'off',
-      'minimal',
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-    ].includes(globals?.computerThinking)
+    const globalComputerThinking = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
+      globals?.computerThinking,
+    )
       ? globals.computerThinking
       : '';
     const globalComputerModel =
@@ -1079,10 +1112,10 @@ export function createApp(options = {}) {
         );
       if (method === 'POST' && path === '/api/updates/request')
         return json(res, 200, await remoteUpdates.requestUpdate(await readBody(req)));
-      if (method === 'GET' && path === '/api/models') return json(res, 200, await models());
+      if (method === 'GET' && path === '/api/models') return json(res, 200, await modelsWithImageRoute());
       if (method === 'POST' && path === '/api/models/refresh') {
         await readBody(req);
-        return json(res, 200, await models({ refresh: true }));
+        return json(res, 200, await modelsWithImageRoute({ refresh: true }));
       }
       if (method === 'GET' && path === '/api/inspector')
         return json(

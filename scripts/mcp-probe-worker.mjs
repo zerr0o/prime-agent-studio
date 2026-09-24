@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createMcpConfigStore, mcpRevision } from '../lib/mcp-config.mjs';
+import { buildMcpOAuthProvider, createMcpConfigStore, mcpRevision } from '../lib/mcp-config.mjs';
 try {
   let input = '';
   for await (const chunk of process.stdin) input += chunk;
@@ -12,11 +12,12 @@ try {
   if (mcpRevision(config) !== revision || config.enabled === false) throw new Error();
   if (config.oauth) {
     loaded.registerOAuthProvider(
-      loaded.createMcpOAuthProvider({
-        server: name,
+      buildMcpOAuthProvider(loaded, {
+        name,
+        label: builtin?.label || name,
         url: config.url,
-        scopes: builtin?.oauth?.scopes,
-        clientId: builtin?.oauth?.clientId,
+        builtin,
+        config,
       }),
     );
     const auth = loaded.AuthStorage.create(join(agentHome, 'auth.json'));

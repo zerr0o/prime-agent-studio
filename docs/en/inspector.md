@@ -26,7 +26,7 @@ During a run launched by Studio, the list refreshes every few seconds while the 
 
 Outside a run, Studio displays delegations retained in Prime Agent’s native registry. **History** means exchanges were found but the agent’s current status is unknown. Some older sessions no longer have registered delegations. An unavailable tracking indicator triggers no restart.
 
-Tracking uses Prime Agent **0.9.5**’s protocol. Viewing a card does not resume, stop or detach the agent. The list shows up to 200 subagents and each preview the latest 150 messages; internal reasoning is not expanded in that preview.
+Tracking uses Prime Agent **0.9.6**’s protocol. Viewing a card does not resume, stop or detach the agent. The list shows up to 200 subagents and each preview the latest 150 messages; internal reasoning is not expanded in that preview.
 
 ## Files
 

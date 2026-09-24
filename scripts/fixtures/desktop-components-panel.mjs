@@ -22,9 +22,9 @@ export async function mockDesktopComponentsPanel(context, overrides) {
       if (f.mode === 'current') {
         return {
           ready: true,
-          components: baseComponents('0.9.5'),
-          requiredEngine: '0.9.5',
-          installedEngine: '0.9.5',
+          components: baseComponents('0.9.6'),
+          requiredEngine: '0.9.6',
+          installedEngine: '0.9.6',
           appVersion: '3.7.0',
           server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
           needsUpdate: false,
@@ -36,9 +36,9 @@ export async function mockDesktopComponentsPanel(context, overrides) {
       if (f.mode === 'deferred_status' || f.mode === 'server_pending') {
         return {
           ready: true,
-          components: baseComponents('0.9.5'),
-          requiredEngine: '0.9.5',
-          installedEngine: '0.9.5',
+          components: baseComponents('0.9.6'),
+          requiredEngine: '0.9.6',
+          installedEngine: '0.9.6',
           appVersion: '3.7.0',
           server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
           needsUpdate: false,
@@ -52,7 +52,7 @@ export async function mockDesktopComponentsPanel(context, overrides) {
         return {
           ready: true,
           components: baseComponents('0.9.2'),
-          requiredEngine: '0.9.5',
+          requiredEngine: '0.9.6',
           installedEngine: '0.9.2',
           appVersion: '3.7.0',
           server: { running: true, managed: false, version: '3.7.0', activeRuns: 0, error: 'not_managed' },
@@ -67,7 +67,7 @@ export async function mockDesktopComponentsPanel(context, overrides) {
       return {
         ready: true,
         components: baseComponents('0.9.2'),
-        requiredEngine: '0.9.5',
+        requiredEngine: '0.9.6',
         installedEngine: '0.9.2',
         appVersion: '3.7.0',
         server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
@@ -129,9 +129,9 @@ export async function mockDesktopComponentsPanel(context, overrides) {
                 }
                 return {
                   ready: true,
-                  components: baseComponents('0.9.5'),
-                  requiredEngine: '0.9.5',
-                  installedEngine: '0.9.5',
+                  components: baseComponents('0.9.6'),
+                  requiredEngine: '0.9.6',
+                  installedEngine: '0.9.6',
                   appVersion: '3.7.0',
                   server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
                   activation: 'failed',
@@ -154,9 +154,9 @@ export async function mockDesktopComponentsPanel(context, overrides) {
               }
               return {
                 ready: true,
-                components: baseComponents('0.9.5'),
-                requiredEngine: '0.9.5',
-                installedEngine: '0.9.5',
+                components: baseComponents('0.9.6'),
+                requiredEngine: '0.9.6',
+                installedEngine: '0.9.6',
                 appVersion: '3.7.0',
                 server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
                 activation: 'deferred',
@@ -171,7 +171,7 @@ export async function mockDesktopComponentsPanel(context, overrides) {
                 return {
                   ready: false,
                   components: baseComponents('0.9.2'),
-                  requiredEngine: '0.9.5',
+                  requiredEngine: '0.9.6',
                   installedEngine: '0.9.2',
                   appVersion: '3.7.0',
                   server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
@@ -184,9 +184,9 @@ export async function mockDesktopComponentsPanel(context, overrides) {
               }
               return {
                 ready: true,
-                components: baseComponents('0.9.5'),
-                requiredEngine: '0.9.5',
-                installedEngine: '0.9.5',
+                components: baseComponents('0.9.6'),
+                requiredEngine: '0.9.6',
+                installedEngine: '0.9.6',
                 appVersion: '3.7.0',
                 server: { running: true, managed: true, version: '3.7.0', activeRuns: 0 },
                 activation: 'active',

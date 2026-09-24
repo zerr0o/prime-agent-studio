@@ -327,22 +327,20 @@ test('mocked Codex catalog fetch pins client_version 0.156.1 and retains Sol/Lun
     }),
   );
   const { ModelRegistry } = await import(pathToFileURL(join(coreDir, 'model-registry.js')).href);
-  const registry = ModelRegistry.create(
+  const { AuthStorage } = await import(pathToFileURL(join(coreDir, 'auth-storage.js')).href);
+  // Exercise native auth subscriptions/reloads rather than a partial storage mock.
+  const auth = AuthStorage.inMemory(
     {
-      getOAuthProviders: () => [],
-      get: () => undefined,
-      getApiKey: async () => undefined,
-      getProviderHeaders: () => undefined,
-      getAuthStatus: () => ({ source: 'missing' }),
-      hasAuth: (provider) => provider === 'openai-codex',
-      getApiKeyWithSourceToken: async () => ({
-        apiKey: fixtureJwt,
-        sourceToken: { source: 'stored' },
-        credentialType: 'oauth',
-      }),
+      'openai-codex': {
+        type: 'oauth',
+        access: fixtureJwt,
+        refresh: 'fixture-refresh',
+        expires: Date.now() + 3600000,
+      },
     },
-    join(dir, 'models.json'),
+    { usePrimeCliConfig: false },
   );
+  const registry = ModelRegistry.create(auth, join(dir, 'models.json'));
   const seen = [];
   const realFetch = globalThis.fetch;
   const previousOffline = process.env.PI_OFFLINE;

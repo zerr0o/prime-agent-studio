@@ -21,6 +21,14 @@ export const messages = {
     fr: 'Je comprends qu\u2019il s\u2019agit d\u2019une connexion par abonnement exp\u00e9rimentale, s\u00e9par\u00e9e de la facturation API payante, et je veux la d\u00e9marrer.',
     en: 'I understand this is an experimental subscription login, separate from paid API billing, and I want to start it.',
   },
+  'providers.anthropic_subscription_guidance': {
+    fr: 'La connexion par abonnement Anthropic se présente comme Claude Code. Elle peut enfreindre les conditions d’Anthropic et entraîner une restriction ou un bannissement du compte. Utilisez une clé API pour éviter ce risque lié à la connexion par abonnement.',
+    en: 'Anthropic subscription login identifies as Claude Code. This may violate Anthropic’s terms and lead to account restrictions or a ban. Use an API key to avoid this subscription-auth risk.',
+  },
+  'providers.anthropic_subscription_ack': {
+    fr: 'Je comprends ce risque pour mon compte et je souhaite continuer avec mon abonnement.',
+    en: 'I understand this account risk and want to continue with my subscription.',
+  },
   'engine.backup_billing_warning': {
     fr: 'Attention : ce secours m\u00e9lange la facturation d\u2019abonnement Muse et de l\u2019API Meta payante. En cas de quota ou de panne, les demandes changent de facturation automatiquement d\u00e8s que les deux acc\u00e8s sont authentifi\u00e9s. Laissez vide pour aucun changement silencieux.',
     en: 'Warning: this fallback crosses Muse subscription and paid Meta API billing. On quota or outage, requests switch billing automatically once both sides are authenticated. Leave empty for no silent switch.',
@@ -5431,9 +5439,26 @@ export const messages = {
     fr: 'Connexion OAuth impossible : {value1}',
     en: 'OAuth connection failed: {value1}',
   },
+  'mcp.oauthClientId': { fr: 'Client OAuth ID (facultatif)', en: 'OAuth client ID (optional)' },
+  'mcp.oauthClientSecretEnv': {
+    fr: 'Variable du secret client (facultatif)',
+    en: 'Client secret environment variable (optional)',
+  },
+  'mcp.oauthMetadataUrl': {
+    fr: 'URL des métadonnées client (facultatif)',
+    en: 'Client metadata URL (optional)',
+  },
+  'mcp.oauthScopes': {
+    fr: 'Scopes OAuth, un par ligne (facultatif)',
+    en: 'OAuth scopes, one per line (optional)',
+  },
+  'mcp.oauthIdentityNote': {
+    fr: 'Laissez vide pour la découverte et l’inscription natives. Entrez seulement le nom de la variable du secret, jamais le secret. Modifier cette identité demande une nouvelle connexion.',
+    en: 'Leave empty for native discovery and registration. Enter only the secret environment variable name, never the secret. Changing this identity requires a new login.',
+  },
   'server.oauth_client_confidentiel_requis': {
-    fr: 'Ce serveur exige un client OAuth confidentiel avec secret, que Studio ne conserve pas. Utilisez le mode Jeton avec un jeton personnel, puis réessayez. Détail : {value1}',
-    en: 'This server requires a confidential OAuth client with a secret, which Studio does not retain. Use Token mode with a personal token instead, then retry. Detail: {value1}',
+    fr: 'Le serveur a refusé l’identité du client OAuth. Avec Prime Agent 0.9.6, reconnectez ce serveur pour renouveler son inscription et vérifiez ses réglages OAuth. Le mode Jeton reste une alternative si le serveur l’accepte. Détail : {value1}',
+    en: 'The server rejected the OAuth client identity. With Prime Agent 0.9.6, reconnect this server to renew its registration and check its OAuth settings. Token mode remains an alternative if the server accepts it. Detail: {value1}',
   },
   'server.connexion_oauth_annulee': {
     fr: 'Connexion OAuth annulée.',
@@ -5747,17 +5772,32 @@ export const messages = {
     en: 'Native default model, otherwise parent',
   },
   'engine.advanced_models': {
-    fr: 'Modèles avancés (Prime Agent 0.9.5)',
-    en: 'Advanced models (Prime Agent 0.9.5)',
+    fr: 'Modèles avancés (Prime Agent 0.9.6)',
+    en: 'Advanced models (Prime Agent 0.9.6)',
   },
   'engine.advanced_models_note': {
-    fr: 'Affinage, secours et sous-agent natif. Vide = comportement natif, sans changement.',
-    en: 'Refinement, fallback and native subagent. Empty = native behavior, no change.',
+    fr: 'Résumés, images, secours et sous-agents natifs. Vide = comportement natif, sans changement.',
+    en: 'Summaries, images, fallback and native subagents. Empty = native behavior, no change.',
   },
-  'engine.auxiliary_label': { fr: 'Modèle d’affinage', en: 'Refinement model' },
+  'engine.auxiliary_label': { fr: 'Modèle de résumés et d’affinage', en: 'Summary and refinement model' },
   'engine.auxiliary_note': {
-    fr: 'Utilisé pour l’auto-affinage quand il est défini et authentifié. Sinon, le modèle de session est utilisé.',
-    en: 'Used for auto-refinement when set and authenticated. Otherwise the session model is used.',
+    fr: 'Utilisé pour l’affinage et les résumés de compaction et de branche. Le moteur revient au modèle de session si ce choix est absent ou inutilisable.',
+    en: 'Used for refinement, compaction and branch summaries. The engine falls back to the session model when this choice is unset or unusable.',
+  },
+  'engine.image_label': { fr: 'Modèle pour les images', en: 'Image model' },
+  'engine.image_note': {
+    fr: 'Traite les tours avec images si le modèle de session accepte seulement le texte. Vide = refus explicite. Ce réglage ne change pas le modèle de Bureau expert.',
+    en: 'Handles turns with images when the session model accepts only text. Empty = explicit refusal. This does not change the Computer Use model.',
+  },
+  'engine.image_unsupported': {
+    fr: 'Ce modèle ne prend pas en charge les images. Choisissez un modèle compatible avec les images.',
+    en: 'This model does not support images. Choose an image-capable model.',
+  },
+  'engine.service_tier_label': { fr: 'Niveau de service par défaut', en: 'Default service tier' },
+  'engine.tier_default': { fr: 'Standard (défaut du moteur)', en: 'Standard (engine default)' },
+  'engine.service_tier_note': {
+    fr: 'Appliqué aux nouvelles sessions. Flex, Priority et Auto dépendent du fournisseur et peuvent modifier le coût ou le délai. Vérifiez les niveaux pris en charge par votre fournisseur.',
+    en: 'Applies to new sessions. Flex, Priority and Auto depend on the provider and may change cost or latency. Check which tiers your provider supports.',
   },
   'engine.backup_label': { fr: 'Modèle de secours', en: 'Fallback model' },
   'engine.backup_note': {

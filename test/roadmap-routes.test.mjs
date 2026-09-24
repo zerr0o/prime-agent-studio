@@ -262,11 +262,12 @@ test('a session emitted after startup is linked without relaunching the accepted
   assert.equal(result.json.sessionId, null);
   f.controls[0].emitSession();
   let value;
-  for (let index = 0; index < 50; index++) {
+  const deadline = Date.now() + 3000;
+  do {
     value = (await f.get()).json;
     if (value.plans[0].sessions.length) break;
     await delay(10);
-  }
+  } while (Date.now() < deadline);
   assert.deepEqual(value.plans[0].sessions, [f.controls[0].sessionId]);
   assert.equal(f.controls.length, 1);
 });

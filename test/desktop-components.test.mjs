@@ -53,7 +53,7 @@ function tar(entries) {
   return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
 }
 test('policy pins an exact tested engine; unsupported architectures and Node lines fail closed', () => {
-  assert.equal(COMPONENT_POLICY.engine, '0.9.5');
+  assert.equal(COMPONENT_POLICY.engine, '0.9.6');
   checkNode('24.19.0', 'win32', 'x64');
   for (const args of [
     ['24.19.0', 'win32', 'arm64'],
@@ -63,7 +63,7 @@ test('policy pins an exact tested engine; unsupported architectures and Node lin
   ])
     assert.throws(() => checkNode(...args));
 });
-test('0.9.5 requires the complete bundle with the direct Node entry; a missing cli-node.js fails closed', async (t) => {
+test('0.9.6 requires the complete bundle with the direct Node entry; a missing cli-node.js fails closed', async (t) => {
   const root = await fixture(t);
   const packageDir = join(root, 'package');
   await mkdir(join(packageDir, 'dist/bundle'), { recursive: true });

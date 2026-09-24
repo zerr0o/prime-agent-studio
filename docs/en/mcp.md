@@ -2,16 +2,16 @@
 
 **English** · [Français](../mcp.md) · [← Back to README](../../README.md)
 
-Open **Preferences → Tools → Manage MCPs** on the PC or in remote Studio with full control. The manager uses **Prime Agent 0.9.1** native configuration: connections are shared across projects on the PC.
+Open **Preferences → Tools → Manage MCPs** on the PC or in remote Studio with full control. The manager uses **Prime Agent 0.9.6** native configuration: connections are shared across projects on the PC.
 
 ## Add a connection
 
 Choose **Add an MCP**, give it a unique name, then select its transport.
 
-| Transport | Configuration                                                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transport | Configuration                                                                                                                                                                                                     |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **HTTP**  | The MCP endpoint address, such as `https://service.example/mcp`. Authentication can be anonymous, use a direct token (secret stored as a private header), use a variable containing a Bearer token, or use OAuth. |
-| **stdio** | The executable installed on the PC, its arguments—one per line, without shell quotes—and its absolute working directory if needed.                        |
+| **stdio** | The executable installed on the PC, its arguments (one per line, without shell quotes), and its absolute working directory if needed.                                                                             |
 
 A stdio server runs on the **PC hosting Prime Agent**, even when configured from a phone. Saving does not execute it. **Test** launches it in a separate process, hidden on Windows, then closes it after tool discovery. Install the required executable on the PC first; Studio does not download servers for you.
 
@@ -27,7 +27,7 @@ Advanced options set startup and call timeouts, an allowlist of tools, a denylis
 
 In the Windows application, the test finds Python in the persistent data folder retained across updates. If it has not been prepared yet, Studio sets it up automatically using Prime Agent and uv, so the first test may take longer. No manual setup command is needed. An explicitly configured Python path retains priority.
 
-You can search, edit, enable, disable or remove added servers. Removal requires confirmation and also deletes OAuth credentials for that server alone. Linear and Notion are Prime Agent’s native integrations: connect or disconnect them from their cards. Their names are reserved.
+You can search, edit, enable, disable or remove added servers. Removal requires confirmation and also deletes OAuth credentials for that server alone. Studio retains the Linear and Notion cards, whose names are reserved. In 0.9.6, these services run through the generic `mcp` module rather than separate Python integrations. Custom HTTP and stdio servers remain supported. This panel is not a copy of the terminal’s `/plugins` catalog or its multi-account manager.
 
 New settings apply to **new sessions**. Already-loaded sessions retain their configuration until a native reload; Studio does not interrupt them to apply changes. To try a newly added connection immediately, open a new session and ask Prime Agent to use that MCP.
 
@@ -38,9 +38,16 @@ For an OAuth-compatible HTTP server, choose **Connect**, then **Authorize in the
 - **On the PC**: returning to Prime Agent’s local server is automatic.
 - **On a phone**: after authorization, the browser may reach an inaccessible `http://localhost:5370…/callback?…` address. Copy this **complete URL**, return to the MCP manager, paste it into **Full return address** and confirm. Studio verifies that it belongs to the ongoing connection.
 
-You can cancel the connection; it expires after three minutes. Servers requiring a preregistered OAuth client ID are not supported by the form, matching the persistent options exposed by Prime Agent 0.9.1. Use token authentication if the service offers it.
+You can cancel the connection; it expires after three minutes. Under **Advanced options**, OAuth mode also accepts the native optional identity fields:
 
-Some servers (Supabase, for example) issue a **confidential** client with a secret at dynamic registration: code exchange and later refresh both require that secret, which the current OAuth engine does not retain. Sign-in then fails after the browser returns, and the manager now shows the real reason instead of a generic message. In that case, use **Direct token** mode with a personal access token from the service.
+- **Client ID** (`oauthClientId`) for a preregistered application.
+- **Client secret environment variable** (`oauthClientSecretEnvVar`), the variable name only. A missing or empty value fails before a network request.
+- **Client metadata URL** (`oauthClientMetadataUrl`), an HTTPS document URL when supported by the server.
+- **Scopes** (`oauthScopes`), one token per line. Leave empty for native scope discovery.
+
+These fields remain unchanged when you edit unrelated options. Clear a field to remove it. Changing the endpoint or identity removes the old grant and requires a new login.
+
+Prime Agent 0.9.6 retains the confidential client identity returned by dynamic registration and uses it for both code exchange and token refresh. This addresses the missing-secret cause of the earlier Supabase HTTP 422 error. Local HTTPS fixtures validate exchange and refresh, not a real Supabase account login. Reconnect an older failed registration after activating 0.9.6. Supabase’s removal from the bundled catalog does not block a custom server URL. **Direct token** remains an option when the service accepts it.
 
 ## Configuration and privacy
 

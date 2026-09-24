@@ -186,6 +186,10 @@ const state = {
   modelCatalogDefault: '',
   modelCatalogRefreshing: false,
   modelCatalogNotice: '',
+  // Native imageModel route id (server-validated) or null. Single gate:
+  // truthy means image turns ride the engine imageModel; the conversation
+  // model selector is never touched by it.
+  imageModel: null,
 };
 const selection = readStorage('selection', {});
 const sessionActivity = createSessionActivity({
@@ -1338,28 +1342,24 @@ function markdown(text, { cwd = execCwdOf(), basePath = '', imageRoot } = {}) {
       ADD_ATTR: ['data-studio-file', 'data-studio-image'],
     },
   );
-  bindFileLinks(
-    n,
-    references,
-    (reference) => inspectorUI?.openDocument(reference, { cwd, basePath }),
-    {
-      context: () => ({
-        cwd,
-        basePath,
-        remote: state.remote,
-        readOnly: state.readOnly,
-        nativeFileOpen: state.nativeFileOpen,
-        online: state.online,
-      }),
-      resolve: (reference, context) =>
-        api(
-          `/api/project-files/resolve?${new URLSearchParams({ cwd: context.cwd, reference, basePath: context.basePath || '' })}`,
-        ),
-      reveal: (folderCwd, path) => api('/api/projects/open', { method: 'POST', body: { cwd: folderCwd, path } }),
-      copy: (text) => copyText(text),
-      toast,
-    },
-  );
+  bindFileLinks(n, references, (reference) => inspectorUI?.openDocument(reference, { cwd, basePath }), {
+    context: () => ({
+      cwd,
+      basePath,
+      remote: state.remote,
+      readOnly: state.readOnly,
+      nativeFileOpen: state.nativeFileOpen,
+      online: state.online,
+    }),
+    resolve: (reference, context) =>
+      api(
+        `/api/project-files/resolve?${new URLSearchParams({ cwd: context.cwd, reference, basePath: context.basePath || '' })}`,
+      ),
+    reveal: (folderCwd, path) =>
+      api('/api/projects/open', { method: 'POST', body: { cwd: folderCwd, path } }),
+    copy: (text) => copyText(text),
+    toast,
+  });
   bindInlineImages(n, images, { cwd, basePath, imageRoot });
   n.querySelectorAll('a').forEach((a) => {
     if (a.classList.contains('document-link')) return;
@@ -2498,6 +2498,8 @@ function populateModels(catalog, { preserveSelection = false } = {}) {
     ? catalog.configuredProviders
     : null;
   state.modelCatalogDefault = typeof catalog?.default?.model === 'string' ? catalog.default.model : '';
+  state.imageModel =
+    typeof catalog?.imageModel === 'string' && catalog.imageModel ? catalog.imageModel : null;
   state.modelCatalogThinking = catalog?.default?.thinking || '';
   state.modelCatalogRefreshing = catalog?.refreshing === true;
   state.modelCatalogNotice = '';
@@ -3145,6 +3147,7 @@ imageComposer = createImageComposer({
     disabled: state.readOnly || state.projectOverview || state.sending || !state.projectCwd,
     input: state.models.find((model) => model.id === ($('model-select').value || state.modelCatalogDefault))
       ?.input,
+    imageModel: state.imageModel,
   }),
   onChange: () => updateComposer(),
   onError: (error) => toast(translateKnown(error.message) || String(error), true),
@@ -3661,6 +3664,19 @@ createProviderSettings({
 const settingsUI = createSettings({
   api,
   onStudioPreferences: applyStudioPreferences,
+  // Saving or clearing the native imageModel refreshes the composer gate
+  // through the existing catalog GET; selection is preserved. A GET already
+  // in flight before the save would resolve stale, so await it first and
+  // only then issue the fresh read. No duplicate state, no reload.
+  onEngineSettings: async () => {
+    try {
+      await modelCatalogRequest?.catch(() => {});
+      await refreshModelCatalog();
+    } catch {
+    } finally {
+      updateComposer();
+    }
+  },
   getContext: () => ({
     remote: state.remote,
     readOnly: state.readOnly,

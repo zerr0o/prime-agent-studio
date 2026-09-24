@@ -326,9 +326,11 @@ test(
 );
 
 const localPython = resolve('.local/kernel-venv/Scripts/python.exe');
-const kernelPython = process.env.PRIME_AGENT_KERNEL_PYTHON || (existsSync(localPython)
-  ? localPython
-  : join(homedir(), '.prime', 'agent', 'kernel-venv', 'Scripts', 'python.exe'));
+const kernelPython =
+  process.env.PRIME_AGENT_KERNEL_PYTHON ||
+  (existsSync(localPython)
+    ? localPython
+    : join(homedir(), '.prime', 'agent', 'kernel-venv', 'Scripts', 'python.exe'));
 test(
   'Windows Python kernel subprocesses receive CREATE_NO_WINDOW and SW_HIDE',
   { skip: process.platform !== 'win32' || !existsSync(kernelPython) },
@@ -387,3 +389,32 @@ print(json.dumps(seen))
     assert.ok(observed.startup & 1, 'STARTF_USESHOWWINDOW');
   },
 );
+
+test('agent environment strips foreign Studio loader imports but keeps user flags', () => {
+  const foreign =
+    '--import="file:///C:/Other/studio/runtime/kernel-loader.mjs" --import="file:///C:/Other/studio/runtime/subagent-loader.mjs" --max-old-space-size=4096';
+  const env = agentEnvironment({ env: { ...process.env, NODE_OPTIONS: foreign } });
+  assert.ok(!env.NODE_OPTIONS.includes('C:/Other'), 'foreign loaders removed');
+  assert.ok(env.NODE_OPTIONS.includes('--max-old-space-size=4096'), 'user flags kept');
+  assert.ok(env.NODE_OPTIONS.includes('windows-hidden.cjs'), 'repo preload present');
+});
+
+test('agent environment strips only foreign Studio loaders, byte-preserving the rest', () => {
+  const ownLoader = `file:///${fileURLToPath(new URL('../runtime/kernel-loader.mjs', import.meta.url))
+    .replaceAll('\\', '/')
+    .replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`)}`;
+  const nodeOptions = [
+    '--import="file:///C:/Other/studio/runtime/kernel-loader.mjs"',
+    "--import='C:\\FOREIGN\\STUDIO\\RUNTIME\\SUBAGENT-LOADER.MJS'",
+    `--import="${ownLoader}"`,
+    '--import="file:///C:/tools/a  b/my-loader.mjs"',
+    '--max-old-space-size=4096',
+  ].join(' ');
+  const env = agentEnvironment({ env: { ...process.env, NODE_OPTIONS: nodeOptions } });
+  assert.ok(!env.NODE_OPTIONS.includes('C:/Other'), 'foreign file-URL loader removed');
+  assert.ok(!env.NODE_OPTIONS.includes('FOREIGN'), 'foreign backslash uppercase loader removed');
+  assert.ok(env.NODE_OPTIONS.includes(ownLoader), 'own loader preserved byte-identical');
+  assert.ok(env.NODE_OPTIONS.includes('a  b'), 'quoted double spaces elsewhere untouched');
+  assert.ok(env.NODE_OPTIONS.includes('--max-old-space-size=4096'), 'user flags kept');
+  assert.ok(env.NODE_OPTIONS.includes('windows-hidden.cjs'), 'repo preload present');
+});

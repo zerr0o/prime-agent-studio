@@ -73,7 +73,7 @@ try {
   await expect(page.locator('.provider-card')).not.toHaveCount(0);
   await expect(page.locator('[data-provider="openai"]')).toContainText('Configuré');
   await expect(page.locator('[data-provider="openai-codex"]')).toContainText('Connecter un compte');
-  await mkdir('test-results', { recursive: true });
+  await mkdir('test-results/engine-0.9.6', { recursive: true });
   await page.screenshot({ path: 'test-results/desktop-providers.png', animations: 'disabled' });
   await captureEnglishDocumentation(page, 'desktop-providers.png');
   assert.doesNotMatch(await page.locator('#providers-dialog').textContent(), /private-fixture/);
@@ -158,6 +158,28 @@ try {
   await museConsent.check();
   await expect(museConnect).toBeEnabled();
   // Do not submit: this UI check must never initiate a real Meta login.
+  await page.getByRole('button', { name: 'Retour', exact: true }).click();
+  assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
+  // Anthropic subscription risk is visible before a login request. API keys
+  // keep their ordinary form and do not request subscription consent.
+  await search.fill('anthropic');
+  const anthropicCard = page.locator('[data-provider="anthropic"]');
+  await anthropicCard.getByRole('button', { name: 'Connecter un compte', exact: true }).click();
+  const anthropicConsent = page.locator('#providers-dialog input[type="checkbox"]');
+  await expect(page.locator('#providers-view')).toContainText('Claude Code');
+  await expect(page.locator('#providers-view')).toContainText('bannissement');
+  await expect(anthropicConsent).not.toBeChecked();
+  await expect(page.getByRole('button', { name: 'Connecter un compte', exact: true })).toBeDisabled();
+  await anthropicConsent.check();
+  await expect(page.getByRole('button', { name: 'Connecter un compte', exact: true })).toBeEnabled();
+  await page.screenshot({
+    path: 'test-results/engine-0.9.6/anthropic-consent-fr.png',
+    animations: 'disabled',
+  });
+  await page.getByRole('button', { name: 'Retour', exact: true }).click();
+  await anthropicCard.getByRole('button', { name: 'Ajouter une clé API', exact: true }).click();
+  await expect(page.getByLabel('Clé API', { exact: true })).toBeVisible();
+  await expect(page.locator('.provider-consent')).toHaveCount(0);
   await page.getByRole('button', { name: 'Retour', exact: true }).click();
   assert.deepEqual(JSON.parse(await readFile(authPath)), initial);
   // OAuth form events are replayed without connecting any real account.

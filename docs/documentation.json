@@ -7,8 +7,8 @@
       "fr": "docs/computer-use.md",
       "en": "docs/en/computer-use.md",
       "reviewed": {
-        "fr": "1943e6e346a44a5940140c266d8ae5a99346280662d08c2ab37dd198e1739482",
-        "en": "867ac5624b81d2e95c003a4782fb9b5a23fb9948abe895a231f35b844fdd6971"
+        "fr": "f1a3d88d6754cd2fbc96b587d8b9c5348890d795326cd4584e6fe346dad2a5db",
+        "en": "8e1bd6eff498f17d7c120a4e0846c60f4836f984ae03189ee2802d4cbb9269db"
       }
     },
     {
@@ -16,8 +16,8 @@
       "fr": "docs/roadmap.md",
       "en": "docs/en/roadmap.md",
       "reviewed": {
-        "fr": "fc6bc4eb35ab5703dffc9b248e56f99b769d15298481a7893fc8ffab29a1ead5",
-        "en": "fd50800ce8707801fa292272b40cd407f6d0aff16e4923cf924709f95c95c02a"
+        "fr": "ae36ee611739c9908f2c4f96c1455ca83a264544b311f458478c55898affa4d8",
+        "en": "685f66cc22235ccdeffcaab7a312a9a6bd61a84ca2f21c89ff51f40bc4f49ff7"
       }
     },
     {
@@ -25,8 +25,8 @@
       "fr": "docs/desktop.md",
       "en": "docs/en/desktop.md",
       "reviewed": {
-        "fr": "b0c96a0f6630edf26ba2e80db5dc0fcf6302b3928ae5b57585fcd3c850e1dd32",
-        "en": "e1d19f692e5a9b505134c33686fd52f77c75a3895e91c3996ea6457703529f16"
+        "fr": "c751911de6748b603e517b7d1bec395f071392dbfc5197474aac97d77476d5e1",
+        "en": "45d30c031f210fc79830c69d00734eb537938ef4d3381fd13ae69c3a7e8827df"
       }
     },
     {
@@ -43,8 +43,8 @@
       "fr": "docs/changelog.md",
       "en": "docs/en/changelog.md",
       "reviewed": {
-        "fr": "2b6966a8879284716594d8fae26c87fc1b12cb3057772dabaee599ff23a35cec",
-        "en": "362df77e6d30692fd7ffbd0672d45aec0aa5ae613c111bec5bca60910a3992dd"
+        "fr": "e5f239839de380dc6edd95fdf976e6e3c0f4aed9e2f8f1d364877160f900be03",
+        "en": "a30016bdf814ed70c6f9c453dd184f83ea18246caa27aa8d28f83420de9f3039"
       }
     },
     {
@@ -61,8 +61,8 @@
       "fr": "docs/configuration.md",
       "en": "docs/en/configuration.md",
       "reviewed": {
-        "fr": "80a2925b4d9b0d87a5ec011c2931b2dd055093b9d0ea3d21483e4124dec46fc8",
-        "en": "8a9a04a4e6e6e197dc2b41be3d3350327793ffa50646b170cc4d5f4e94b2c9fa"
+        "fr": "32480f366bf9cac30db71d09a302aaf06ce938de945960dadf903b106901aa2e",
+        "en": "4015105de714a48e8e8af24df8f4a644165566fc3b0f1056ec34a31504c02ae3"
       }
     },
     {
@@ -79,8 +79,8 @@
       "fr": "docs/inspector.md",
       "en": "docs/en/inspector.md",
       "reviewed": {
-        "fr": "c7ef8e4d5bd3ce9d065b921c0d29c5bb0677b8b8d1b05e8bfafdbdffcaf33597",
-        "en": "f2f7628fcf367a41dce4f1dbc4f45abcb79bdc3432ba8691d497103b9f0bdd16"
+        "fr": "573b6001ce68b776c9f67992f14faebf2ba5263a638a43b15e38d9060569b94a",
+        "en": "dd1efbf27bb5260f5823655e8fa39ac053020a39e276e32cfccfc8dc6ec987e3"
       }
     },
     {
@@ -97,8 +97,8 @@
       "fr": "docs/mcp.md",
       "en": "docs/en/mcp.md",
       "reviewed": {
-        "fr": "4038f02c1695870a79656a4b5acc1dd03b56a43ee6e736c11753ee98fcb63af9",
-        "en": "364048b16b306a182efcbcfc3aaab95e688be153e4e46f89edffec2049d084b3"
+        "fr": "e29e11071d9b66366b4d0a6af36e8ddb4afccc4e0d1554518343c9d851985987",
+        "en": "2a66c399197ff20d764bb6ac6ba06311e6f39d29a969bfbfe68752aa9000967c"
       }
     },
     {
@@ -106,8 +106,8 @@
       "fr": "docs/providers.md",
       "en": "docs/en/providers.md",
       "reviewed": {
-        "fr": "6af47b2207d06bd6556ec63a35f43265282aa89b5ce0d046ecc823008d59aa84",
-        "en": "b9b1585da026599a5a15d2d088dacc73216ccda6c4fb5d88924634a587c55ebc"
+        "fr": "f9fb03216e9bbc344b5733cca0f2e54410438b62f4136ce59eb27e08ac69ccfb",
+        "en": "44550c272fc64e96132954461f0707fb736f5ca68e38c92a57eb17512d10f95a"
       }
     },
     {

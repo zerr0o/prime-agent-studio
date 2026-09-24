@@ -30,9 +30,9 @@ await mkdir('.local/components-ui', { recursive: true });
 const READY_COMPONENTS = {
   engine: {
     status: 'ready',
-    version: '0.9.5',
+    version: '0.9.6',
     path: 'C:\\Donn\u00e9es Studio\\engine\\cli.js',
-    provenance: 'https://official.example/prime-agent-0.9.5.tgz',
+    provenance: 'https://official.example/prime-agent-0.9.6.tgz',
   },
   python: { status: 'ready' },
   bash: { status: 'ready' },
@@ -68,7 +68,12 @@ try {
             if (name === 'desktop_components') {
               if (args.action === 'diagnose') {
                 if (window.phase === 'ready')
-                  return { ready: true, needsRestart: true, requiredEngine: '0.9.5', components: window.readyComponents };
+                  return {
+                    ready: true,
+                    needsRestart: true,
+                    requiredEngine: '0.9.6',
+                    components: window.readyComponents,
+                  };
                 return {
                   ready: false,
                   components: {
@@ -91,7 +96,15 @@ try {
             if (name === 'desktop_components_cancel')
               window.finishPrepare({ failure: { component: 'engine', error: 'cancelled' } });
             if (name === 'desktop_update_status')
-              return { managed: true, running: true, activeRuns: window.runs, version: '3.2.7', canRestart: true, restartReason: null, operation: null };
+              return {
+                managed: true,
+                running: true,
+                activeRuns: window.runs,
+                version: '3.2.7',
+                canRestart: true,
+                restartReason: null,
+                operation: null,
+              };
             if (name === 'desktop_update_operation') return { operation: null, log: [] };
             if (name === 'desktop_update_cancel') return { operation: null, log: [] };
             if (name === 'desktop_server_restart') {
@@ -118,7 +131,9 @@ try {
     await expect(page.locator('#start')).toContainText(fr ? 'Plus tard' : 'Later');
     // Repair shows byte progress (translated, no percent yet for this event).
     await page.locator('#components-install').click();
-    await expect(page.locator('#components-status')).toContainText(fr ? 'octets re\u00e7us' : 'bytes received');
+    await expect(page.locator('#components-status')).toContainText(
+      fr ? 'octets re\u00e7us' : 'bytes received',
+    );
     // Cancel interrupts and preserves retry.
     await page.locator('#components-cancel').click();
     await expect(page.locator('#components-status')).toContainText(fr ? 'annul\u00e9e' : 'cancelled');
@@ -137,22 +152,26 @@ try {
       window.readyComponents = {
         engine: {
           status: 'ready',
-          version: '0.9.5',
+          version: '0.9.6',
           path: 'C:\\Donn\u00e9es Studio\\engine\\cli.js',
-          provenance: 'https://official.example/prime-agent-0.9.5.tgz',
+          provenance: 'https://official.example/prime-agent-0.9.6.tgz',
         },
         python: { status: 'ready' },
         bash: { status: 'ready' },
         uv: { status: 'ready', version: '0.8.22' },
       };
-      window.finishPrepare({ ready: true, needsRestart: true, requiredEngine: '0.9.5', components: window.readyComponents });
+      window.finishPrepare({
+        ready: true,
+        needsRestart: true,
+        requiredEngine: '0.9.6',
+        components: window.readyComponents,
+      });
     });
-    await expect(page.locator('#components-status')).toContainText(fr ? 'Red\u00e9marrez maintenant' : 'Restart now');
-    await expect(page.locator('#components-install')).toBeHidden();
-    assert.equal(
-      await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length),
-      1,
+    await expect(page.locator('#components-status')).toContainText(
+      fr ? 'Red\u00e9marrez maintenant' : 'Restart now',
     );
+    await expect(page.locator('#components-install')).toBeHidden();
+    assert.equal(await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length), 1);
     assert.equal(await page.evaluate(() => window.calls.some((c) => c.args?.action === 'install')), false);
     assert.equal(await page.evaluate(() => window.calls.some((c) => c.args?.action === 'activate')), false);
     assert.equal(await page.evaluate(() => window.calls.some((c) => c.args?.action === 'apply')), false);
@@ -160,7 +179,9 @@ try {
     await expect(page.locator('#components-details')).toBeHidden();
     await page.locator('#components-toggle').click();
     await expect(page.locator('#components-details')).toBeVisible();
-    await expect(page.locator('#components-detail-list')).toContainText('C:\\Donn\u00e9es Studio\\engine\\cli.js');
+    await expect(page.locator('#components-detail-list')).toContainText(
+      'C:\\Donn\u00e9es Studio\\engine\\cli.js',
+    );
     await expect(page.locator('#components-toggle')).toHaveAttribute('aria-expanded', 'true');
     await page.screenshot({ path: `.local/components-ui/details-${locale}.png`, fullPage: true });
     await page.locator('#components-toggle').click();
@@ -168,7 +189,9 @@ try {
     // Recovery surface: single confirmed Restart now with agents running.
     await page.goto(url + '/?settings');
     await expect(page.locator('#server-restart')).toBeVisible();
-    await expect(page.locator('#server-restart')).toContainText(fr ? 'Red\u00e9marrer maintenant' : 'Restart now');
+    await expect(page.locator('#server-restart')).toContainText(
+      fr ? 'Red\u00e9marrer maintenant' : 'Restart now',
+    );
     await page.evaluate(() => {
       window.runs = 1;
     });
@@ -202,7 +225,7 @@ try {
       window.phase = 'initial';
       window.runs = 0;
       const guideComponents = {
-        engine: { status: 'ready', version: '0.9.5', path: 'C:\\Guide Studio\\engine\\cli.js' },
+        engine: { status: 'ready', version: '0.9.6', path: 'C:\\Guide Studio\\engine\\cli.js' },
         python: { status: 'ready' },
         bash: { status: 'ready' },
         uv: { status: 'ready', version: '0.8.22' },
@@ -220,8 +243,18 @@ try {
             if (name === 'desktop_components') {
               if (args.action === 'diagnose') {
                 if (window.phase === 'ready')
-                  return { ready: true, needsRestart: true, requiredEngine: '0.9.5', components: guideComponents };
-                return { ready: false, needsRestart: true, requiredEngine: '0.9.5', components: { engine: { status: 'missing', path: 'C:\Guide Studio\engine\cli.js' } } };
+                  return {
+                    ready: true,
+                    needsRestart: true,
+                    requiredEngine: '0.9.6',
+                    components: guideComponents,
+                  };
+                return {
+                  ready: false,
+                  needsRestart: true,
+                  requiredEngine: '0.9.6',
+                  components: { engine: { status: 'missing', path: 'C:\Guide Studio\engine\cli.js' } },
+                };
               }
               if (args.action === 'prepare') {
                 return new Promise((done) => {
@@ -232,7 +265,15 @@ try {
               return { ready: false, components: {} };
             }
             if (name === 'desktop_update_status')
-              return { managed: true, running: true, activeRuns: window.runs, version: '3.9.8', canRestart: true, restartReason: null, operation: null };
+              return {
+                managed: true,
+                running: true,
+                activeRuns: window.runs,
+                version: '3.9.8',
+                canRestart: true,
+                restartReason: null,
+                operation: null,
+              };
             if (name === 'desktop_update_operation') return { operation: null, log: [] };
             if (name === 'desktop_update_cancel') return { operation: null, log: [] };
             if (name === 'desktop_server_restart') {
@@ -252,20 +293,27 @@ try {
     await expect
       .poll(() => page.evaluate(() => window.calls.some((c) => c.name === 'desktop_start')))
       .toBe(true);
-    await expect(page.locator('#title')).toContainText(fr ? 'Terminer la mise \u00e0 jour' : 'Finish the Studio update');
+    await expect(page.locator('#title')).toContainText(
+      fr ? 'Terminer la mise \u00e0 jour' : 'Finish the Studio update',
+    );
     await expect(page.locator('#description')).toContainText(fr ? 'si besoin' : 'if needed');
-    await expect(page.locator('#components-note')).toContainText('0.9.5');
+    await expect(page.locator('#components-note')).toContainText('0.9.6');
     await expect(page.locator('#components')).toBeVisible();
     await expect(page.locator('#components-install')).toBeVisible();
     await expect(page.locator('#start')).toContainText(fr ? 'Plus tard' : 'Later');
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.args && c.args.action === 'install')), false);
+    assert.equal(
+      await page.evaluate(() => window.calls.some((c) => c.args && c.args.action === 'install')),
+      false,
+    );
     assert.equal(await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length), 1);
     // Later opens Studio without preparing first.
     await page.locator('#start').click();
     await expect
       .poll(() => page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length))
       .toBe(2);
-    const laterStart = await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').at(-1));
+    const laterStart = await page.evaluate(() =>
+      window.calls.filter((c) => c.name === 'desktop_start').at(-1),
+    );
     assert.equal(laterStart.args.allowUnconfigured, true);
     // Repair failure is preserved with retry, then ready proposes Restart.
     await page.locator('#components-install').click();
@@ -279,15 +327,30 @@ try {
     await page.locator('#components-install').click();
     await page.evaluate(() => {
       window.phase = 'ready';
-      window.finishPrepare({ ready: true, needsRestart: true, requiredEngine: '0.9.5', components: window.guideReady });
+      window.finishPrepare({
+        ready: true,
+        needsRestart: true,
+        requiredEngine: '0.9.6',
+        components: window.guideReady,
+      });
     });
     await page.evaluate(() => {
       window.guideReady = undefined;
     });
-    await expect(page.locator('#components-status')).toContainText(fr ? 'Red\u00e9marrez maintenant' : 'Restart now');
+    await expect(page.locator('#components-status')).toContainText(
+      fr ? 'Red\u00e9marrez maintenant' : 'Restart now',
+    );
     assert.equal(await page.evaluate(() => window.calls.filter((c) => c.name === 'desktop_start').length), 2);
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.args && c.args.action === 'install')), false);
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.args && ['activate', 'apply'].includes(c.args.action))), false);
+    assert.equal(
+      await page.evaluate(() => window.calls.some((c) => c.args && c.args.action === 'install')),
+      false,
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        window.calls.some((c) => c.args && ['activate', 'apply'].includes(c.args.action)),
+      ),
+      false,
+    );
     // Single confirmed restart from the recovery surface, no second activation.
     await page.goto(url + '/?settings');
     await expect(page.locator('#server-restart')).toBeVisible();
@@ -299,7 +362,12 @@ try {
     await page.locator('#restart-proceed').click();
     await expect.poll(() => page.evaluate(() => window.restartCalls.length)).toBe(1);
     assert.equal(await page.evaluate(() => window.restartCalls[0].args.force), true);
-    assert.equal(await page.evaluate(() => window.calls.some((c) => c.args && ['activate', 'apply'].includes(c.args.action))), false);
+    assert.equal(
+      await page.evaluate(() =>
+        window.calls.some((c) => c.args && ['activate', 'apply'].includes(c.args.action)),
+      ),
+      false,
+    );
     assert.deepEqual(errors, []);
     await context.close();
   }

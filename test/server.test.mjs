@@ -54,6 +54,105 @@ test('retired model choices are rejected for messages and defaults without switc
   assert.equal(runtime.controls[0].input.model, 'openrouter/minimax/minimax-m3');
 });
 
+test('native image settings reject text-only and unavailable models without changing Computer Use', async (t) => {
+  const runtime = fakeRuntime();
+  runtime.getModels = async () => ({
+    models: [
+      { id: 'test/vision', input: ['text', 'image'], availability: 'available' },
+      { id: 'test/text', input: ['text'], availability: 'available' },
+      { id: 'test/unavailable', input: ['image'], availability: 'unavailable' },
+    ],
+  });
+  const f = await fixture(t, { runtime });
+  for (const [imageModel, status] of [
+    ['test/text', 400],
+    ['text', 400],
+    ['test/missing', 400],
+    ['test/unavailable', 409],
+  ]) {
+    const result = await f.api('/api/engine-settings', { method: 'POST', body: { imageModel } });
+    assert.equal(result.status, status, result.text);
+  }
+  const empty = (await f.api('/api/engine-settings')).json;
+  assert.equal(empty.revision, null);
+  const saved = await f.api('/api/engine-settings', {
+    method: 'POST',
+    body: {
+      revision: empty.revision,
+      imageModel: 'test/vision',
+      defaultServiceTier: 'flex',
+    },
+  });
+  assert.equal(saved.status, 200, saved.text);
+  assert.equal(saved.json.imageModel, 'test/vision');
+  assert.equal(saved.json.defaultServiceTier, 'flex');
+  assert.equal(runtime.controls.length, 0, 'Saving defaults does not start a run');
+  const raw = JSON.parse(await readFile(join(f.agentHome, 'settings.json'), 'utf8'));
+  assert.equal('computerModel' in raw, false);
+  assert.equal('computerImageModel' in raw, false);
+  const cleared = await f.api('/api/engine-settings', {
+    method: 'POST',
+    body: {
+      revision: saved.json.revision,
+      imageModel: null,
+      defaultServiceTier: null,
+    },
+  });
+  assert.equal(cleared.status, 200, cleared.text);
+  assert.equal(cleared.json.imageModel, '');
+  assert.equal(cleared.json.defaultServiceTier, 'default');
+});
+
+test('image turns ride a usable native imageModel without replacing the conversation model', async (t) => {
+  const png =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const textId = 'test/text',
+    visionId = 'test/vision';
+  const runtime = fakeRuntime();
+  runtime.getModels = async () => ({
+    models: [
+      { id: visionId, input: ['text', 'image'], availability: 'available' },
+      { id: textId, input: ['text'], availability: 'available' },
+    ],
+    default: { model: textId },
+  });
+  const f = await fixture(t, { runtime });
+  const images = [{ type: 'image', mimeType: 'image/png', data: png }];
+  const refused = await f.run({ model: textId, message: 'Look', images });
+  assert.equal(refused.status, 400);
+  assert.equal(runtime.controls.length, 0, 'Refused images start no run');
+  assert.equal((await f.api('/api/models')).json.imageModel, null);
+  const saved = await f.api('/api/engine-settings', { method: 'POST', body: { imageModel: visionId } });
+  assert.equal(saved.status, 200, saved.text);
+  assert.equal((await f.api('/api/models')).json.imageModel, visionId);
+  const admitted = await f.run({ model: textId, message: 'Look', images });
+  assert.equal(admitted.status, 201, admitted.text);
+  assert.equal(runtime.controls.length, 1);
+  assert.equal(runtime.controls[0].input.model, textId, 'Conversation model is preserved');
+  assert.deepEqual(runtime.controls[0].input.images, images, 'Image payload is preserved');
+  // Stale config: the vision model leaves the catalog, so the route closes again.
+  runtime.getModels = async () => ({
+    models: [{ id: textId, input: ['text'], availability: 'available' }],
+    default: { model: textId },
+  });
+  assert.equal((await f.api('/api/models/refresh', { method: 'POST', body: {} })).status, 200);
+  assert.equal((await f.api('/api/models')).json.imageModel, null);
+  const stale = await f.run({ model: textId, message: 'Look', images });
+  assert.equal(stale.status, 400);
+  assert.equal(runtime.controls.length, 1, 'Stale config starts no run and the native error stays visible');
+});
+
+test('service-tier-only settings do not depend on the model catalog', async (t) => {
+  const runtime = fakeRuntime();
+  runtime.getModels = async () => {
+    throw new Error('catalog offline');
+  };
+  const f = await fixture(t, { runtime });
+  const saved = await f.api('/api/engine-settings', { method: 'POST', body: { defaultServiceTier: 'auto' } });
+  assert.equal(saved.status, 200, saved.text);
+  assert.equal(saved.json.defaultServiceTier, 'auto');
+});
+
 test('manual catalogue refresh and provider model failures invalidate the cached list', async (t) => {
   const runtime = fakeRuntime(),
     requests = [];
@@ -422,18 +521,15 @@ test('project folder reveal works inside managed worktrees and stays rejected el
     200,
   );
   assert.deepEqual(opened, [await realpath(join(taskPath, 'docs'))]);
-  assert.equal(
-    (await f.api('/api/projects/open', { method: 'POST', body: { cwd: taskPath } })).status,
-    200,
-  );
+  assert.equal((await f.api('/api/projects/open', { method: 'POST', body: { cwd: taskPath } })).status, 200);
   assert.deepEqual(opened, [await realpath(join(taskPath, 'docs')), await realpath(taskPath)]);
   // Unmanaged folders stay rejected without launching anything.
   assert.equal(
     (
-      await f.api(
-        '/api/projects/open',
-        { method: 'POST', body: { cwd: join(f.root, 'unknown'), path: 'docs' } },
-      )
+      await f.api('/api/projects/open', {
+        method: 'POST',
+        body: { cwd: join(f.root, 'unknown'), path: 'docs' },
+      })
     ).status,
     404,
   );

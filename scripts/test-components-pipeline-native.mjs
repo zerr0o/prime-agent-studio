@@ -102,12 +102,12 @@ try {
   await expect(page.locator('#components-apply')).toBeVisible({ timeout: 45000 });
   await page.evaluate(() => start({ background: false }));
   await expect(page.locator('#migration-dialog')).toBeVisible({ timeout: 45000 });
-  await expect(page.locator('#migration-dialog')).toContainText('0.9.5');
+  await expect(page.locator('#migration-dialog')).toContainText('0.9.6');
   assert.equal((await probeHealth(port)).health.pid, old.pid, 'migration explanation never restarts');
   await page.locator('#migration-continue').click();
   await expect(page.locator('#migration-dialog')).toBeHidden();
   await expect(page.locator('#components')).toBeVisible({ timeout: 45000 });
-  await expect(page.locator('#description')).toContainText('0.9.5');
+  await expect(page.locator('#description')).toContainText('0.9.6');
   await expect(page.locator('#components-apply')).toBeVisible({ timeout: 45000 });
   assert.equal(
     (await probeHealth(port)).health.pid,
@@ -119,7 +119,7 @@ try {
   assert.equal((await probeHealth(port)).health.pid, old.pid, 'active runs must defer activation');
   assert.equal(
     JSON.parse(await readFile(join(dataRoot, 'engine/installation.json'), 'utf8')).components.engine.version,
-    '0.9.5',
+    '0.9.6',
   );
   await fetch(url + '/test-idle');
   await page.locator('#components-apply').click();
@@ -145,7 +145,7 @@ try {
     return { result, phases };
   });
   assert.equal(proof.result.ready, true);
-  assert.equal(proof.result.requiredEngine, '0.9.5');
+  assert.equal(proof.result.requiredEngine, '0.9.6');
   assert.equal(proof.result.needsRestart, false);
   assert.ok(proof.phases.includes('validation'), 'real main-WebView progress Channel is delivered');
   await page.evaluate(() => document.querySelector('#settings-dialog').close());

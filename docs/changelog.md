@@ -4,6 +4,15 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.1.0 (pre-release)
+
+- **Prime Agent 0.9.6** : préparation du moteur épinglé avec un environnement Python géré distinct. Les contrôles exigent les nouvelles méthodes de découverte MCP. Le correctif natif des commandes en arrière-plan est reconnu sans réécrire son implémentation.
+- **Réglages natifs des modèles** : le sélecteur partagé expose `imageModel` pour les tours avec images sur un modèle texte. L’aide du modèle auxiliaire couvre l’affinage et les résumés de compaction et de branche. Le niveau de service par défaut propose Standard, Flex, Priority et Auto sans modifier les sessions actives. Les tours routés avec images conservent le modèle de conversation lors d’une reprise ultérieure, par ajout de métadonnées natives sans réécriture.
+- **Compatibilité OAuth MCP** : l’inscription dynamique confidentielle conserve l’identité du client pour l’échange du code et le renouvellement. Les options avancées acceptent un client ID, un nom de variable du secret, une URL de métadonnées et des scopes. Les serveurs personnalisés et les cartes Linear/Notion sont conservés.
+- **Avertissement abonnement Anthropic** : confirmation explicite de l’identité Claude Code et du risque de restriction du compte avant la connexion. Le formulaire de clé API reste distinct.
+- **Fiabilité du démarrage et de la Roadmap** : les processus enfants isolés n’héritent plus des loaders d’une ancienne installation Studio. Les refus temporaires d’accès aux fichiers Windows sont réessayés lors des sauvegardes Roadmap, sans retirer les contrôles de chemin ni masquer les erreurs persistantes.
+- **Comportement préservé** : pas de nouvel agent délégué d’analyse de captures, pas d’installation ni de redémarrage automatiques, aucun changement de l’autorisation ou de l’arrêt Bureau expert. Les gains annoncés en amont ne sont pas des mesures Studio.
+
 ## 3.8.1
 
 - **Connexion par abonnement Muse Code (expérimentale)** : fournisseur `muse-code` séparé, par code dans le navigateur, sans clé API et sans installation du CLI. Exige un abonnement actif et échoue sans repli vers un usage payant.
@@ -29,7 +38,7 @@ Les changements par version. Retrouvez les installateurs et les archives du code
 
 ## 3.7.0
 
-- **Migration du moteur vers Prime Agent 0.9.5** : politique épinglée (npm 10.9.4 et uv 0.8.22 inchangés), explication unique pour les utilisateurs venant d'une version < 3.7.0. Après la mise à jour de l'application, préparez puis activez la version 0.9.5 depuis **Préférences → Mise à jour**  ; le téléchargement exige votre accord, et l’activation peut redémarrer le serveur géré uniquement quand les agents sont inactifs. Comptes et sessions conservés. Secours natif conservé si le serveur est arrêté ou ancien.
+- **Migration du moteur vers Prime Agent 0.9.5** : politique épinglée (npm 10.9.4 et uv 0.8.22 inchangés), explication unique pour les utilisateurs venant d'une version < 3.7.0. Après la mise à jour de l'application, préparez puis activez la version 0.9.5 depuis **Préférences → Mise à jour** ; le téléchargement exige votre accord, et l’activation peut redémarrer le serveur géré uniquement quand les agents sont inactifs. Comptes et sessions conservés. Secours natif conservé si le serveur est arrêté ou ancien.
 - **Parcours de mise à jour** : composants intégrés aux Préférences, préparation puis activation distinguées avec reprise sans retéléchargement, opérations sérialisées et aucun arrêt automatique des agents actifs. Installations externes explicitement validées réactivables sans faux reçu de téléchargement.
 - **Modèles avancés unifiés** : même sélecteur commun avec recherche, fournisseurs et choix « Défaut du moteur », sans changer le modèle de la conversation. Réglages d'affinage, de secours et de sous-agent natif avec budgets autonomes par défaut, sans activation implicite.
 - **Conversation et suivi** : messages inter-agents 0.9.5 et anciens formats, progression et dernière activité des sous-agents, états d'attente, de secours et de restauration du fournisseur. Relais en direct ordonné avec limite mémoire explicite, sans rejouer l'historique. En-tête du message utilisateur en miroir de l'assistant — heure à gauche, « Vous » avec avatar à droite.

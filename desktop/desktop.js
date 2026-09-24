@@ -4,7 +4,7 @@ const messages = {
     componentsDetails: 'Détails',
     componentsHideDetails: 'Masquer les détails',
     componentsNote:
-      'Cette version de Studio utilise Prime Agent 0.9.5. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
+      'Cette version de Studio utilise Prime Agent 0.9.6. Le bouton télécharge les composants manquants ou la version requise du moteur, npm privé, uv et Python 3.11 si nécessaire. Une connexion Internet est nécessaire. Git Bash doit être installé séparément pour les commandes shell.',
     componentsInstall: 'Réparer Studio',
     componentsActivationFailed:
       'Les composants sont prêts, mais le redémarrage a échoué. Réessayez Redémarrer maintenant ; aucun téléchargement supplémentaire n’est nécessaire.',
@@ -34,7 +34,7 @@ const messages = {
       'L’intégrité ou la structure du téléchargement est invalide. Aucun composant altéré n’est activé.',
     componentsCancelled: 'Préparation annulée. Vous pouvez réessayer.',
     componentsEngineVersion:
-      'Cette version de Studio nécessite Prime Agent 0.9.5 avec ses modules et ressources complets. Installez la version proposée, ou choisissez un paquet compatible.',
+      'Cette version de Studio nécessite Prime Agent 0.9.6 avec ses modules et ressources complets. Installez la version proposée, ou choisissez un paquet compatible.',
     componentsNetwork: 'Le téléchargement a échoué. Vérifiez la connexion réseau et réessayez.',
     componentsDisk:
       'L’espace disque est insuffisant. Libérez de l’espace dans le dossier de données du Studio, puis réessayez.',
@@ -130,7 +130,7 @@ const messages = {
     componentsDetails: 'Details',
     componentsHideDetails: 'Hide details',
     componentsNote:
-      'This Studio version uses Prime Agent 0.9.5. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
+      'This Studio version uses Prime Agent 0.9.6. The button downloads missing components or the required engine version, private npm, uv and Python 3.11 when needed. An Internet connection is required. Git Bash must be installed separately for shell commands.',
     componentsInstall: 'Repair Studio',
     componentsActivationFailed:
       'Components are ready, but restart failed. Retry Restart now; no further download is needed.',
@@ -158,7 +158,7 @@ const messages = {
       'The download integrity or archive structure is invalid. No altered component is activated.',
     componentsCancelled: 'Preparation cancelled. You can try again.',
     componentsEngineVersion:
-      'This Studio version requires Prime Agent 0.9.5 with complete modules and resources. Install the proposed version, or select a compatible package.',
+      'This Studio version requires Prime Agent 0.9.6 with complete modules and resources. Install the proposed version, or select a compatible package.',
     componentsNetwork: 'Download failed. Check your network connection and try again.',
     componentsDisk:
       'There is not enough disk space. Free space in the Studio data directory, then try again.',
@@ -924,7 +924,7 @@ async function start(options = {}) {
       const components = await componentsAction('diagnose');
       $('description').textContent = t.updateGuideNote.replace(
         '{version}',
-        components?.requiredEngine || '0.9.5',
+        components?.requiredEngine || '0.9.6',
       );
       $('progress').hidden = true;
       $('start').textContent = t.componentsLater;
@@ -1048,7 +1048,7 @@ $('import').onclick = async () => {
       // still require an explicit click and never start automatically.
       showLauncher();
       const diagnosed = await componentsAction('diagnose');
-      // Explicit recovery surface: explain the 0.9.5 step when legacy
+      // Explicit recovery surface: explain the 0.9.6 step when legacy
       // evidence is present. Fresh installs have none, so stay silent.
       return;
     }
@@ -1087,7 +1087,7 @@ $('import').onclick = async () => {
       } else {
         $('components').hidden = false;
         // Cold foreground with a known older engine receipt and no running
-        // server: explain the 0.9.5 step. Empty fresh installs carry no
+        // server: explain the 0.9.6 step. Empty fresh installs carry no
         // legacy evidence, so the predicate stays silent there.
       }
     }
