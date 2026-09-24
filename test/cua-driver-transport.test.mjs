@@ -159,6 +159,7 @@ test('spawn uses private --socket pair with isolated env and no forbidden flags'
   assert.equal(mcp.options.env.CUA_DRIVER_RS_HOME, 'C:\\fake\\studio-cua-home');
   assert.equal(serve.options.windowsHide, true);
   assert.equal(serve.options.shell, false);
+  assert.equal(mcp.options.detached, process.platform === 'win32');
   assert.deepEqual(transport.ownedPids.sort(), [5101, 5102]);
 });
 

@@ -98,7 +98,7 @@ test('concurrent legacy repairs publish complete helpers without overwriting', a
     repairDesktop280Resources(f.resourceDir, f.dataRoot),
     repairDesktop280Resources(f.resourceDir, f.dataRoot),
   ]);
-  assert.equal(results.flat().length, 11);
+  assert.equal(results.flat().length, 12);
   assert.ok(results.flat().includes('model-catalog-worker.mjs'));
   for (const name of results.flat()) {
     assert.equal(

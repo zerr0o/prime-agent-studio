@@ -135,7 +135,9 @@ export function normalizeComputerStatus(raw) {
 export function createComputerUse({ api, getContext, toast }) {
   const $ = (id) => document.getElementById(id);
   let draftEnabled = false;
-  let selectedBackend = COMPUTER_USE_BACKEND_NATIVE;
+  // The desktop engine is a single global preference (Preferences > Tools,
+  // persisted server-side). This module no longer stores a per-session backend
+  // choice and never sends one: the server applies the global backend.
   let lastStatus = null;
   let lastFetchError = null;
   let busyAction = false;
@@ -199,82 +201,6 @@ export function createComputerUse({ api, getContext, toast }) {
   function isVisible() {
     const ctx = context();
     return Boolean(ctx.projectCwd) && ctx.projectOverview !== true;
-  }
-
-  function backendEntry(id) {
-    const list = Array.isArray(lastStatus?.backends) ? lastStatus.backends : [];
-    const found = list.find((entry) => entry?.id === id);
-    if (found) return found;
-    if (id === COMPUTER_USE_BACKEND_CUA) return { id, supported: false, available: false, reason: null };
-    const fallback = lastStatus ? lastStatus.supported !== false : true;
-    return { id, supported: fallback, available: fallback, reason: null };
-  }
-
-  function isBackendAvailable(id) {
-    return backendEntry(id).available === true;
-  }
-
-  function backendReason(id) {
-    const reason = backendEntry(id).reason;
-    return typeof reason === 'string' && reason ? reason : null;
-  }
-
-  function isBackendSelectorDisabled() {
-    const ctx = context();
-    if (ctx.readOnly === true) return true;
-    if (ctx.online === false) return true;
-    if (busyAction || stopBusy) return true;
-    if (lastStatus == null) return true;
-    if (lastStatus.supported === false) return true;
-    if (isOn()) return true;
-    return false;
-  }
-
-  function backendHintText() {
-    if (lastStatus == null) return '';
-    if (lastStatus.supported === false) return '';
-    const cua = backendEntry(COMPUTER_USE_BACKEND_CUA);
-    if (cua.available === true) return tr('computer.backendBetaNote');
-    return backendReason(COMPUTER_USE_BACKEND_CUA) || tr('computer.backendCuaUnavailable');
-  }
-
-  function setBackend(id) {
-    if (id !== COMPUTER_USE_BACKEND_NATIVE && id !== COMPUTER_USE_BACKEND_CUA) return false;
-    if (isBackendSelectorDisabled()) return false;
-    if (!isBackendAvailable(id)) return false;
-    if (selectedBackend === id) {
-      update();
-      return true;
-    }
-    selectedBackend = id;
-    update();
-    return true;
-  }
-
-  function getSelectedBackend() {
-    return selectedBackend;
-  }
-
-  function explicitBackendFrom(raw) {
-    if (!raw || typeof raw !== 'object') return null;
-    if (raw.backend === COMPUTER_USE_BACKEND_CUA) return COMPUTER_USE_BACKEND_CUA;
-    if (raw.backend === COMPUTER_USE_BACKEND_NATIVE) return COMPUTER_USE_BACKEND_NATIVE;
-    return null;
-  }
-
-  function syncBackendFromScopedStatus(nextStatus, raw) {
-    if (!nextStatus || nextStatus.enabled !== true) return;
-    const explicit = explicitBackendFrom(raw);
-    if (!explicit) return;
-    if (nextStatus.owner) {
-      const ctxNow = context();
-      const mineNow =
-        (ctxNow.sessionId && nextStatus.owner.sessionId === ctxNow.sessionId) ||
-        (ctxNow.runId && nextStatus.owner.runId === ctxNow.runId);
-      if (mineNow) selectedBackend = explicit;
-      return;
-    }
-    selectedBackend = explicit;
   }
 
   function statusText() {
@@ -393,37 +319,6 @@ export function createComputerUse({ api, getContext, toast }) {
             ? tr('computer.hotkeyUnavailable')
             : lastStatus.hotkey || '-',
       );
-    const backendLabel = $('computer-use-backend-label');
-    if (backendLabel) bindText(backendLabel, () => tr('computer.backendLabel'));
-    const backendNativeLabel = $('computer-use-backend-native-label');
-    if (backendNativeLabel) bindText(backendNativeLabel, () => tr('computer.backendNative'));
-    const backendCuaLabel = $('computer-use-backend-cua-label');
-    if (backendCuaLabel) bindText(backendCuaLabel, () => tr('computer.backendCua'));
-    const backendNative = $('computer-use-backend-native');
-    const backendCua = $('computer-use-backend-cua');
-    if (backendNative || backendCua) {
-      const selectorDisabled = isBackendSelectorDisabled();
-      if (backendNative) {
-        backendNative.checked = selectedBackend === COMPUTER_USE_BACKEND_NATIVE;
-        backendNative.disabled = selectorDisabled || !isBackendAvailable(COMPUTER_USE_BACKEND_NATIVE);
-        bindAttribute(backendNative, 'title', () =>
-          selectorDisabled ? tr('computer.backendChangeNeedsOff') : tr('computer.backendNative'),
-        );
-        bindAttribute(backendNative, 'aria-label', () => tr('computer.backendNative'));
-      }
-      if (backendCua) {
-        backendCua.checked = selectedBackend === COMPUTER_USE_BACKEND_CUA;
-        backendCua.disabled = selectorDisabled || !isBackendAvailable(COMPUTER_USE_BACKEND_CUA);
-        bindAttribute(backendCua, 'title', () =>
-          selectorDisabled
-            ? tr('computer.backendChangeNeedsOff')
-            : backendReason(COMPUTER_USE_BACKEND_CUA) || tr('computer.backendCua'),
-        );
-        bindAttribute(backendCua, 'aria-label', () => tr('computer.backendCua'));
-      }
-    }
-    const backendHint = $('computer-use-backend-hint');
-    if (backendHint) bindText(backendHint, () => backendHintText());
   }
 
   function queryUrl() {
@@ -447,7 +342,6 @@ export function createComputerUse({ api, getContext, toast }) {
       const nextStatus = normalizeComputerStatus(data);
       lastStatus = nextStatus;
       lastFetchError = null;
-      syncBackendFromScopedStatus(nextStatus, data);
       update();
       return lastStatus;
     } catch (error) {
@@ -479,22 +373,22 @@ export function createComputerUse({ api, getContext, toast }) {
         return false;
       }
       if (lastStatus == null || lastStatus.supported === false) return false;
-      if (!isBackendAvailable(selectedBackend)) return false;
       draftEnabled = true;
       update();
       return true;
     }
     if (lastStatus == null || lastStatus.supported === false) return false;
     if (lastStatus.owner && !isMine() && next === false) return false;
-    if (next === true && !isBackendAvailable(selectedBackend)) return false;
     const turn = ++generation;
     const key = queryKey();
+    // No per-session backend: the server applies the global engine from
+    // Preferences > Tools. Availability is enforced server-side with no
+    // silent fallback.
     const body = {
       enabled: next === true,
       ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
       ...(ctx.runId ? { runId: ctx.runId } : {}),
       ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
-      ...(next === true ? { backend: selectedBackend } : {}),
     };
     busyAction = true;
     update();
@@ -504,7 +398,6 @@ export function createComputerUse({ api, getContext, toast }) {
       const nextStatus = normalizeComputerStatus(data);
       lastStatus = nextStatus;
       lastFetchError = null;
-      syncBackendFromScopedStatus(nextStatus, data);
       update();
       return lastStatus.enabled === true;
     } catch (error) {
@@ -560,14 +453,8 @@ export function createComputerUse({ api, getContext, toast }) {
     return draftEnabled === true;
   }
 
-  function getRunBackend() {
-    if (!shouldIncludeInRun()) return null;
-    return selectedBackend;
-  }
-
   function onSessionChange() {
     draftEnabled = false;
-    selectedBackend = COMPUTER_USE_BACKEND_NATIVE;
     lastStatus = null;
     lastFetchError = null;
     generation += 1;
@@ -607,16 +494,6 @@ export function createComputerUse({ api, getContext, toast }) {
     if (toggle) toggle.onclick = () => void setEnabled(!isOn());
     const stopBtn = $('computer-use-stop');
     if (stopBtn) stopBtn.onclick = () => void stopComputer();
-    const backendNative = $('computer-use-backend-native');
-    if (backendNative)
-      backendNative.onchange = () => {
-        if (backendNative.checked) void setBackend(COMPUTER_USE_BACKEND_NATIVE);
-      };
-    const backendCua = $('computer-use-backend-cua');
-    if (backendCua)
-      backendCua.onchange = () => {
-        if (backendCua.checked) void setBackend(COMPUTER_USE_BACKEND_CUA);
-      };
     update();
     void refresh({ silent: true });
     pollTimer = setInterval(tick, POLL_MS);
@@ -640,14 +517,8 @@ export function createComputerUse({ api, getContext, toast }) {
     notifyRunCreated,
     notifyRunFinished,
     shouldIncludeInRun,
-    getRunBackend,
-    getSelectedBackend,
-    setBackend,
     setEnabled,
     stopComputer,
-    get selectedBackend() {
-      return selectedBackend;
-    },
     get draftEnabled() {
       return draftEnabled;
     },

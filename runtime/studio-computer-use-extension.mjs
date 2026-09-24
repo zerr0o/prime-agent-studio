@@ -4,8 +4,12 @@
 // computer_observe returns ImageContent plus JSON metadata, never base64 text.
 
 import { Type } from 'typebox';
+import { createHash } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
-import { filterComputerUseImagesWithReport } from './computer-use-image-safety.mjs';
+import { dirname, resolve as resolvePath } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { normalizeContextImagesWithReport } from './computer-use-image-safety.mjs';
 
 const optional = Type.Optional;
 const object = (properties) => Type.Object(properties, { additionalProperties: false });
@@ -60,12 +64,87 @@ function stripImageBytes(value) {
   return out;
 }
 
+// Engine photon resizer for user-pasted attachments. Resolved lazily from
+// the running engine install (Studio launches dist/bundle/cli{,-node}.js,
+// the helper ships at dist/utils/image-resize.js) and cached for the process
+// lifetime. Returns null when unavailable so oversized attachments fall back
+// to a removal marker instead of breaking the provider request.
+// PRIME_STUDIO_IMAGE_RESIZER=off forces the fallback (hermetic unit tests).
+let engineImageResizerPromise = null;
+function engineImageResizeFile() {
+  for (const candidate of [process.env.PRIME_AGENT_CLI, process.argv?.[1]]) {
+    if (typeof candidate !== 'string' || candidate.length === 0) continue;
+    try {
+      return resolvePath(dirname(candidate), '..', 'utils', 'image-resize.js');
+    } catch {
+      /* Try the next candidate. */
+    }
+  }
+  return null;
+}
+function loadEngineImageResizer() {
+  if (!engineImageResizerPromise) {
+    engineImageResizerPromise = (async () => {
+      try {
+        if (process.env.PRIME_STUDIO_IMAGE_RESIZER === 'off') return null;
+        const file = engineImageResizeFile();
+        if (!file) return null;
+        await stat(file);
+        const mod = await import(pathToFileURL(file).href);
+        return typeof mod.resizeImage === 'function' ? mod.resizeImage : null;
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return engineImageResizerPromise;
+}
+
+// Bounded per-process cache of downscaled attachments: the context hook runs
+// before every provider request while history keeps the oversized originals,
+// so without this each turn would re-resize the same bytes. Capped at 8
+// entries, FIFO eviction, successes only.
+const RESIZED_CACHE_LIMIT = 8;
+const resizedAttachmentCache = new Map();
+async function cachedResizeAttachment(resizeImage, part) {
+  const key = createHash('sha256').update(part.data).digest('hex');
+  const hit = resizedAttachmentCache.get(key);
+  if (hit) {
+    resizedAttachmentCache.delete(key);
+    resizedAttachmentCache.set(key, hit);
+    return { data: hit.data, mimeType: hit.mimeType };
+  }
+  const result = await resizeImage({ type: 'image', data: part.data, mimeType: part.mimeType });
+  if (result && typeof result.data === 'string' && result.data.length > 0) {
+    resizedAttachmentCache.set(key, { data: result.data, mimeType: result.mimeType });
+    while (resizedAttachmentCache.size > RESIZED_CACHE_LIMIT) {
+      resizedAttachmentCache.delete(resizedAttachmentCache.keys().next().value);
+    }
+  }
+  return result;
+}
+
 export default function studioComputerUse(pi) {
-  // Normalize only the transient provider context. Never rewrite session logs
-  // or rescale an old screenshot while leaving its coordinate frame intact.
-  pi.on('context', (event) => {
-    const result = filterComputerUseImagesWithReport(event.messages);
-    return result.dropped ? { messages: result.messages } : undefined;
+  // Normalize only the transient provider context. Never rewrite session logs.
+  // Computer Use screenshots are dropped (rescaling them without updating the
+  // stored coordinate frame would corrupt frame safety); user attachments are
+  // downscaled, dropped only when no resizer is available. Small images are
+  // never touched. Async is supported: the engine awaits context handlers and
+  // keeps the previous context when a handler throws, plus the try/catch
+  // below keeps this hook fail-open by construction.
+  pi.on('context', async (event) => {
+    try {
+      const engineResizer = await loadEngineImageResizer();
+      const report = await normalizeContextImagesWithReport(event.messages, {
+        ...(engineResizer
+          ? { resizeImage: (part) => cachedResizeAttachment(engineResizer, part) }
+          : {}),
+      });
+      if (report.dropped > 0 || report.resized > 0) return { messages: report.messages };
+    } catch {
+      /* Fail-open: never block the provider call. */
+    }
+    return undefined;
   });
   if (!process.env.PRIME_STUDIO_COMPUTER_USE_CONFIG) return;
   let config;

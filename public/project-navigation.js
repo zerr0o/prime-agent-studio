@@ -11,6 +11,21 @@ const time = (value) => (typeof value === 'number' ? value : Date.parse(value)) 
 export const hasPendingQuestion = (run) =>
   run?.status === 'running' && run.interactions?.some((request) => request.status === 'pending');
 
+// Folder tint palette. Exactly six choices, first is transparent (reset).
+// Mirrors lib/store.mjs PROJECT_FOLDER_COLORS. Only the folder icon is tinted.
+export const PROJECT_FOLDER_COLORS = [
+  'transparent',
+  '#7fa6c9',
+  '#8fb49e',
+  '#d0a75e',
+  '#c98a7d',
+  '#a99ac9',
+];
+export function projectFolderColor(project) {
+  const raw = typeof project?.color === 'string' ? project.color.toLowerCase() : '';
+  return PROJECT_FOLDER_COLORS.slice(1).includes(raw) ? raw : '';
+}
+
 // Disclosure and pagination are view preferences. They never change the selected
 // conversation, its draft, or the lifetime of an agent.
 export function createProjectNavigation({
@@ -157,10 +172,12 @@ export function createProjectNavigation({
             ? 'unread'
             : 'idle';
       row.dataset.activity = status;
-      row.append(
-        icon('folder'),
-        el('span', 'project-label', () => name),
-      );
+      const folderIcon = icon('folder');
+      folderIcon.classList.add('project-folder-icon');
+      const folderTint = projectFolderColor(p);
+      if (folderTint) folderIcon.style.color = folderTint;
+      row.dataset.projectColor = folderTint || 'transparent';
+      row.append(folderIcon, el('span', 'project-label', () => name));
       if (pinned) row.append(icon('pin', 'project-pin'));
       if (status !== 'idle') row.append(activityDot(status, true));
       const count = el('span', 'project-count', () => (p.exists === false ? '!' : String(visible.length)));

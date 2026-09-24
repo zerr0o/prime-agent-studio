@@ -953,19 +953,16 @@ test('keypress/type/drag/scroll/wait map to verified tools; guardian arms exact 
     const drag = seen.find((c) => c.name === 'drag');
     assert.equal(drag.args.to_x, 20);
     const arms = fake.guardian.state.arms;
-    assert.equal(arms.length, 6, 'every non-wait action arms before dispatch');
+    // ponytail beta.7: hold-nothing actions (type/scroll/set_value) skip the
+    // arm and ride the verified mutex; the native guard refuses empty arms.
+    assert.equal(arms.length, 3, 'only held actions arm before dispatch');
     assert.deepEqual(arms[1], { buttons: [], keys: ['Control', 'c'] });
     assert.deepEqual(
-      arms[3],
-      { buttons: [], keys: [] },
-      'pure-UIA set_value rides the asserted mutex with empty sets',
-    );
-    assert.deepEqual(
-      arms[4],
+      arms[2],
       { buttons: ['middle'], keys: [] },
       'drag arms its button (any button injects DOWN)',
     );
-    assert.equal(fake.guardian.state.disarms, 6, 'every confirmed action disarms');
+    assert.equal(fake.guardian.state.disarms, 3, 'every armed confirmed action disarms');
   } finally {
     await driver.close();
   }
@@ -1775,6 +1772,156 @@ test('stop during readiness aborts the wait and closes the proven job, never han
   } finally {
     releaseReady();
     await driver.close().catch(() => {});
+  }
+});
+
+test('beta.7 real native guard refuses empty held sets without spawning', async () => {
+  // Real public boundary (no hand-rolled validator, no worker): actual
+  // validateCommand rejects the empty arm locally, so nothing spawns.
+  let spawns = 0;
+  const native = createComputerUseDriver({
+    platform: 'win32',
+    spawnProcess: () => {
+      spawns += 1;
+      throw new Error('invalid arm must never spawn a worker');
+    },
+    workerPath: 'C:\\fake\\computer-use-worker.ps1',
+    startupTimeoutMs: 500,
+    defaultTimeoutMs: 500,
+    stopTimeoutMs: 200,
+  });
+  try {
+    await assert.rejects(
+      native.request({ method: 'arm_external_input', params: { buttons: [], keys: [] } }),
+      { code: 'INVALID_PARAMS' },
+    );
+    assert.equal(spawns, 0, 'empty arm rejected before any worker spawn');
+  } finally {
+    await native.close();
+  }
+});
+
+test('beta.7 hold-nothing actions send no arm and still dispatch', async () => {
+  // Adapter side of the same regression: type/scroll/set_value hold nothing,
+  // so no arm is sent at all (the proof above shows an empty one would fail).
+  const seen = [];
+  const fake = { ...fakeCuaTransport(), guardian: fakeNativeGuardian() };
+  fake.transport.callTool = async (name, args = {}) => {
+    seen.push({ name, args });
+    if (name === 'get_window_state') return windowStateResult({ snapshot: 's0000000c' });
+    return actionOk('confirmed', 'accessibility');
+  };
+  const driver = legacyDriver(fake);
+  try {
+    const observed = await driver.request({ method: 'observe', params: { windowId: '844:10725' } });
+    const acted = await driver.request({
+      method: 'act',
+      params: {
+        actions: [
+          { type: 'type', text: 'Oxmo Puccino' },
+          { type: 'scroll', deltaY: 4, x: 100, y: 100 },
+          { type: 'set_value', elementId: 's0000000c:1', value: 'v' },
+        ],
+        expectedFrame: { driverFrame: observed.driverFrame },
+      },
+    });
+    assert.equal(acted.executed, 3, 'hold-nothing batch dispatches without an arm');
+    assert.equal(fake.guardian.state.arms.length, 0, 'no arm sent for hold-nothing actions');
+    assert.ok(seen.some((c) => c.name === 'type_text'));
+    assert.ok(seen.some((c) => c.name === 'scroll'));
+    assert.ok(seen.some((c) => c.name === 'set_value'));
+  } finally {
+    await driver.close();
+  }
+});
+
+test('beta.7 missing vendor effect stays fail-closed unverifiable, never confirmed', async () => {
+  // Synthetic safety-net case only: observed sessions DO contain effect.
+  // A response with no effect string must default fail-closed unverifiable
+  // (stop the batch, no blind replay) and never upgrade to confirmed.
+  const seen = [];
+  const fake = { ...fakeCuaTransport(), guardian: fakeNativeGuardian() };
+  fake.transport.callTool = async (name, args = {}) => {
+    seen.push({ name, args });
+    if (name === 'get_window_state') return windowStateResult({ snapshot: 's0000000d' });
+    if (name === 'click') {
+      return {
+        result: {
+          content: [{ type: 'text', text: 'ok' }],
+          structuredContent: { route: 'global_input', delivery: { mode: 'foreground' } },
+        },
+        timing: { durationMs: 1 },
+      };
+    }
+    return actionOk();
+  };
+  const driver = legacyDriver(fake);
+  try {
+    const observed = await driver.request({ method: 'observe', params: { windowId: '844:10725' } });
+    const acted = await driver.request({
+      method: 'act',
+      params: {
+        actions: [
+          { type: 'click', x: 1, y: 1 },
+          { type: 'click', x: 2, y: 2 },
+        ],
+        expectedFrame: { driverFrame: observed.driverFrame },
+      },
+    });
+    assert.equal(acted.executed, 0);
+    assert.equal(acted.partial, true);
+    assert.equal(acted.error.code, 'CUA_UNVERIFIABLE');
+    assert.equal(acted.results[0].effect, 'unverifiable');
+    assert.equal(seen.filter((c) => c.name === 'click').length, 1, 'second action never dispatched');
+  } finally {
+    await driver.close();
+  }
+});
+
+test('beta.7 skipped empty arm never clears a stale preserved arm', async () => {
+  // Parent boundary: a hold-nothing confirmed action must not disarm a
+  // previous uncertain arm; stale held inputs stay owned by stop/close
+  // cleanup. Batch 1 leaves action[1] unverifiable with its arm preserved;
+  // batch 2 (hold-nothing, confirmed) must leave arms/disarms untouched.
+  const seen = [];
+  const fake = { ...fakeCuaTransport(), guardian: fakeNativeGuardian() };
+  fake.transport.callTool = async (name, args = {}) => {
+    seen.push({ name, args });
+    if (name === 'get_window_state') return windowStateResult({ snapshot: 's0000000e' });
+    if (name === 'click') {
+      const n = seen.filter((c) => c.name === 'click').length;
+      return n === 1 ? actionOk('confirmed', 'accessibility') : actionOk('unverifiable', 'accessibility');
+    }
+    return actionOk('confirmed', 'accessibility');
+  };
+  const driver = legacyDriver(fake);
+  try {
+    const observed = await driver.request({ method: 'observe', params: { windowId: '844:10725' } });
+    const first = await driver.request({
+      method: 'act',
+      params: {
+        actions: [
+          { type: 'click', x: 1, y: 1 },
+          { type: 'click', x: 2, y: 2 },
+        ],
+        expectedFrame: { driverFrame: observed.driverFrame },
+      },
+    });
+    assert.equal(first.partial, true);
+    assert.equal(fake.guardian.state.arms.length, 2);
+    assert.equal(fake.guardian.state.disarms, 1, 'second arm preserved after unverifiable');
+    const second = await driver.request({
+      method: 'act',
+      params: {
+        actions: [{ type: 'type', text: 'abc' }],
+        expectedFrame: { driverFrame: observed.driverFrame },
+      },
+    });
+    assert.equal(second.executed, 1);
+    assert.equal(fake.guardian.state.arms.length, 2, 'skipped arm sends nothing new');
+    assert.equal(fake.guardian.state.disarms, 1, 'stale preserved arm is not cleared');
+  } finally {
+    await driver.close();
   }
 });
 

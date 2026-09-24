@@ -1,5 +1,7 @@
 # Computer Use historical image safety
 
+> **Beta.8 update:** the context hook now protects every provider-bound image. Computer Use screenshots over 2000 px are still dropped, because resizing would invalidate frame coordinates. Other oversized images, including user attachments, are downscaled with the engine image resizer; they are dropped with a marker only when resizing is unavailable or fails. Evidence: `test-results/beta8-image-400/`. The sections below are historical.
+
 ## Problem
 Anthropic rejects images with any dimension above 2000px (`provider 400` on
 `messages.N.content.M.image.source.base64.data`). Codex tolerates them, so

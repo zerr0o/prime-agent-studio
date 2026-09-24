@@ -13,14 +13,20 @@ Computer Use est un mode expert pour le **vrai bureau Windows**. Une fois activ�
 
 Le mode est désactivé par défaut et n’est pas restauré après un redémarrage du serveur. Une conversation peut conserver son choix entre ses tours dans le même processus serveur. L’arrêt supprime l’autorisation de contrôle active. Un seul contrôleur peut utiliser le bureau partagé à la fois. L’accès distant en lecture seule ne peut ni l’activer ni l’arrêter.
 
-## Choisir un backend
+## Choisir un moteur global
 
-Ouvrez **Bureau expert** dans l’en-tête lorsque Computer Use est désactivé :
+Ouvrez **Préférences > Outils > Bureau expert**. Le moteur est un réglage global unique pour ce PC, enregistré côté serveur :
 
 - **Intégration originale (Windows)** est le choix par défaut. Elle utilise notre exécuteur PowerShell/.NET et prend en charge le bureau multi-écrans complet, les régions et le focus natif.
 - **Cua Driver (beta)** utilise la version **0.28.2** Windows x64, dans des processus privés du Studio. Elle ajoute l’inspection d’accessibilité des fenêtres et les actions ciblées par élément. Elle ne remplace ni l’agent ni le modèle et ne demande pas de connexion MCP à configurer.
 
-Choisir un backend n’active pas le contrôle. Désactivez Computer Use avant d’en changer. Un backend indisponible affiche la raison ; le Studio ne bascule jamais silencieusement vers l’autre et ne rejoue pas une action. La garde native Windows conserve l’exclusivité du bureau et le raccourci d’arrêt avec CUA. CUA refuse de démarrer si ce raccourci n’est pas enregistré. Si l’arrêt des processus ou la libération des entrées ne peut pas être vérifié, tout nouveau contrôle reste bloqué. Utilisez Arrêter pour réessayer ; une autorisation désactivée ne prouve pas à elle seule que le nettoyage est terminé.
+Choisir un moteur n’active pas le contrôle. Le changement demande un bureau éteint et sans contrôleur : la zone reste verrouillée tant que Computer Use est actif, en nettoyage ou en échec de nettoyage. Un moteur indisponible affiche la raison ; le Studio ne bascule jamais silencieusement vers l’autre et ne rejoue pas une action. L’ancienne sélection par session a disparu : toutes les conversations utilisent le même moteur global. La garde native Windows conserve l’exclusivité du bureau et le raccourci d’arrêt avec CUA. CUA refuse de démarrer si ce raccourci n’est pas enregistré. Si l’arrêt des processus ou la libération des entrées ne peut pas être vérifié, tout nouveau contrôle reste bloqué. Utilisez Arrêter pour réessayer ; une autorisation désactivée ne prouve pas à elle seule que le nettoyage est terminé.
+
+## Modèle Computer Use
+
+**Préférences > Outils > Modèle Computer Use** choisit le modèle des exécutions avec bureau autorisé. La valeur par défaut **Identique à la conversation** garde le modèle de la conversation. Un modèle nommé remplace ce modèle au démarrage de l’exécution, uniquement pour les tours avec Computer Use autorisé.
+
+La liste vient du même catalogue que le sélecteur principal. Les modèles qui lisent les images sont exigés : un modèle sans images est refusé à l’enregistrement comme au démarrage, sans bascule silencieuse. Un modèle indisponible est refusé lui aussi. Le moteur 0.9.5 ne propose pas de délégation propre d’une seule analyse d’image à un modèle secondaire depuis l’extension : l’extension fournit les outils de bureau au même agent et au même modèle. Ce réglage reste donc une substitution au niveau de l’exécution, pas un sous-système de vision séparé.
 
 Les actions par pixels de CUA sont plus limitées dans cette beta. Préférez un `windowId` précis. Les images de fenêtres complètes sont prises en charge, mais pas les captures de régions. La capture du bureau couvre l’écran principal à sa résolution native ; si une dimension dépasse 2000 pixels, choisissez une fenêtre. `maxWidth` limite le grand côté des images de fenêtres CUA, mais ne réduit pas le bureau. Les glissés à plusieurs segments et les déplacements du pointeur propres à une fenêtre sont refusés, pas approximés. Un refus de focus n’autorise pas à relancer l’application.
 

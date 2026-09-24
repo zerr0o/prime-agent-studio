@@ -16,7 +16,7 @@ async function fixture(t) {
   return { root, folder };
 }
 
-test('Windows opens through a hidden helper with a literal Unicode path and requires visible Explorer confirmation', async (t) => {
+test('Windows opens through a hidden helper with a literal Unicode path and requires foreground Explorer confirmation', async (t) => {
   const { folder } = await fixture(t);
   let launch;
   const open = createDirectoryOpener({
@@ -24,7 +24,7 @@ test('Windows opens through a hidden helper with a literal Unicode path and requ
     env: { SystemRoot: 'C:\\Windows', PRIME_GUI_SILENT: '1' },
     run: async (...args) => {
       launch = args;
-      return { stdout: '{"opened":true,"visible":true}\r\n' };
+      return { stdout: '{"opened":true,"visible":true,"foreground":true}\r\n' };
     },
   });
   assert.deepEqual(await open(folder), { opened: true });
@@ -55,11 +55,13 @@ test('failed, timed out, or unconfirmed Explorer launches never report success a
     '',
     '{"opened":true}',
     '{"opened":true,"visible":false}',
+    '{"opened":true,"visible":true}',
+    '{"opened":true,"visible":true,"foreground":false}',
     'not-json',
   ]) {
     await assert.rejects(open(folder), { status: 502 });
   }
-  outcome = '{"opened":true,"visible":true}';
+  outcome = '{"opened":true,"visible":true,"foreground":true}';
   assert.deepEqual(await open(folder), { opened: true });
 });
 
@@ -80,7 +82,7 @@ test('rapid requests for one folder share a launch and invalid folders never sta
   while (!complete) await new Promise((done) => setTimeout(done, 5));
   await new Promise((done) => setTimeout(done, 20));
   assert.equal(launches, 1);
-  complete({ stdout: '{"opened":true,"visible":true}' });
+  complete({ stdout: '{"opened":true,"visible":true,"foreground":true}' });
   assert.deepEqual(await Promise.all(jobs), [{ opened: true }, { opened: true }, { opened: true }]);
   const file = join(root, 'not-a-folder.txt');
   await writeFile(file, 'fixture');

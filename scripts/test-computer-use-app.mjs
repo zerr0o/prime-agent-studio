@@ -55,7 +55,11 @@ const runtime = {
   getStatus: async () => ({ version: 'fixture', available: true, cli: 'fixture' }),
   async getModels() {
     return {
-      models: [{ id: 'test/vision', name: 'Vision Fixture', provider: 'test', input: ['text', 'image'] }],
+      models: [
+        { id: 'test/vision', name: 'Vision Fixture', provider: 'test', input: ['text', 'image'] },
+        { id: 'test/vision-2', name: 'Vision Two', provider: 'test', input: ['text', 'image'] },
+        { id: 'test/text-only', name: 'Text Only', provider: 'test', input: ['text'] },
+      ],
       default: { model: 'test/vision', thinking: 'low' },
     };
   },
@@ -171,14 +175,12 @@ try {
   await expect(page.locator('#stop-button')).toBeVisible();
   const draftBody = runBodies[runBodies.length - 1];
   if (draftBody?.computerUse !== true) throw new Error('draft send must carry computerUse true');
-  if (draftBody?.computerUseBackend !== 'native')
-    throw new Error('draft send must carry computerUseBackend native by default');
+  if (draftBody?.computerUseBackend !== undefined)
+    throw new Error('draft send must not carry a per-run backend, the server applies the global engine');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#computer-use-stop')).toBeVisible();
-  await expect(page.locator('#computer-use-backend-native')).toBeVisible();
-  await expect(page.locator('#computer-use-backend-cua-label')).toContainText('Cua Driver (beta)');
-  await expect(page.locator('#computer-use-backend-native-label')).toContainText('ration');
-  report.push('Draft activation carries computerUse true plus backend on POST /api/runs');
+  await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
+  report.push('Draft activation carries computerUse true with no per-run backend on POST /api/runs');
   await page.screenshot({
     path: join(shotDir, 'computer-use-app-desktop.png'),
     fullPage: true,
@@ -198,8 +200,13 @@ try {
   // Existing session toggle uses the mode route, then switching never leaks.
   await page.locator('#session-list').getByText('Session A', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-backend-native')).toBeEnabled();
-  await expect(page.locator('#computer-use-backend-hint')).not.toBeEmpty();
+  await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
+  await page.locator('#open-settings').click();
+  await page.locator('#settings-tab-tools').click();
+  await expect(page.locator('#computer-backend-native')).toBeVisible();
+  await expect(page.locator('#computer-backend-cua')).toBeVisible();
+  await expect(page.locator('#computer-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-backend-hint')).not.toBeEmpty();
   {
     const cuaAvailable = await page.evaluate(() =>
       fetch('/api/computer-use')
@@ -208,13 +215,14 @@ try {
         .catch(() => false),
     );
     if (cuaAvailable) {
-      await expect(page.locator('#computer-use-backend-cua')).toBeEnabled();
-      await expect(page.locator('#computer-use-backend-hint')).toContainText('Windows x64');
+      await expect(page.locator('#computer-backend-cua')).toBeEnabled();
+      await expect(page.locator('#computer-backend-hint')).toContainText('Windows x64');
     } else {
-      await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
+      await expect(page.locator('#computer-backend-cua')).toBeDisabled();
     }
   }
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#settings-dialog')).toBeHidden();
   const enableCalls = [];
   await page.route('**/api/computer-use', async (route) => {
     const req = route.request();
@@ -228,12 +236,18 @@ try {
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
-  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
-  if (!enableCalls.length || enableCalls[enableCalls.length - 1]?.backend !== 'native')
-    throw new Error('session enable must POST backend native');
+  if (!enableCalls.length) throw new Error('session enable must POST to the mode route');
+  if (enableCalls[enableCalls.length - 1]?.backend !== undefined)
+    throw new Error('session enable must not POST a per-session backend, the server applies the global engine');
+  await page.locator('#open-settings').click();
+  await page.locator('#settings-tab-tools').click();
+  await expect(page.locator('#computer-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
+  await expect(page.locator('#computer-backend-hint')).toContainText('Désactivez');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#settings-dialog')).toBeHidden();
   await expect(page.locator('#computer-use-stop')).toBeEnabled();
-  report.push('Session enable posts backend and locks selector while on');
+  report.push('Session enable posts no backend and locks the global engine while on');
   await page.locator('#session-list').getByText('Session B', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
@@ -245,7 +259,7 @@ try {
   if (plainBody?.computerUse === true) throw new Error('session switch must not leak computerUse');
   if (plainBody?.computerUseBackend) throw new Error('session switch must not leak backend');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   report.push('Session switch never leaks computerUse into next run');
   await page.locator('#stop-button').click();
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
@@ -257,33 +271,28 @@ try {
     await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
+  await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   await page.locator('#composer').fill('Run with desktop pref.');
   await page.locator('#send-button').click();
   await expect(page.locator('#stop-button')).toBeVisible();
   const prefBody = runBodies[runBodies.length - 1];
   if (prefBody?.computerUse !== true) throw new Error('pref run must carry computerUse true');
-  if (prefBody?.computerUseBackend !== 'native')
-    throw new Error('pref run must carry computerUseBackend native');
+  if (prefBody?.computerUseBackend !== undefined)
+    throw new Error('pref run must not carry a per-run backend, the server applies the global engine');
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 15000 });
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
-  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
+  await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   await page.locator('#session-list').getByText('Plain message without desktop.', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
   await page.locator('#session-list').getByText('Run with desktop pref.', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-backend-native')).toBeChecked();
-  await expect(page.locator('#computer-use-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-use-backend-cua')).toBeDisabled();
   await page.locator('#composer').fill('Next send after return.');
   await page.locator('#send-button').click();
   await expect(page.locator('#stop-button')).toBeVisible();
   const afterReturnBody = runBodies[runBodies.length - 1];
   if (afterReturnBody?.computerUse !== true) throw new Error('returning must keep computerUse armed');
-  if (afterReturnBody?.computerUseBackend !== 'native')
-    throw new Error('returning must restore native, never silently pass another backend');
+  if (afterReturnBody?.computerUseBackend !== undefined)
+    throw new Error('returning must not send a per-run backend, the server applies the global engine');
   await page.locator('#stop-button').click();
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
   report.push('Session pref with no owner restores backend on return');
@@ -312,13 +321,132 @@ try {
   await expect(roPage.locator('#allow-computer-use')).toBeDisabled();
   await expect(roPage.locator('#computer-use-toggle')).toBeDisabled();
   await expect(roPage.locator('#computer-use-warning')).toContainText('Consultation seule');
-  await expect(roPage.locator('#computer-use-backend-native')).toBeDisabled();
-  await expect(roPage.locator('#computer-use-backend-cua')).toBeDisabled();
+  await expect(roPage.locator('#computer-use-backend-native')).toHaveCount(0);
   await roContext.close();
   await new Promise((done) => gateway.close(done));
   report.push('Read only consultation never mutates');
-  if (driverCalls.length) throw new Error('smoke must not drive the real desktop');
+
+  // Global engine and model live in Preferences > Tools, one setting for every run.
   await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
+  await page.locator('#open-settings').click();
+  await page.locator('#settings-tab-tools').click();
+  await expect(page.locator('#computer-backend-native')).toBeVisible();
+  await expect(page.locator('#computer-backend-cua')).toBeVisible();
+  await expect(page.locator('#computer-model-button')).toBeVisible();
+  await expect(page.locator('#computer-model-name')).toContainText('Identique');
+  {
+    const cuaAvailable = await page.evaluate(() =>
+      fetch('/api/computer-use')
+        .then((r) => r.json())
+        .then((s) => s?.backends?.find((b) => b?.id === 'cua')?.available === true)
+        .catch(() => false),
+    );
+    const patched = await page.evaluate(async (wantCua) => {
+      const setBackend = await fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerBackend: wantCua ? 'cua' : 'native' }),
+      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+      const badModel = await fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerModel: 'nope/missing' }),
+      }).then((r) => r.status);
+      const textModel = await fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerModel: 'test/text-only' }),
+      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+      return { setBackend, badModel, textModel };
+    }, cuaAvailable);
+    if (cuaAvailable) {
+      if (patched.setBackend.status !== 200 || patched.setBackend.json?.computerBackend !== 'cua')
+        throw new Error('available CUA backend must PATCH globally');
+    } else if (patched.setBackend.status !== 409) {
+      throw new Error('unavailable CUA backend must fail closed with 409');
+    }
+    if (patched.badModel !== 400) throw new Error('unknown Computer Use model must fail with 400');
+    if (patched.textModel.status !== 400 || !/image/i.test(patched.textModel.json?.error || ''))
+      throw new Error('text-only Computer Use model must fail with a clear image error, never a silent switch');
+    await page.reload();
+    await expect(page.locator('#connection-label')).not.toHaveText('Connexion…');
+    await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-tools').click();
+    const stored = await page.evaluate(() =>
+      fetch('/api/studio-preferences')
+        .then((r) => r.json())
+        .catch(() => null),
+    );
+    if (cuaAvailable && stored?.computerBackend !== 'cua')
+      throw new Error('global backend PATCH must persist server-side');
+    if (!cuaAvailable && stored?.computerBackend !== 'native')
+      throw new Error('refused backend PATCH must not change the stored engine');
+    if (stored?.computerModel !== '') throw new Error('refused model PATCHes must not change the stored model');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#settings-dialog')).toBeHidden();
+  }
+  report.push('Global engine and model PATCH validation fails closed with clear errors');
+  {
+    const setModel = await page.evaluate(() =>
+      fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerModel: 'test/vision-2' }),
+      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) })),
+    );
+    if (setModel.status !== 200 || setModel.json?.computerModel !== 'test/vision-2')
+      throw new Error('image-capable Computer Use model must PATCH globally');
+  }
+  await page.locator('#open-settings').click();
+  await page.locator('#settings-tab-tools').click();
+  await expect(page.locator('#computer-model-name')).toContainText('Vision Two');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#settings-dialog')).toBeHidden();
+  if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
+    await page.locator('#computer-use-toggle').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#composer').fill('Run with the global Computer Use model.');
+  await page.locator('#send-button').click();
+  await expect(page.locator('#stop-button')).toBeVisible();
+  {
+    const overrideBody = runBodies[runBodies.length - 1];
+    if (overrideBody?.computerUse !== true) throw new Error('override run must carry computerUse true');
+    if (overrideBody?.model !== 'test/vision-2')
+      throw new Error('authorized runs must use the global Computer Use model');
+  }
+  await page.locator('#stop-button').click();
+  await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
+  await page.locator('#computer-use-stop').click();
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#composer').fill('Plain run without desktop keeps its own model.');
+  await page.locator('#send-button').click();
+  await expect(page.locator('#stop-button')).toBeVisible();
+  {
+    const plainModelBody = runBodies[runBodies.length - 1];
+    if (plainModelBody?.computerUse === true)
+      throw new Error('unauthorized runs must never take the global Computer Use model');
+    if (plainModelBody?.model !== 'test/vision')
+      throw new Error('unauthorized runs must keep the conversation model');
+  }
+  await page.locator('#stop-button').click();
+  await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
+  {
+    const cleared = await page.evaluate(() =>
+      fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerModel: '', computerBackend: 'native' }),
+      }).then((r) => r.status),
+    );
+    if (cleared !== 200) throw new Error('clearing the global Computer Use settings must succeed');
+  }
+  report.push('Authorized runs use the global model, plain runs keep their own');
+  if (driverCalls.length) throw new Error('smoke must not drive the real desktop');
+  await page
+    .locator('#session-list')
+    .getByText('Plain run without desktop keeps its own model.', { exact: true })
+    .click();
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
     await page.locator('#computer-use-toggle').click();
@@ -331,9 +459,7 @@ try {
   await expect(page.locator('#computer-use-toggle')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   await expect(page.locator('#allow-computer-use')).toBeVisible();
-  await expect(page.locator('#computer-use-backend')).toBeAttached();
-  await expect(page.locator('#computer-use-backend-native')).toBeAttached();
-  await expect(page.locator('#computer-use-backend-cua')).toBeAttached();
+  await expect(page.locator('#computer-use-backend')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   const gutterCheck = () =>
     page.evaluate(() => {
@@ -358,8 +484,7 @@ try {
   await page.setViewportSize({ width: 320, height: 844 });
   await expect(page.locator('#computer-use-toggle')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
-  await expect(page.locator('#computer-use-backend-native')).toBeAttached();
-  await expect(page.locator('#computer-use-backend-cua')).toBeAttached();
+  await expect(page.locator('#computer-use-backend')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   for (const g of await gutterCheck()) {
     if (g.left < -1 || g.right < -1) throw new Error(`320px checkbox crosses gutter ${JSON.stringify(g)}`);

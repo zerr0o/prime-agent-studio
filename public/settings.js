@@ -2,6 +2,7 @@ import { t as tr, translateKnown, translateDOM, onLanguageChange, bindText } fro
 import { createDesktopUpdates } from './desktop-updates.js';
 import { createInteractionSettings } from './interaction-settings.js';
 import { createEngineSettings } from './engine-settings.js';
+import { createComputerPreferences } from './computer-preferences.js';
 import {
   isDesktopComponentsAvailable,
   isNewComponentsBridgeAvailable,
@@ -23,6 +24,8 @@ export function createSettings({
   const updates = createDesktopUpdates({ api, getContext });
   const interactions = createInteractionSettings({ api, getContext, onStudioPreferences });
   const engineSettings = createEngineSettings({ api, getContext, getModels, openModelPicker, icon });
+  const computerPreferences = createComputerPreferences({ api, getContext, getModels, openModelPicker });
+  computerPreferences.start();
   const $ = (id) => document.getElementById(id);
   const showLegacyComponentsRow = isDesktopComponentsAvailable() && !isNewComponentsBridgeAvailable();
   if (showLegacyComponentsRow) {
@@ -82,6 +85,10 @@ export function createSettings({
     if (id === 'models') {
       void interactions.refreshDefault();
       engineSettings.update();
+    }
+    if (id === 'tools') {
+      computerPreferences.update();
+      void computerPreferences.refresh().catch(() => {});
     }
     if (id === 'notifications') void interactions.refreshNotifications();
   }
@@ -629,5 +636,12 @@ export function createSettings({
   }
   // Refresh autostart visibility once context is known, without overriding the system tab state.
   void refreshAutostart().catch(() => {});
-  return { open: () => dialog.showModal(), openUpdates: () => openUpdatesPane(false), updates };
+  return {
+    open: () => dialog.showModal(),
+    openUpdates: () => openUpdatesPane(false),
+    updates,
+    getComputerBackend: () => computerPreferences.getBackend(),
+    getComputerModel: () => computerPreferences.getModel(),
+    refreshComputerPreferences: () => computerPreferences.refresh(),
+  };
 }

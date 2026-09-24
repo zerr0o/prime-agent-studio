@@ -21,6 +21,7 @@ import { createEngineSettingsStore } from './lib/engine-settings.mjs';
 import { createSubagentDefaultsStore } from './lib/subagent-defaults.mjs';
 import { validPolicy } from './runtime/subagent-policy.mjs';
 import { openDirectory } from './lib/open-directory.mjs';
+import { openTerminal } from './lib/open-terminal.mjs';
 import { createDirectoryPicker } from './lib/pick-directory.mjs';
 import { createMcpService } from './lib/mcp-service.mjs';
 import { createProviderService } from './lib/provider-service.mjs';
@@ -165,7 +166,13 @@ export function createApp(options = {}) {
     sessionLocks = new Set();
   const desktopNotifications = createDesktopNotifications();
   const pushService = options.pushService || createPushService({ dataDir });
-  const studioPreferences = () => store.getStudioPreferences?.() || { allowQuestionsByDefault: true };
+  const studioPreferences = async () => {
+    try {
+      const prefs = await store.getStudioPreferences?.();
+      if (prefs && typeof prefs === 'object') return prefs;
+    } catch {}
+    return { allowQuestionsByDefault: true, computerBackend: 'native', computerModel: '', revision: 0 };
+  };
   const roadmap =
     options.roadmap || createRoadmapService({ resolveProject: (cwd) => store.knowledgeProject(cwd) });
   const roadmapBridge =
@@ -473,6 +480,68 @@ export function createApp(options = {}) {
     if (bare.length === 1) return bare[0];
     return null;
   }
+  // Global Computer Use preferences (Preferences > Tools, one global setting).
+  // Backend changes only apply when the desktop is off and not owned; the
+  // stored model must exist, be available and read images when metadata says so.
+  // No silent fallback: unavailable selections fail closed with the reason.
+  async function setStudioPreferencesGuarded(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      throw new HttpError(400, tr('server.demande_invalide'));
+    if ('computerBackend' in body) {
+      const wanted = body.computerBackend;
+      if (wanted !== 'native' && wanted !== 'cua')
+        throw new HttpError(400, tr('server.demande_invalide'));
+      const current = await studioPreferences().catch(() => null);
+      if (!current || current.computerBackend !== wanted) {
+        const state = computer.status();
+        if (state.owner)
+          throw new HttpError(409, 'Turn off desktop to change the engine.');
+        if (state.cleanupPending === true || state.cleanupFailed === true)
+          throw new HttpError(
+            409,
+            'Desktop cleanup is pending. Use Stop to retry before changing the engine.',
+          );
+        if (typeof computer.refreshBackends === 'function')
+          await computer.refreshBackends().catch(() => {});
+        const entries = computer.status().backends;
+        const entry = Array.isArray(entries)
+          ? entries.find((candidate) => candidate?.id === wanted)
+          : null;
+        if (!entry?.available)
+          throw new HttpError(
+            409,
+            entry?.reason || 'The requested Computer Use backend is unavailable.',
+          );
+      }
+    }
+    if ('computerModel' in body) {
+      const wanted = body.computerModel;
+      if (typeof wanted !== 'string' || wanted.length > 500)
+        throw new HttpError(400, tr('server.modele_invalide'));
+      const trimmed = wanted.trim();
+      if (trimmed) {
+        let catalog = null;
+        try {
+          catalog = await models();
+        } catch {
+          catalog = null;
+        }
+        if (catalog?.models?.length) {
+          const selected = catalog.models.find((model) => model?.id === trimmed);
+          if (!selected)
+            throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
+          if (selected.availability === 'unavailable')
+            throw new HttpError(409, tr('model.unavailableSelection'));
+          if (!modelSupportsImages(trimmed, catalog))
+            throw new HttpError(
+              400,
+              'This model does not support images. Choose an image capable model for Computer Use.',
+            );
+        }
+      }
+    }
+    return store.setStudioPreferences(body);
+  }
   async function setEngineSettings(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body))
       throw new HttpError(400, tr('server.reglages_moteur_invalides'));
@@ -689,8 +758,37 @@ export function createApp(options = {}) {
     // to stored/default when usable; prefer resolved first for imported.
     // True explicit usable picks equal resolved, so no valid choice is
     // overwritten; true explicit unavailable (not echo) already 409s in gate.
-    const selectedModel =
+    // Global Computer Use model (Preferences > Tools, default same as conversation).
+    // When a run has Computer Use authorized it uses this model instead of the
+    // conversation model. The engine has no clean per-tool secondary vision
+    // delegation from the extension, so this is a run-level override, validated
+    // like any conversation model plus the image requirement.
+    let globals = null;
+    try {
+      globals = await studioPreferences();
+    } catch {
+      globals = null;
+    }
+    const globalComputerBackend = globals?.computerBackend === 'cua' ? 'cua' : 'native';
+    const globalComputerModel =
+      typeof globals?.computerModel === 'string' ? globals.computerModel.trim() : '';
+    let selectedModel =
       (pastudioResolved ?? body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
+    const computerAuthorizedForModel =
+      body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled);
+    if (computerAuthorizedForModel && globalComputerModel) {
+      const override = catalog.models?.find((model) => model?.id === globalComputerModel);
+      if (!override)
+        throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
+      if (override.availability === 'unavailable')
+        throw new HttpError(409, tr('model.unavailableSelection'));
+      if (!modelSupportsImages(globalComputerModel, catalog))
+        throw Object.assign(
+          new Error('This model does not support images. Choose an image capable model to use Computer Use.'),
+          { status: 400, code: 'computer_use_no_image_model' },
+        );
+      selectedModel = globalComputerModel;
+    }
     const selectedThinking =
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
@@ -698,8 +796,9 @@ export function createApp(options = {}) {
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
       throw new HttpError(400, 'Invalid computerUse flag. Send true to enable desktop control for this run.');
     // Backend selection never enables desktop control on its own: it is only
-    // legitimate alongside computerUse: true. When omitted the session
-    // preference backend (or native) is inherited at admission.
+    // legitimate alongside computerUse: true. When omitted the global backend
+    // (Preferences > Tools) is used at admission; an explicit backend stays
+    // accepted for API compatibility and is validated the same way.
     if (body.computerUseBackend !== undefined) {
       if (!COMPUTER_USE_BACKENDS.includes(body.computerUseBackend))
         throw new HttpError(400, 'Invalid computerUseBackend. Send native or cua with computerUse: true.');
@@ -757,7 +856,11 @@ export function createApp(options = {}) {
           runId: run.id,
           cwd,
           computerUse: body.computerUse === true,
-          ...(body.computerUseBackend ? { backend: body.computerUseBackend } : {}),
+          ...(body.computerUse === true
+            ? { backend: body.computerUseBackend || globalComputerBackend }
+            : body.computerUseBackend
+              ? { backend: body.computerUseBackend }
+              : {}),
           model: selectedModel || undefined,
           imageCapable: computerImageCapable,
         });
@@ -891,6 +994,7 @@ export function createApp(options = {}) {
             nativeFileOpen: true,
             providers: true,
             directoryPicker: process.platform === 'win32',
+            openTerminal: process.platform === 'win32',
           },
         });
       }
@@ -1145,7 +1249,8 @@ export function createApp(options = {}) {
         });
       if (path === '/api/studio-preferences') {
         if (method === 'GET') return json(res, 200, await studioPreferences());
-        if (method === 'PATCH') return json(res, 200, await store.setStudioPreferences(await readBody(req)));
+        if (method === 'PATCH')
+          return json(res, 200, await setStudioPreferencesGuarded(await readBody(req)));
       }
       // Deliberately absent from the remote gateway's route allowlist.
       if (method === 'GET' && path === '/api/desktop-notifications')
@@ -1315,6 +1420,11 @@ export function createApp(options = {}) {
           body.path === undefined ? project.cwd : await projectFiles.localDirectory(project.cwd, body.path);
         return json(res, 200, await (options.openDirectory || openDirectory)(folder));
       }
+      if (method === 'POST' && path === '/api/projects/open-terminal') {
+        const body = await readBody(req);
+        const project = await store.findProject(body.cwd);
+        return json(res, 200, await (options.openTerminal || openTerminal)(project.cwd));
+      }
       if (method === 'DELETE' && path === '/api/projects') {
         const project = await store.findProject((await readBody(req)).cwd);
         if (activeRuns().some((run) => cwdKey(run.cwd) === cwdKey(project.cwd)))
@@ -1388,15 +1498,26 @@ export function createApp(options = {}) {
         if (typeof body.enabled !== 'boolean')
           throw new HttpError(400, 'Computer Use needs an enabled flag.');
         if (body.enabled) {
-          // Backend selector validation happens before any slow preflight
-          // takes another owner offline. The manager revalidates after an
-          // async CUA refresh at admission, so a stale cache can never
-          // grant control to an unavailable backend.
+          // Global backend default (Preferences > Tools, one global setting).
+          // An explicit body.backend stays accepted for API compatibility and is
+          // validated the same way. When omitted, the stored global backend is
+          // used. The manager revalidates after an async CUA refresh at
+          // admission, so a stale cache can never grant an unavailable backend.
+          // Never silently falls back across backends.
           let backend = null;
           if (body.backend !== undefined) {
             if (!COMPUTER_USE_BACKENDS.includes(body.backend))
               throw new HttpError(400, 'Unknown Computer Use backend. Send native or cua.');
             backend = body.backend;
+          } else {
+            try {
+              const prefs = await studioPreferences();
+              backend = prefs?.computerBackend === 'cua' ? 'cua' : 'native';
+            } catch {
+              backend = 'native';
+            }
+          }
+          if (backend) {
             if (typeof computer.refreshBackends === 'function')
               await computer.refreshBackends().catch(() => {});
             const entries = computer.status().backends;

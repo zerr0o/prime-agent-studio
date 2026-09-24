@@ -57,6 +57,7 @@ try {
   assert.equal(first.length, 1);
   assert.equal(first[0].visible, true);
   assert.equal(first[0].minimized, false);
+  assert.equal(first[0].foreground, true, 'Explorer must be in the foreground, not just visible.');
   assert.equal((await windows('hide'))[0].visible, false);
   await openFromHiddenProcess();
   assert.deepEqual(
@@ -64,6 +65,9 @@ try {
     first,
     'An old hidden Explorer window must be restored without creating another one.',
   );
+  assert.equal((await windows('minimize'))[0].minimized, true);
+  await openFromHiddenProcess();
+  assert.deepEqual(await windows(), first, 'A minimized folder must be restored to the foreground.');
   await openFromHiddenProcess();
   assert.deepEqual(await windows(), first, 'An already visible folder must be reused.');
   console.log(
@@ -73,6 +77,8 @@ try {
       hiddenLauncher: true,
       unicodeAndLiteralPath: true,
       restoredHiddenWindow: true,
+      restoredMinimizedWindow: true,
+      foregroundVerified: true,
       reusedExistingWindow: true,
       agentSessionsTouched: 0,
     }),

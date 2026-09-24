@@ -464,7 +464,13 @@ test('act without verification still reports unverified state and observe stays 
   assert.match(observe.description, /point-in-time/i);
 });
 
-test('context hook removes oversized historical screenshots without changing history or user images', async (t) => {
+test('context hook removes oversized historical screenshots and guards user images', async (t) => {
+  // Hermetic: no engine resizer outside the real Studio runtime, so oversized
+  // attachments fall back to a removal marker instead of breaking the request.
+  process.env.PRIME_STUDIO_IMAGE_RESIZER = 'off';
+  t.after(() => {
+    delete process.env.PRIME_STUDIO_IMAGE_RESIZER;
+  });
   const stub = await startStubBridge(t, async () => ({}));
   const { events } = await loadExtension(t, stub.config);
   assert.equal(typeof events.get('context'), 'function');
@@ -488,8 +494,17 @@ test('context hook removes oversized historical screenshots without changing his
   assert.equal(result.messages[0].content[0].type, 'text');
   assert.match(result.messages[0].content[0].text, /900x2400/);
   assert.match(result.messages[0].content[0].text, /fresh|new observation/i);
-  assert.equal(result.messages[1], userImage);
-  assert.equal(await events.get('context')({ messages: [userImage] }), undefined);
+  // Oversized user attachment cannot pass through: without a resizer it is
+  // replaced by a marker carrying no base64.
+  assert.equal(result.messages[1].content[0].type, 'text');
+  assert.match(result.messages[1].content[0].text, /900x2400/);
+  assert.ok(!JSON.stringify(result.messages[1]).includes(part.data.slice(0, 32)));
+  const smallPng = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(smallPng);
+  smallPng.writeUInt32BE(640, 16);
+  smallPng.writeUInt32BE(480, 20);
+  const smallUser = { role: 'user', content: [{ type: 'image', data: smallPng.toString('base64'), mimeType: 'image/png' }] };
+  assert.equal(await events.get('context')({ messages: [smallUser] }), undefined);
 });
 
 test('CUA inspect schema and requests preserve fresh element frames without images', async (t) => {

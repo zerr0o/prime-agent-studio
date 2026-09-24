@@ -13,14 +13,20 @@ Computer Use is an expert mode for the **real Windows desktop**. Once you enable
 
 The mode is off by default and is not restored after a server restart. A conversation may retain its choice between turns within the same server process. Stop clears the active desktop authorization. Only one controller can use the shared desktop at a time. Read-only remote access cannot enable or stop it.
 
-## Choose a backend
+## Choose a global engine
 
-Open **Expert desktop** in the header while Computer Use is off:
+Open **Preferences > Tools > Expert desktop**. The engine is one global setting for this PC, stored server-side:
 
 - **Original integration (Windows)** is the default. It uses our PowerShell/.NET worker and supports the full multi-monitor desktop, regions and native window focus.
 - **Cua Driver (beta)** uses the pinned **0.28.2** Windows x64 driver, with private Studio-owned processes. It adds window accessibility inspection and element-targeted actions. It does not replace the agent or model and needs no user-managed MCP connection.
 
-Selecting a backend does not enable control. Disable Computer Use before changing it. An unavailable backend shows a reason; Studio never silently falls back or replays an action with another backend. The native Windows guard still provides desktop exclusivity and the stop shortcut for CUA. CUA refuses to start if that shortcut is not registered. If process termination or input cleanup cannot be verified, new control remains blocked. Use Stop to retry cleanup; an off authorization state alone is not proof that cleanup finished.
+Selecting an engine does not enable control. Changing it needs the desktop off with no owner: the control stays locked while Computer Use is on, cleaning up, or in failed cleanup. An unavailable engine shows a reason; Studio never silently falls back or replays an action with another engine. The old per-session selection is gone: every conversation uses the same global engine. The native Windows guard still provides desktop exclusivity and the stop shortcut for CUA. CUA refuses to start if that shortcut is not registered. If process termination or input cleanup cannot be verified, new control remains blocked. Use Stop to retry cleanup; an off authorization state alone is not proof that cleanup finished.
+
+## Computer Use model
+
+**Preferences > Tools > Computer Use model** selects the model for runs with desktop authorized. The default **Same as conversation** keeps the conversation model. A named model replaces it at run start, only for turns with Computer Use authorized.
+
+The list comes from the same catalog as the main picker. Models that read images are required: a model without images is refused both at save time and at run start, with no silent switch. An unavailable model is refused too. Engine 0.9.5 offers no clean delegation of a single image analysis to a secondary model from the extension: the extension gives desktop tools to the same agent and model. This setting stays a run-level override, not a separate vision subsystem.
 
 CUA has a narrower pixel surface in this beta. Prefer a specific `windowId`. It supports full-window images, but not region crops. Its desktop capture covers the primary display at native resolution; if either dimension exceeds 2000 pixels, choose a window instead. `maxWidth` is a long-edge limit for CUA window images, not a desktop downscaler. Multi-point drags and window-local pointer moves are refused rather than approximated. A refused focus operation is not permission to relaunch the application.
 

@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_IMAGE_DIMENSION,
+  attachmentMarker,
   filterComputerUseImages,
   filterComputerUseImagesWithReport,
   getImageDimensions,
   isComputerUseToolResult,
   isOversizedDimensions,
+  normalizeContextImagesWithReport,
 } from '../runtime/computer-use-image-safety.mjs';
 
 function pngBase64(width, height) {
@@ -280,4 +282,185 @@ test('whitespace-interspersed base64 prefix still parses', () => {
     height: 800,
     format: 'png',
   });
+});
+
+function gifBase64(width, height) {
+  const buf = Buffer.alloc(10);
+  buf.write('GIF89a', 0, 'ascii');
+  buf.writeUInt16LE(width, 6);
+  buf.writeUInt16LE(height, 8);
+  return buf.toString('base64');
+}
+
+function webpVp8xBase64(width, height) {
+  const buf = Buffer.alloc(30);
+  buf.write('RIFF', 0, 'ascii');
+  buf.write('WEBP', 8, 'ascii');
+  buf.write('VP8X', 12, 'ascii');
+  buf.writeUIntLE(width - 1, 24, 3);
+  buf.writeUIntLE(height - 1, 27, 3);
+  return buf.toString('base64');
+}
+
+function webpVp8lBase64(width, height) {
+  const buf = Buffer.alloc(25);
+  buf.write('RIFF', 0, 'ascii');
+  buf.write('WEBP', 8, 'ascii');
+  buf.write('VP8L', 12, 'ascii');
+  buf[20] = 0x2f;
+  buf.writeUInt32LE(((height - 1) << 14) | (width - 1), 21);
+  return buf.toString('base64');
+}
+
+function webpVp8Base64(width, height) {
+  const buf = Buffer.alloc(30);
+  buf.write('RIFF', 0, 'ascii');
+  buf.write('WEBP', 8, 'ascii');
+  buf.write('VP8 ', 12, 'ascii');
+  buf[23] = 0x9d;
+  buf[24] = 0x01;
+  buf[25] = 0x2a;
+  buf.writeUInt16LE(width, 26);
+  buf.writeUInt16LE(height, 28);
+  return buf.toString('base64');
+}
+
+function userMessage(parts) {
+  return { role: 'user', content: parts, timestamp: 7 };
+}
+
+test('header inspection reads GIF and all WebP chunks', () => {
+  assert.deepEqual(getImageDimensions({ data: gifBase64(1080, 4703) }), {
+    width: 1080,
+    height: 4703,
+    format: 'gif',
+  });
+  assert.deepEqual(getImageDimensions({ data: webpVp8xBase64(1080, 4703) }), {
+    width: 1080,
+    height: 4703,
+    format: 'webp',
+  });
+  assert.deepEqual(getImageDimensions({ data: webpVp8lBase64(500, 2500) }), {
+    width: 500,
+    height: 2500,
+    format: 'webp',
+  });
+  assert.deepEqual(getImageDimensions({ data: webpVp8Base64(2500, 500) }), {
+    width: 2500,
+    height: 500,
+    format: 'webp',
+  });
+  assert.equal(getImageDimensions({ data: Buffer.from('RIFF....WEBP????').toString('base64') }), null);
+});
+
+test('normalize downscales oversized user images and keeps small ones untouched', async () => {
+  const big = pngBase64(1080, 4703);
+  const small = pngBase64(640, 480);
+  const resizedData = pngBase64(459, 2000);
+  const seen = [];
+  const stubResizer = async (img) => {
+    seen.push(img);
+    return { data: resizedData, mimeType: 'image/png' };
+  };
+  const user = userMessage([
+    { type: 'image', data: big, mimeType: 'image/png' },
+    { type: 'image', data: small, mimeType: 'image/png' },
+    { type: 'text', text: 'look' },
+  ]);
+  const before = JSON.stringify(user);
+  const report = await normalizeContextImagesWithReport([user], { resizeImage: stubResizer });
+  assert.equal(report.dropped, 0);
+  assert.equal(report.resized, 1);
+  assert.equal(report.resizedDetails[0].width, 1080);
+  assert.equal(report.resizedDetails[0].height, 4703);
+  assert.equal(report.resizedDetails[0].outputWidth, 459);
+  assert.equal(report.resizedDetails[0].outputHeight, 2000);
+  assert.deepEqual(seen, [{ type: 'image', data: big, mimeType: 'image/png' }]);
+  const next = report.messages[0];
+  assert.equal(next.content[0].type, 'image');
+  assert.equal(next.content[0].data, resizedData);
+  assert.equal(next.content[0].mimeType, 'image/png');
+  assert.equal(next.content[1].data, small); // small image bytes identical
+  assert.equal(next.content[2].text, 'look');
+  assert.ok(!JSON.stringify(next).includes(big.slice(0, 32)), 'oversized base64 must be gone');
+  assert.equal(JSON.stringify(user), before); // input never mutated
+});
+
+test('normalize still drops Computer Use screenshots even with a resizer', async () => {
+  let calls = 0;
+  const stubResizer = async (img) => {
+    calls += 1;
+    return { data: pngBase64(100, 100), mimeType: 'image/png' };
+  };
+  const msg = cuResult({
+    parts: [{ type: 'image', data: pngBase64(3840, 2160), mimeType: 'image/png' }],
+  });
+  const report = await normalizeContextImagesWithReport([msg], { resizeImage: stubResizer });
+  assert.equal(calls, 0); // CU images never reach the resizer: frame safety wins
+  assert.equal(report.dropped, 1);
+  assert.equal(report.resized, 0);
+  assert.equal(report.messages[0].content[0].type, 'text');
+  assert.match(report.messages[0].content[0].text, /Take a new observation/);
+});
+
+test('normalize drops user images when no resizer, on resizer failure, or on oversized output', async () => {
+  const big = jpegBase64(2160, 3840);
+  const user = userMessage([{ type: 'image', data: big, mimeType: 'image/jpeg' }]);
+  // No resizer at all.
+  const fallback = await normalizeContextImagesWithReport([user]);
+  assert.equal(fallback.dropped, 1);
+  assert.equal(fallback.resized, 0);
+  assert.equal(fallback.messages[0].content[0].type, 'text');
+  assert.match(fallback.messages[0].content[0].text, /2160x3840/);
+  assert.match(fallback.messages[0].content[0].text, /Reattach a smaller version/);
+  assert.ok(!JSON.stringify(fallback.messages[0]).includes(big.slice(0, 32)));
+  // Resizer throws.
+  const throwing = await normalizeContextImagesWithReport([user], {
+    resizeImage: async () => {
+      throw new Error('photon missing');
+    },
+  });
+  assert.equal(throwing.dropped, 1);
+  assert.match(throwing.messages[0].content[0].text, /JPEG/);
+  // Resizer returns null.
+  const nullish = await normalizeContextImagesWithReport([user], {
+    resizeImage: async () => null,
+  });
+  assert.equal(nullish.dropped, 1);
+  // Resizer output still oversized: rejected, dropped instead.
+  const stillBig = await normalizeContextImagesWithReport([user], {
+    resizeImage: async () => ({ data: jpegBase64(3000, 3000), mimeType: 'image/jpeg' }),
+  });
+  assert.equal(stillBig.dropped, 1);
+  assert.equal(stillBig.resized, 0);
+  assert.match(stillBig.messages[0].content[0].text, /2160x3840/);
+});
+
+test('normalize accepts JPEG to PNG mime change and leaves unknown data fail-open', async () => {
+  const big = jpegBase64(100, 2500);
+  const out = pngBase64(80, 2000);
+  const report = await normalizeContextImagesWithReport(
+    [userMessage([{ type: 'image', data: big, mimeType: 'image/jpeg' }])],
+    { resizeImage: async () => ({ data: out, mimeType: 'image/png' }) },
+  );
+  assert.equal(report.resized, 1);
+  assert.equal(report.messages[0].content[0].mimeType, 'image/png');
+  assert.equal(report.messages[0].content[0].data, out);
+  const unknown = userMessage([{ type: 'image', data: '!!!not-base64!!!', mimeType: 'image/png' }]);
+  const kept = await normalizeContextImagesWithReport([unknown], {
+    resizeImage: async () => {
+      throw new Error('must not be called');
+    },
+  });
+  assert.equal(kept.messages[0], unknown);
+  assert.equal(kept.dropped, 0);
+  assert.equal(kept.resized, 0);
+  assert.deepEqual(await normalizeContextImagesWithReport(null), {
+    messages: null,
+    dropped: 0,
+    resized: 0,
+    droppedDetails: [],
+    resizedDetails: [],
+  });
+  assert.ok(attachmentMarker({ width: 1, height: 2, format: 'gif' }).includes('GIF'));
 });

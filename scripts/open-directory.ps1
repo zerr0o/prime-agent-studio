@@ -15,6 +15,62 @@ public static class StudioExplorerWindow {
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool AttachThreadInput(uint source, uint target, bool attach);
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetActiveWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FOCUSMSG
+    {
+        public IntPtr hwnd; public uint message; public UIntPtr wParam; public IntPtr lParam;
+        public uint time; public int x; public int y; public uint lPrivate;
+    }
+    [DllImport("user32.dll")]
+    private static extern bool PeekMessage(out FOCUSMSG message, IntPtr hWnd, uint min, uint max, uint remove);
+
+    public static bool ActivateWindow(IntPtr hWnd)
+    {
+        if (GetForegroundWindow() == hWnd) return true;
+        SetForegroundWindow(hWnd);
+        if (GetForegroundWindow() == hWnd) return true;
+        // Join input queues only for the duration of activation. This does
+        // not elevate the process, change system policy or synthesize shortcuts.
+        FOCUSMSG message;
+        PeekMessage(out message, IntPtr.Zero, 0, 0, 0);
+        uint ignored;
+        uint current = GetCurrentThreadId();
+        uint target = GetWindowThreadProcessId(hWnd, out ignored);
+        IntPtr foregroundWindow = GetForegroundWindow();
+        uint foreground = foregroundWindow == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foregroundWindow, out ignored);
+        bool joinedForeground = false;
+        bool joinedTarget = false;
+        try
+        {
+            if (foreground != 0 && foreground != current)
+                joinedForeground = AttachThreadInput(current, foreground, true);
+            if (target != 0 && target != current && target != foreground)
+                joinedTarget = AttachThreadInput(current, target, true);
+            BringWindowToTop(hWnd);
+            SetForegroundWindow(hWnd);
+            SetActiveWindow(hWnd);
+            SetFocus(hWnd);
+            return GetForegroundWindow() == hWnd;
+        }
+        finally
+        {
+            if (joinedTarget) AttachThreadInput(current, target, false);
+            if (joinedForeground) AttachThreadInput(current, foreground, false);
+        }
+    }
 }
 '@
     $studioShell = New-Object -ComObject Shell.Application
@@ -46,16 +102,16 @@ public static class StudioExplorerWindow {
             if (-not [StudioExplorerWindow]::IsWindowVisible($studioHandle) -or [StudioExplorerWindow]::IsIconic($studioHandle)) {
                 [void][StudioExplorerWindow]::ShowWindowAsync($studioHandle, 9) # SW_RESTORE
             }
-            [void][StudioExplorerWindow]::SetForegroundWindow($studioHandle)
-            if ([StudioExplorerWindow]::IsWindowVisible($studioHandle) -and -not [StudioExplorerWindow]::IsIconic($studioHandle)) {
-                Write-Output '{"opened":true,"visible":true}'
+            $studioActivated = [StudioExplorerWindow]::ActivateWindow($studioHandle)
+            if ($studioActivated -and [StudioExplorerWindow]::IsWindowVisible($studioHandle) -and -not [StudioExplorerWindow]::IsIconic($studioHandle)) {
+                Write-Output '{"opened":true,"visible":true,"foreground":true}'
                 exit 0
             }
         }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $studioDeadline)
-    throw 'Explorer did not display the folder.'
+    throw 'Explorer did not bring the folder to the foreground.'
 } catch {
-    [Console]::Error.WriteLine('Explorer did not confirm a visible folder window.')
+    [Console]::Error.WriteLine('Explorer did not confirm a foreground folder window.')
     exit 1
 }

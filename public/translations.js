@@ -743,6 +743,14 @@ export const messages = {
     en: 'Drag to reorder · Keyboard: up and down arrows. Pinned projects stay at the top.',
   },
   'projects.move_down': { fr: 'Descendre le projet', en: 'Move project down' },
+  'projects.folder_color': { fr: 'Couleur du dossier', en: 'Folder color' },
+  'projects.color_default': { fr: 'Par défaut', en: 'Default' },
+  'projects.color_blue': { fr: 'Bleu', en: 'Blue' },
+  'projects.color_green': { fr: 'Vert', en: 'Green' },
+  'projects.color_amber': { fr: 'Ambre', en: 'Amber' },
+  'projects.color_terracotta': { fr: 'Terracotta', en: 'Terracotta' },
+  'projects.color_violet': { fr: 'Violet', en: 'Violet' },
+  'projects.color_updated': { fr: 'Couleur du dossier mise à jour.', en: 'Folder color updated.' },
   'projects.invalid_order': {
     fr: 'L’ordre des projets a changé. Actualisez la liste.',
     en: 'The project order changed. Refresh the list.',
@@ -3360,6 +3368,22 @@ export const messages = {
   'ui.ouvrir_le_dossier_sur_le_pc': {
     fr: 'Ouvrir le dossier sur le PC',
     en: 'Open folder on PC',
+  },
+  'ui.ouvrir_powershell_ici': {
+    fr: 'Ouvrir PowerShell ici',
+    en: 'Open PowerShell here',
+  },
+  'ui.powershell_ouvert_sur_le_pc': {
+    fr: 'PowerShell ouvert sur le PC.',
+    en: 'PowerShell opened on the PC.',
+  },
+  'server.powershell_uniquement_sur_windows': {
+    fr: 'PowerShell est disponible uniquement sur Windows.',
+    en: 'PowerShell is only available on Windows.',
+  },
+  'server.impossible_d_ouvrir_powershell_reessayez': {
+    fr: 'Impossible d’ouvrir PowerShell sur le PC. Réessayez.',
+    en: 'Unable to open PowerShell on the PC. Please try again.',
   },
   'ui.supprimer_du_studio': {
     fr: 'Supprimer du Studio',
@@ -6115,5 +6139,24 @@ export const messages = {
   'computer.cleanupFailed': {
     fr: 'Nettoyage incomplet. Utilisez Arrêter le bureau pour réessayer.',
     en: 'Cleanup incomplete. Use Stop desktop to retry.',
+  },
+  'computer.toolsTitle': { fr: 'Bureau expert', en: 'Expert desktop' },
+  'computer.toolsNote': {
+    fr: 'Moteur et modèle globaux pour ce PC. Le changement de moteur demande un bureau éteint.',
+    en: 'Global engine and model for this PC. Changing the engine needs the desktop off.',
+  },
+  'computer.modelLabel': { fr: 'Modèle Computer Use', en: 'Computer Use model' },
+  'computer.modelNote': {
+    fr: 'Utilisé pour les exécutions avec bureau autorisé. Vide : même modèle que la conversation.',
+    en: 'Used for runs with desktop authorized. Empty: same as conversation.',
+  },
+  'computer.sameAsConversation': { fr: 'Identique à la conversation', en: 'Same as conversation' },
+  'computer.modelImageNote': {
+    fr: 'Choisissez un modèle qui lit les images.',
+    en: 'Choose a model that reads images.',
+  },
+  'computer.preferencesError': {
+    fr: 'Enregistrement impossible. Réessayez.',
+    en: 'Save failed. Try again.',
   },
 };

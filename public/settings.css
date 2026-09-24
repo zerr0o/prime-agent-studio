@@ -294,6 +294,41 @@
   gap: 8px;
   flex-shrink: 0;
 }
+.computer-prefs-row {
+  align-items: flex-start;
+}
+.computer-backend-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.computer-backend-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+}
+.computer-backend-option input[type='radio'] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.computer-backend-option input[type='radio']:disabled + span {
+  opacity: 0.55;
+}
+#computer-backend-hint:empty {
+  display: none;
+}
+#computer-prefs-error:not([hidden]) {
+  margin-top: 4px;
+}
 .settings-modal > .settings-actions {
   margin: 0;
   padding: 14px 24px;

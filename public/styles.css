@@ -1985,6 +1985,57 @@ kbd {
   width: 14px;
   height: 14px;
 }
+.project-color-group {
+  padding: 9px 9px 11px;
+}
+.project-color-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.project-color-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.popover-menu .project-color-swatch {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid transparent;
+}
+.popover-menu .project-color-swatch.selected {
+  border-color: var(--text);
+}
+.project-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--swatch, transparent);
+  border: 1px solid var(--line);
+  position: relative;
+}
+.project-color-swatch.is-transparent .project-color-dot {
+  background: transparent;
+  border-style: dashed;
+}
+.project-color-swatch.is-transparent .project-color-dot::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  height: 1px;
+  background: var(--muted);
+  transform: rotate(-45deg);
+}
+.project-folder-icon {
+  flex-shrink: 0;
+}
 .menu-divider {
   height: 1px;
   background: var(--line);

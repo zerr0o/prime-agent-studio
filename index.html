@@ -743,38 +743,6 @@
               <section id="computer-use-details" class="context-section computer-use-details" hidden>
                 <div class="context-label" data-i18n="computer.title">BUREAU EXPERT</div>
                 <p id="computer-use-warning" class="computer-use-note"></p>
-                <div class="computer-use-backend" id="computer-use-backend">
-                  <span
-                    class="computer-use-backend-label"
-                    id="computer-use-backend-label"
-                    data-i18n="computer.backendLabel"
-                    >Moteur de bureau</span
-                  >
-                  <label class="computer-use-backend-option">
-                    <input
-                      type="radio"
-                      name="computer-use-backend"
-                      id="computer-use-backend-native"
-                      value="native"
-                      checked
-                    />
-                    <span id="computer-use-backend-native-label" data-i18n="computer.backendNative"
-                      >Intégration originale (Windows)</span
-                    >
-                  </label>
-                  <label class="computer-use-backend-option">
-                    <input
-                      type="radio"
-                      name="computer-use-backend"
-                      id="computer-use-backend-cua"
-                      value="cua"
-                    />
-                    <span id="computer-use-backend-cua-label" data-i18n="computer.backendCua"
-                      >Cua Driver (beta)</span
-                    >
-                  </label>
-                  <p class="computer-use-backend-hint" id="computer-use-backend-hint"></p>
-                </div>
                 <dl class="session-properties computer-use-meta">
                   <div>
                     <dt><span data-i18n="computer.owner">Contrôleur</span></dt>
@@ -923,6 +891,10 @@
         <span data-icon="folder"></span
         ><span data-i18n="ui.ouvrir_le_dossier_sur_le_pc">Ouvrir le dossier sur le PC </span>
       </button>
+      <button role="menuitem" data-project-action="terminal">
+        <span data-icon="terminal"></span
+        ><span data-i18n="ui.ouvrir_powershell_ici">Ouvrir PowerShell ici</span>
+      </button>
       <button role="menuitem" data-project-action="pin">
         <span data-icon="pin"></span><span id="project-pin-label" data-i18n="ui.epingler">Épingler</span>
       </button>
@@ -932,6 +904,89 @@
       <button role="menuitem" data-project-action="down">
         <span data-icon="arrow-down"></span><span data-i18n="projects.move_down">Descendre le projet</span>
       </button>
+      <div class="menu-divider" data-color-divider></div>
+      <div
+        class="project-color-group"
+        id="project-color-group"
+        role="group"
+        aria-label="Couleur du dossier"
+        data-i18n-aria-label="projects.folder_color"
+      >
+        <span class="project-color-label" data-i18n="projects.folder_color">Couleur du dossier</span>
+        <div class="project-color-row">
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch is-transparent"
+            data-project-color="transparent"
+            aria-label="Par défaut"
+            data-i18n-aria-label="projects.color_default"
+            data-i18n-title="projects.color_default" title="Par défaut"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch"
+            data-project-color="#7fa6c9"
+            style="--swatch: #7fa6c9"
+            aria-label="Bleu"
+            data-i18n-aria-label="projects.color_blue"
+            data-i18n-title="projects.color_blue" title="Bleu"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch"
+            data-project-color="#8fb49e"
+            style="--swatch: #8fb49e"
+            aria-label="Vert"
+            data-i18n-aria-label="projects.color_green"
+            data-i18n-title="projects.color_green" title="Vert"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch"
+            data-project-color="#d0a75e"
+            style="--swatch: #d0a75e"
+            aria-label="Ambre"
+            data-i18n-aria-label="projects.color_amber"
+            data-i18n-title="projects.color_amber" title="Ambre"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch"
+            data-project-color="#c98a7d"
+            style="--swatch: #c98a7d"
+            aria-label="Terracotta"
+            data-i18n-aria-label="projects.color_terracotta"
+            data-i18n-title="projects.color_terracotta" title="Terracotta"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            class="project-color-swatch"
+            data-project-color="#a99ac9"
+            style="--swatch: #a99ac9"
+            aria-label="Violet"
+            data-i18n-aria-label="projects.color_violet"
+            data-i18n-title="projects.color_violet" title="Violet"
+          >
+            <span class="project-color-dot" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
       <button role="menuitem" data-project-action="archive-export">
         <span data-icon="download"></span><span data-i18n="archives.export">Exporter .pastudio</span>
       </button>
@@ -1440,6 +1495,67 @@
                 ><button id="settings-prompts" class="secondary-button">Prompts</button>
               </div>
             </div>
+            <div class="settings-row computer-prefs-row">
+              <div>
+                <label id="computer-backend-label" data-i18n="computer.backendLabel">Moteur de bureau</label>
+                <p data-i18n="computer.toolsNote">
+                  Moteur et modèle globaux pour ce PC. Le changement de moteur demande un bureau éteint.
+                </p>
+                <div
+                  class="computer-backend-options"
+                  role="radiogroup"
+                  aria-labelledby="computer-backend-label"
+                >
+                  <label class="computer-backend-option">
+                    <input
+                      type="radio"
+                      name="computer-backend-global"
+                      id="computer-backend-native"
+                      value="native"
+                      checked
+                    />
+                    <span id="computer-backend-native-label" data-i18n="computer.backendNative"
+                      >Intégration originale (Windows)</span
+                    >
+                  </label>
+                  <label class="computer-backend-option">
+                    <input
+                      type="radio"
+                      name="computer-backend-global"
+                      id="computer-backend-cua"
+                      value="cua"
+                    />
+                    <span id="computer-backend-cua-label" data-i18n="computer.backendCua"
+                      >Cua Driver (beta)</span
+                    >
+                  </label>
+                </div>
+                <p class="settings-footnote" id="computer-backend-hint"></p>
+              </div>
+            </div>
+            <div class="settings-row computer-prefs-row">
+              <div>
+                <label for="computer-model-button" data-i18n="computer.modelLabel"
+                  >Modèle Computer Use</label
+                >
+                <p data-i18n="computer.modelNote">
+                  Utilisé pour les exécutions avec bureau autorisé. Vide : même modèle que la conversation.
+                </p>
+              </div>
+              <button
+                id="computer-model-button"
+                type="button"
+                class="secondary-button model-picker-button"
+                aria-haspopup="dialog"
+                aria-controls="model-dialog"
+              >
+                <span class="model-picker-selection">
+                  <span class="model-picker-name" id="computer-model-name"></span>
+                  <span class="model-picker-provider" id="computer-model-provider"></span>
+                </span>
+              </button>
+            </div>
+            <p id="computer-prefs-error" class="form-error" role="alert" hidden></p>
             <p id="settings-resource-note" class="settings-footnote" data-i18n="settings.resources_scope"></p>
           </section>
           <section

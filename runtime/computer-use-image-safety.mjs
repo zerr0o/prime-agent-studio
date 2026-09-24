@@ -1,8 +1,15 @@
-// Computer Use historical image safety: transient context-only normalization.
-// Scope: drop ONLY oversized historical Computer Use screenshots (>2000px on
-// any side) from provider-bound message copies. Never rewrites session logs,
-// never touches user images or non-CU tool results, never rescales pixels
-// (rescaling without coordinate metadata update would corrupt frame safety).
+// Image safety: transient context-only normalization so no image above the
+// provider dimension limit can break a request.
+// Scope: drop oversized historical Computer Use screenshots (>2000px on any
+// side) from provider-bound message copies, and downscale any OTHER oversized
+// image (user attachments, assistant content, non-CU tool results) via the
+// engine photon resizer when available, else drop it with a marker. Never
+// rewrites session logs. CU pixels are never rescaled: resizing without
+// updating the stored frame (frame.width/height/bounds, frameId coordinate
+// space) would corrupt frame safety, so CU images are dropped with a
+// take-a-new-observation marker. User images carry no coordinates, so
+// downscaling them (aspect ratio kept, both axes <= 2000) is safe and
+// preferred over dropping.
 //
 // Background: Anthropic rejects images with any dimension above 2000px
 // (provider 400 on messages.N.content.M.image.source.base64.data). The native
@@ -72,10 +79,15 @@ function decodeHeaderBytes(data) {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean)) return null;
   let slice = clean.slice(0, HEADER_B64_CHARS);
   slice = slice.slice(0, Math.floor(slice.length / 4) * 4);
-  if (slice.length < 32) return null;
+  // Floor of 16 chars (12 bytes): enough for the smallest sniffable header
+  // (GIF needs 10 bytes). Each format parser still enforces its own length
+  // and magic, so shorter garbage stays fail-open.
+  if (slice.length < 16) return null;
   try {
     const buf = Buffer.from(slice, 'base64');
-    if (!buf || buf.length < 24) return null;
+    // Floor of 10 bytes: the smallest sniffable header (GIF). Each format
+    // parser still enforces its own length and magic below.
+    if (!buf || buf.length < 10) return null;
     return buf;
   } catch {
     return null;
@@ -145,13 +157,62 @@ function jpegDimensions(bytes) {
   return null;
 }
 
+function gifDimensions(bytes) {
+  if (bytes.length < 10) return null;
+  const signature = bytes.toString('ascii', 0, 6);
+  if (signature !== 'GIF87a' && signature !== 'GIF89a') return null;
+  const width = bytes.readUInt16LE(6);
+  const height = bytes.readUInt16LE(8);
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return null;
+  if (width < 1 || height < 1 || width > 100000 || height > 100000) return null;
+  return { width, height, format: 'gif' };
+}
+
+function webpDimensions(bytes) {
+  // RIFF size WEBP + chunk id: 16 bytes to identify the chunk, then each
+  // chunk enforces its own dimension field length (VP8X/VP8: 30, VP8L: 25).
+  if (bytes.length < 16) return null;
+  if (bytes.toString('ascii', 0, 4) !== 'RIFF') return null;
+  if (bytes.toString('ascii', 8, 12) !== 'WEBP') return null;
+  const chunk = bytes.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') {
+    if (bytes.length < 30) return null;
+    // Extended: 24-bit little-endian canvas size minus one.
+    const width = bytes.readUIntLE(24, 3) + 1;
+    const height = bytes.readUIntLE(27, 3) + 1;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return null;
+    if (width < 1 || height < 1 || width > 100000 || height > 100000) return null;
+    return { width, height, format: 'webp' };
+  }
+  if (chunk === 'VP8L') {
+    // Lossless: 0x2F signature then packed 14-bit (width - 1), 14-bit (height - 1).
+    if (bytes.length < 25) return null;
+    if (bytes[20] !== 0x2f) return null;
+    const bits = bytes.readUInt32LE(21);
+    const width = (bits & 0x3fff) + 1;
+    const height = ((bits >> 14) & 0x3fff) + 1;
+    if (width < 1 || height < 1 || width > 100000 || height > 100000) return null;
+    return { width, height, format: 'webp' };
+  }
+  if (chunk === 'VP8 ') {
+    // Lossy: 3-byte frame tag, start code 9D 01 2A, then 14-bit LE width/height.
+    if (bytes.length < 30) return null;
+    if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return null;
+    const width = bytes.readUInt16LE(26) & 0x3fff;
+    const height = bytes.readUInt16LE(28) & 0x3fff;
+    if (width < 1 || height < 1 || width > 100000 || height > 100000) return null;
+    return { width, height, format: 'webp' };
+  }
+  return null;
+}
+
 // Returns { width, height, format } or null when unknown/unparseable.
 // Fail-open: callers preserve images they cannot measure.
 export function getImageDimensions(part) {
   if (!part || typeof part !== 'object') return null;
   const bytes = decodeHeaderBytes(part.data);
   if (!bytes) return null;
-  return pngDimensions(bytes) || jpegDimensions(bytes);
+  return pngDimensions(bytes) || jpegDimensions(bytes) || gifDimensions(bytes) || webpDimensions(bytes);
 }
 
 export function isOversizedDimensions(dims, limit = MAX_IMAGE_DIMENSION) {
@@ -215,4 +276,129 @@ export function filterComputerUseImagesWithReport(messages, options = {}) {
 // but returns the filtered array directly.
 export function filterComputerUseImages(messages, options = {}) {
   return filterComputerUseImagesWithReport(messages, options).messages;
+}
+
+// Marker for a dropped NON-CU image: downscaling was unavailable or failed,
+// so removal is the last resort that keeps the provider request alive.
+export function attachmentMarker(dims, part) {
+  const size = dims ? `${dims.width}x${dims.height}` : 'unknown size';
+  const kind =
+    dims?.format === 'png'
+      ? 'PNG'
+      : dims?.format === 'jpeg'
+        ? 'JPEG'
+        : dims?.format === 'gif'
+          ? 'GIF'
+          : dims?.format === 'webp'
+            ? 'WebP'
+            : 'image';
+  void part;
+  return (
+    `[Attached ${kind} image removed: ${size} exceeds the ${MAX_IMAGE_DIMENSION}px ` +
+    `provider limit and automatic downscaling was unavailable or failed. ` +
+    `History was normalized for this request only; session logs are unchanged. ` +
+    `Reattach a smaller version of the image if it is still needed.]`
+  );
+}
+
+// Full provider-context normalization for ANY image above the limit.
+// Computer Use tool results are dropped (frame safety, see removalMarker).
+// Every other oversized image is downscaled in place when options.resizeImage
+// (engine photon resizeImage) succeeds and its output measures within the
+// limit, else dropped with attachmentMarker. Images at or below the limit,
+// and images whose dimensions cannot be measured, are never touched.
+// Input is never mutated. Resolves to
+// { messages, dropped, resized, droppedDetails, resizedDetails }.
+export async function normalizeContextImagesWithReport(messages, options = {}) {
+  const limit =
+    Number.isSafeInteger(options.limit) && options.limit > 0 ? options.limit : MAX_IMAGE_DIMENSION;
+  const resizeImage = typeof options.resizeImage === 'function' ? options.resizeImage : null;
+  const empty = { messages, dropped: 0, resized: 0, droppedDetails: [], resizedDetails: [] };
+  if (!Array.isArray(messages)) return empty;
+  const droppedDetails = [];
+  const resizedDetails = [];
+  let changed = false;
+  const out = [];
+  for (let messageIndex = 0; messageIndex < messages.length; messageIndex += 1) {
+    const message = messages[messageIndex];
+    const content = message?.content;
+    if (!message || typeof message !== 'object' || !Array.isArray(content)) {
+      out.push(message);
+      continue;
+    }
+    const computerUse = isComputerUseToolResult(message);
+    let nextContent = null;
+    for (let partIndex = 0; partIndex < content.length; partIndex += 1) {
+      const part = content[partIndex];
+      if (!part || typeof part !== 'object' || part.type !== 'image') continue;
+      const dims = getImageDimensions(part);
+      if (!dims || !isOversizedDimensions(dims, limit)) continue;
+      if (nextContent === null) nextContent = content.slice();
+      if (computerUse) {
+        droppedDetails.push({
+          messageIndex,
+          partIndex,
+          toolCallId: message.toolCallId ?? null,
+          toolName: message.toolName ?? toolActionOf(message) ?? null,
+          width: dims.width,
+          height: dims.height,
+          format: dims.format,
+        });
+        nextContent[partIndex] = { type: 'text', text: removalMarker(dims, part) };
+        continue;
+      }
+      let resized = null;
+      if (resizeImage) {
+        try {
+          resized = await resizeImage({ type: 'image', data: part.data, mimeType: part.mimeType });
+        } catch {
+          resized = null;
+        }
+      }
+      // Trust but verify: the replacement only ships when it measures
+      // within the limit, otherwise the request would still fail.
+      const outputDims =
+        resized && typeof resized.data === 'string' && resized.data.length > 0
+          ? getImageDimensions({ data: resized.data })
+          : null;
+      if (outputDims && !isOversizedDimensions(outputDims, limit)) {
+        resizedDetails.push({
+          messageIndex,
+          partIndex,
+          width: dims.width,
+          height: dims.height,
+          format: dims.format,
+          outputWidth: outputDims.width,
+          outputHeight: outputDims.height,
+          outputMimeType:
+            typeof resized.mimeType === 'string' && resized.mimeType ? resized.mimeType : part.mimeType,
+        });
+        nextContent[partIndex] = {
+          ...part,
+          data: resized.data,
+          mimeType:
+            typeof resized.mimeType === 'string' && resized.mimeType ? resized.mimeType : part.mimeType,
+        };
+      } else {
+        droppedDetails.push({
+          messageIndex,
+          partIndex,
+          toolCallId: message.toolCallId ?? null,
+          toolName: message.toolName ?? null,
+          width: dims.width,
+          height: dims.height,
+          format: dims.format,
+        });
+        nextContent[partIndex] = { type: 'text', text: attachmentMarker(dims, part) };
+      }
+    }
+    if (nextContent === null) {
+      out.push(message);
+      continue;
+    }
+    changed = true;
+    out.push({ ...message, content: nextContent });
+  }
+  if (!changed) return empty;
+  return { messages: out, dropped: droppedDetails.length, resized: resizedDetails.length, droppedDetails, resizedDetails };
 }

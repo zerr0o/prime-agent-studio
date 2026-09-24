@@ -27,7 +27,12 @@ import { parseAgentEnvelope } from './agent-messages.js';
 import { applyRuntimeStatus, noteActivity } from './runtime-status.js';
 import { createProjectSorting } from './project-sorting.js';
 import { createSessionSorting } from './session-sorting.js';
-import { createProjectNavigation, hasPendingQuestion } from './project-navigation.js';
+import {
+  createProjectNavigation,
+  hasPendingQuestion,
+  PROJECT_FOLDER_COLORS,
+  projectFolderColor,
+} from './project-navigation.js';
 import { createKnowledgeBrowser } from './knowledge.js';
 import { createProjectArchives } from './project-archives.js';
 import { createWorktreesUI } from './worktrees.js';
@@ -2062,8 +2067,16 @@ async function sendMessage(event) {
     base = [...activeMessages()],
     token = state.requestId;
   const computerUse = computerUseUI?.shouldIncludeInRun() === true;
-  const computerUseBackend =
-    computerUse && typeof computerUseUI?.getRunBackend === 'function' ? computerUseUI.getRunBackend() : null;
+  // Global Computer Use model (Preferences > Tools): when a run has desktop
+  // authorized it uses this model instead of the conversation model. The
+  // engine stays global, so no per-run backend is sent; the server applies
+  // the stored backend with no silent fallback.
+  const globalComputerModel =
+    computerUse && typeof settingsUI?.getComputerModel === 'function'
+      ? settingsUI.getComputerModel()
+      : '';
+  const effectiveModel =
+    globalComputerModel || $('model-select').value || state.modelCatalogDefault || '';
   state.sending = true;
   updateComposer();
   try {
@@ -2075,13 +2088,8 @@ async function sendMessage(event) {
         ...(images.length ? { images } : {}),
         ...(files.length ? { files } : {}),
         ...(sessionId ? { sessionId } : {}),
-        ...(computerUse
-          ? {
-              computerUse: true,
-              ...(computerUseBackend ? { computerUseBackend } : {}),
-            }
-          : {}),
-        model: $('model-select').value || state.modelCatalogDefault || '',
+        ...(computerUse ? { computerUse: true } : {}),
+        model: effectiveModel,
         thinking: $('thinking-select').value || state.modelCatalogThinking || '',
         allowQuestions: $('allow-questions').checked,
       },
@@ -2462,6 +2470,7 @@ async function bootstrap() {
     state.nativeFileOpen = data.preferences?.nativeFileOpen === true;
     state.providersAvailable = data.preferences?.providers === true;
     state.directoryPickerAvailable = data.preferences?.directoryPicker === true && !data.preferences?.remote;
+    state.terminalAvailable = data.preferences?.openTerminal === true;
     state.readOnly = data.preferences?.readOnly === true;
     state.remote = data.preferences?.remote === true || state.readOnly;
     applyAccessMode();
@@ -2639,6 +2648,23 @@ function openProjectMenu(cwd, anchor) {
   for (const divider of $('project-menu').querySelectorAll('.menu-divider')) divider.hidden = state.readOnly;
   bindText($('project-pin-label'), () => (p.pinned ? tr('ui.desepingler') : tr('ui.epingler')));
   $('project-menu').querySelector('[data-project-action="open"]').disabled = p.exists === false;
+  const terminalButton = $('project-menu').querySelector('[data-project-action="terminal"]');
+  if (terminalButton) {
+    if (!state.terminalAvailable) terminalButton.hidden = true;
+    terminalButton.disabled = p.exists === false;
+  }
+  const colorGroup = $('project-color-group');
+  if (colorGroup) {
+    colorGroup.hidden = state.readOnly;
+    const current = projectFolderColor(p) || 'transparent';
+    for (const swatch of colorGroup.querySelectorAll('[data-project-color]')) {
+      const value = String(swatch.dataset.projectColor || '').toLowerCase();
+      const active = value === current;
+      swatch.setAttribute('aria-checked', String(active));
+      swatch.classList.toggle('selected', active);
+      swatch.disabled = state.readOnly;
+    }
+  }
   const projectIndex = state.projects.indexOf(p);
   for (const [action, direction] of [
     ['up', -1],
@@ -2668,6 +2694,9 @@ async function projectMenuAction(action) {
     } else if (action === 'open') {
       await api('/api/projects/open', { method: 'POST', body: { cwd: p.cwd } });
       toast(() => tr('ui.dossier_ouvert_sur_le_pc'));
+    } else if (action === 'terminal') {
+      await api('/api/projects/open-terminal', { method: 'POST', body: { cwd: p.cwd } });
+      toast(() => tr('ui.powershell_ouvert_sur_le_pc'));
     } else if (action === 'pin') {
       await api('/api/projects', { method: 'PATCH', body: { cwd: p.cwd, pinned: !p.pinned } });
       await refreshOverview();
@@ -2683,6 +2712,23 @@ async function projectMenuAction(action) {
       $('remove-project-error').hidden = true;
       $('remove-project-dialog').showModal();
     }
+  } catch (error) {
+    toast(translateKnown(error.message), true);
+  }
+}
+async function setProjectFolderColor(color) {
+  const p = state.projects.find((p) => samePath(p.cwd, menuProjectCwd));
+  closeProjectMenu();
+  if (!p || state.readOnly) return;
+  const value = String(color || '').toLowerCase();
+  if (!PROJECT_FOLDER_COLORS.includes(value)) {
+    toast(() => tr('server.valeur_invalide'), true);
+    return;
+  }
+  try {
+    await api('/api/projects', { method: 'PATCH', body: { cwd: p.cwd, color: value } });
+    await refreshOverview();
+    toast(() => tr('projects.color_updated'));
   } catch (error) {
     toast(translateKnown(error.message), true);
   }
@@ -3212,6 +3258,11 @@ $('copy-project-path').onclick = () => copyText(state.projectCwd, () => tr('ui.c
 $('open-settings').onclick = () => $('settings-dialog').showModal();
 createRemoteAccessSettings({ api, isRemote: () => state.remote, toast });
 $('project-menu').onclick = (e) => {
+  const swatch = e.target.closest('[data-project-color]');
+  if (swatch) {
+    void setProjectFolderColor(swatch.dataset.projectColor);
+    return;
+  }
   const button = e.target.closest('[data-project-action]');
   if (button) void projectMenuAction(button.dataset.projectAction);
 };
@@ -3460,16 +3511,23 @@ document.addEventListener('keydown', (e) => {
     }
   }
   const openMenu = [$('session-menu'), $('project-menu')].find((menu) => !menu.hidden);
-  if (openMenu && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+  if (
+    openMenu &&
+    ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)
+  ) {
     e.preventDefault();
-    const items = [...openMenu.querySelectorAll('button:not(:disabled)')];
+    const items = [...openMenu.querySelectorAll('button:not(:disabled):not([hidden])')].filter(
+      (item) => !item.closest('[hidden]') && item.getClientRects().length > 0,
+    );
+    if (!items.length) return;
     let i = items.indexOf(document.activeElement);
     i =
       e.key === 'Home'
         ? 0
         : e.key === 'End'
           ? items.length - 1
-          : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+          : (i + (e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1) + items.length) %
+            items.length;
     items[i].focus();
   }
 });

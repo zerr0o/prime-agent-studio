@@ -17,6 +17,18 @@ param([switch]$SelfTest, [switch]$JobSelfTest, [switch]$JobAdoptProbe)
 # never resume after a re-enable. Listing, status and observe stay read-only.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# UTF-8 console transport: the Node driver frames JSON lines over stdin and
+# stdout as UTF-8 bytes, but Windows PowerShell defaults both console
+# encodings to the OEM code page. Without this pin, every multibyte UTF-8
+# sequence (for example "e-acute" = 0xC3 0xA9) decodes as two OEM glyphs and
+# typed text arrives garbled. Pin both directions plus $OutputEncoding before
+# the first Console access so non-ASCII text survives the boundary intact.
+try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [Console]::InputEncoding = $utf8NoBom
+    [Console]::OutputEncoding = $utf8NoBom
+    $OutputEncoding = $utf8NoBom
+} catch { }
 
 $script:HotkeyText = 'Ctrl+Alt+Shift+F10'
 $script:MaxActions = 20
@@ -824,8 +836,12 @@ function Invoke-KeyPress($keys) {
     }
     Start-Sleep -Milliseconds 20
 }
+# Pure UTF-16 decomposition for the typing path: one KEYEVENTF_UNICODE
+# event per unit, including both halves of a surrogate pair (emoji). Kept
+# separate from Invoke-TypeText so the self-test can verify it with no input.
+function Get-TypeUnits($text) { return ([string]$text).ToCharArray() }
 function Invoke-TypeText($text) {
-    $chars = ([string]$text).ToCharArray()
+    $chars = Get-TypeUnits $text
     $done = 0
     foreach ($ch in $chars) {
         if ($done % 32 -eq 0 -and $done -ne 0 -and (Test-Stop)) { throw 'STOPPED' }
@@ -1846,6 +1862,22 @@ function Run-SelfTest {
     $diagMethod = $null
     try { $diagMethod = (Get-Command Get-WindowDiagnostic -ErrorAction Stop) } catch { }
     Check 'focus-diagnostic-wiring' ($diagMethod -ne $null)
+    # Unicode boundary: the driver frames JSON lines as UTF-8 bytes, so the
+    # console must decode them as UTF-8 (default OEM page garbles every
+    # multibyte sequence). The probe is built from [char] codes only because
+    # this file has no BOM and PS 5.1 reads literals in the ANSI page.
+    # Covers precomposed Latin, cedilla, ligature, euro and a surrogate pair.
+    $probe = ("Sign$([char]0xE9) Claude: 67 $([char]0xE0) 83, " +
+        "fa$([char]0xE7)ade $([char]0x153)uvre $([char]0xE0) 3 " +
+        "$([char]0x20AC) $([char]0xD83D)$([char]0xDE00)")
+    $probeBytes = [System.Text.Encoding]::UTF8.GetBytes($probe)
+    Check 'console-input-utf8' (([Console]::InputEncoding.WebName -eq 'utf-8') -and (([Console]::InputEncoding.GetString($probeBytes)) -ceq $probe))
+    Check 'console-output-utf8' (([Console]::OutputEncoding.WebName -eq 'utf-8') -and (([Console]::OutputEncoding.GetString(([System.Text.Encoding]::UTF8.GetBytes($probe)))) -ceq $probe))
+    $units = @(Get-TypeUnits $probe)
+    Check 'type-units-count' ($units.Count -eq $probe.Length)
+    Check 'type-units-roundtrip' (([string]::new([char[]]$units)) -ceq $probe)
+    Check 'type-units-bmp' (($units -contains [char]0xE9) -and ($units -contains [char]0xE7) -and ($units -contains [char]0x153) -and ($units -contains [char]0x20AC))
+    Check 'type-units-surrogate' (($units -contains [char]0xD83D) -and ($units -contains [char]0xDE00))
     $script:Captured.Clear(); $script:StopGeneration = 0
     Invoke-Request @{ id = 1; method = 'stop'; params = @{ reason = 'selftest' }; generation = 5 }
     $stopNote = @($script:Captured | Where-Object { $_.kind -eq 'result' -and $_.id -eq 1 })

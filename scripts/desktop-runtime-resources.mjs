@@ -23,6 +23,7 @@ export const desktopRuntimeScripts = [
   'mcp-oauth-worker.mjs',
   'mcp-probe.py',
   'open-directory.ps1',
+  'open-terminal.ps1',
   'open-file.ps1',
   'pick-directory.ps1',
 ];

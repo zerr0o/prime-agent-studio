@@ -1,4 +1,4 @@
-param([ValidateSet('inspect', 'hide', 'close')][string]$Mode = 'inspect')
+param([ValidateSet('inspect', 'hide', 'minimize', 'close')][string]$Mode = 'inspect')
 $ErrorActionPreference = 'Stop'
 $studioPath = [IO.Path]::GetFullPath($env:PRIME_STUDIO_TEST_FOLDER)
 $studioRoot = [IO.Path]::GetDirectoryName($studioPath)
@@ -11,6 +11,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class StudioExplorerTest {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
@@ -23,7 +24,8 @@ $studioMatches = @($studioShell.Windows()) | Where-Object {
 $studioResults = @($studioMatches | ForEach-Object {
     $studioHandle = [IntPtr]$_.HWND
     if ($Mode -eq 'hide') { [void][StudioExplorerTest]::ShowWindow($studioHandle, 0) }
-    $studioResult = @{ hwnd = $_.HWND; visible = [StudioExplorerTest]::IsWindowVisible($studioHandle); minimized = [StudioExplorerTest]::IsIconic($studioHandle) }
+    if ($Mode -eq 'minimize') { [void][StudioExplorerTest]::ShowWindow($studioHandle, 6) }
+    $studioResult = @{ hwnd = $_.HWND; visible = [StudioExplorerTest]::IsWindowVisible($studioHandle); minimized = [StudioExplorerTest]::IsIconic($studioHandle); foreground = [StudioExplorerTest]::GetForegroundWindow() -eq $studioHandle }
     if ($Mode -eq 'close') { $_.Quit() }
     $studioResult
 })
