@@ -36,14 +36,14 @@ Prime Agent Studio brings your **local Prime Agent sessions** together in a Wind
 - **Stay on course**: a Roadmap shared with agents, right beside conversations.
 - **Work from anywhere**: the same Studio on a Windows PC and on your phone, over Wi-Fi or beyond.
 
-**Version 3.8.1** · [Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.1/Prime-Agent-Studio_3.8.1_x64-setup.exe) · [Release history](docs/en/changelog.md).
+[Download the Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/latest) · [Release history](docs/en/changelog.md).
 
 ## Quick start
 
 ### Windows application
 
 1. Download the [Windows x64 installer](https://github.com/zerr0o/prime-agent-studio/releases/latest), install it, then open **Prime Agent Studio** from your desktop or Start menu. Node.js is included.
-2. At first launch, choose **Repair Studio** (Prime Agent **0.9.5**, private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
+2. At first launch, choose **Repair Studio** (private npm, uv and Python, downloading on demand after your click; compatible external installations reused, Git Bash detected separately) or **Use an existing installation** if you used the VBS launcher.
 3. Configure your provider, add a project folder with **+**, then write your request. [Full guide](docs/en/desktop.md).
 
 Updates are signed for Tauri; the installer does not yet carry a Windows Authenticode signature.
@@ -108,6 +108,7 @@ Your local settings and Prime Agent's native sessions are preserved. For an arch
 - [Your models within reach](#your-models-within-reach) — providers, favorites, reasoning and subagents.
 - [Session, agents and files](#session-agents-and-files) — usage, delegations and previews.
 - [Commands, skills and MCP](#commands-skills-and-mcp) — slash catalog and tool connections.
+- [Computer Use](#computer-use) - opt-in desktop control with separate stop.
 - [Project knowledge](#project-knowledge) — past work, memories and refinements.
 - [Also from your phone](#also-from-your-phone) — Wi-Fi, Tailscale and access code.
 - [Install Studio as an app](#install-studio-as-an-app) — mobile PWA.
@@ -188,7 +189,7 @@ Search for a model by **name, provider or identifier**. Favorites stay at the to
   <img src="docs/screenshots/en/desktop-models.png" width="560" alt="Desktop model selector with search, favorites and Prime Agent automatic choice.">
 </p>
 
-**New session** reuses the default main model, configurable on the PC with the same selector. With Prime Agent **0.9.5**, the **Subagents** area defines global values; for a specific project, choose **This project** at the top of the **Agents** tab, even before the first message. Each value can inherit from its parent, and already-created subagents keep their settings.
+**New session** reuses the default main model, configurable on the PC with the same selector. The **Subagents** area defines global values; for a specific project, choose **This project** at the top of the **Agents** tab, even before the first message. Each value can inherit from its parent, and already-created subagents keep their settings.
 
 ![New desktop conversation: default main model and subagent settings available in the Agents tab before the first message.](docs/screenshots/en/desktop-new-conversation-agents.png)
 
@@ -219,6 +220,18 @@ Python skills are prepared according to the project's native settings, for both 
 <p align="center">
   <img src="docs/screenshots/en/desktop-mcp.png" width="680" alt="Desktop MCP manager with native integrations and a demonstration HTTP server.">
 </p>
+
+## Computer Use
+
+Let an agent use the real Windows desktop for one conversation at a time. Check **Allow Computer Use** in the composer, next to **Allow questions**. The choice is off by default, applies to that conversation, and is cleared after a server restart. The agent can then observe the screen and use the mouse and keyboard with your current model. No extra approval is requested for each click, so keep sensitive windows out of view and do not touch the mouse or keyboard while it works.
+
+Use the separate **Stop desktop** control, or **Ctrl+Alt+Shift+F10**, to end desktop control. This stops desktop input only and leaves other agent runs alone. Only one controller can hold the desktop at a time, and read-only remote access cannot enable or stop it.
+
+Open **Preferences > Tools > Computer Use decision model** to choose the model used for runs with desktop allowed. **Same as conversation** keeps the conversation model. A named image-capable model replaces it at run start, only for those turns. If available in your native catalog, Opus 5.5 with minimal reasoning or GPT-6 Luna with minimal reasoning are practical starting points. Availability depends on your Prime Agent installation and account. [Full guide](docs/en/computer-use.md)
+
+![Desktop Computer Use controls in a demo session: opt-in checkbox, Stop desktop control and emergency hotkey, with fictional contents.](docs/screenshots/en/desktop-computer-use.png)
+
+<p align="center"><em>Demo interface with fictional contents. No real desktop was controlled for this capture.</em></p>
 
 ## Project knowledge
 
@@ -266,7 +279,7 @@ The application, built with Tauri 2, opens Studio in a dedicated Windows window 
 
 ![Windows application first launch: component status and guided setup.](docs/screenshots/en/desktop-startup.png)
 
-In the current source tree, guided setup pairs Studio with **Prime Agent 0.9.5**, **npm 10.9.4** and **uv 0.8.22**, with Python 3.11. Archives are checked against their inventories and hashes before validation; no automatically detected external component runs without your explicit choice. Components live in the data folder, under `engine/`, with Python kernels in `.local`.
+Guided setup downloads components on demand after your choice. Archives are checked against their inventories and hashes before validation; no automatically detected external component runs without your explicit choice. Components live in the data folder, under `engine/`, with Python kernels in `.local`.
 
 ![Updates in the Windows application: installed version, active server and restart after runs.](docs/screenshots/en/desktop-updates.png)
 

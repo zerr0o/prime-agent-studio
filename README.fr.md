@@ -36,14 +36,14 @@ Prime Agent Studio réunit les sessions de votre **Prime Agent local** dans une 
 - **Gardez le cap** : Roadmap partagée avec les agents, juste à côté des conversations.
 - **Travaillez d’où vous voulez** : le même Studio sur PC Windows et sur téléphone, en Wi-Fi ou hors Wi-Fi.
 
-**Version 3.8.1** · [Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/download/v3.8.1/Prime-Agent-Studio_3.8.1_x64-setup.exe) · [Historique des versions](docs/changelog.md).
+[Télécharger l’installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/latest) · [Historique des versions](docs/changelog.md).
 
 ## Démarrage rapide
 
 ### Application Windows
 
 1. Téléchargez l’[installateur Windows x64](https://github.com/zerr0o/prime-agent-studio/releases/latest), installez-le, puis ouvrez **Prime Agent Studio** depuis le Bureau ou le menu Démarrer. Node.js est inclus.
-2. Au premier lancement, choisissez **Réparer Studio** (Prime Agent **0.9.5**, npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
+2. Au premier lancement, choisissez **Réparer Studio** (npm privé, uv et Python, téléchargés à la demande après votre clic ; installations externes compatibles réutilisées, Git Bash détecté séparément) ou **Reprendre une installation existante** si vous utilisiez le VBS.
 3. Configurez votre fournisseur, ajoutez un dossier de projet avec **+**, puis écrivez votre demande. [Guide complet](docs/desktop.md).
 
 Les mises à jour sont signées pour Tauri ; l’installateur ne possède pas encore de signature Windows Authenticode.
@@ -108,6 +108,7 @@ Vos réglages locaux et les sessions natives de Prime Agent sont conservés. Pou
 - [Vos modèles à portée de main](#vos-modèles-à-portée-de-main) — fournisseurs, favoris, réflexion et sous-agents.
 - [Session, agents et fichiers](#session-agents-et-fichiers) — consommation, délégations et aperçus.
 - [Commandes, skills et MCP](#commandes-skills-et-mcp) — catalogue slash et connexions d’outils.
+- [Computer Use](#computer-use) - contrôle du bureau avec arrêt distinct.
 - [Connaissances du projet](#connaissances-du-projet) — travaux passés, mémoires et refinements.
 - [Aussi depuis votre téléphone](#aussi-depuis-votre-téléphone) — Wi-Fi, Tailscale et code d’accès.
 - [Installer le Studio comme une application](#installer-le-studio-comme-une-application) — PWA mobile.
@@ -188,7 +189,7 @@ Recherchez un modèle par son **nom, son fournisseur ou son identifiant**. Les f
   <img src="docs/screenshots/desktop-models.png" width="560" alt="Sélecteur de modèles sur PC avec recherche, favoris et choix automatique de Prime Agent.">
 </p>
 
-**Nouvelle session** reprend le modèle principal par défaut, configurable sur le PC avec le même sélecteur. Avec Prime Agent **0.9.5**, la zone **Sous-agents** définit les valeurs globales ; pour un projet précis, choisissez **Ce projet** en haut de l’onglet **Agents**, même avant le premier message. Chaque valeur peut hériter du parent, et les sous-agents déjà créés conservent leurs réglages.
+**Nouvelle session** reprend le modèle principal par défaut, configurable sur le PC avec le même sélecteur. La zone **Sous-agents** définit les valeurs globales ; pour un projet précis, choisissez **Ce projet** en haut de l’onglet **Agents**, même avant le premier message. Chaque valeur peut hériter du parent, et les sous-agents déjà créés conservent leurs réglages.
 
 ![Nouvelle conversation sur PC : modèle principal par défaut et réglages des sous-agents accessibles dans l’onglet Agents avant le premier message.](docs/screenshots/desktop-new-conversation-agents.png)
 
@@ -219,6 +220,18 @@ Les skills Python sont préparées selon les réglages natifs du projet, pour le
 <p align="center">
   <img src="docs/screenshots/desktop-mcp.png" width="680" alt="Gestionnaire MCP du Studio sur PC : intégrations natives et serveur HTTP de démonstration.">
 </p>
+
+## Computer Use
+
+Laissez un agent utiliser le vrai bureau Windows pour une conversation à la fois. Cochez **Autoriser le Computer Use** dans la zone de rédaction, à côté de **Autoriser les questions**. Ce choix est désactivé par défaut, vaut pour cette conversation, et est effacé après un redémarrage du serveur. L’agent peut alors observer l’écran et utiliser la souris et le clavier avec votre modèle actuel. Aucune validation supplémentaire n’est demandée pour chaque clic, donc gardez les fenêtres sensibles hors de vue et ne touchez ni la souris ni le clavier pendant son travail.
+
+Utilisez le contrôle distinct **Arrêter le bureau**, ou **Ctrl+Alt+Shift+F10**, pour mettre fin au contrôle du bureau. Cela arrête uniquement les entrées du bureau et laisse les autres exécutions actives. Un seul contrôleur peut tenir le bureau à la fois, et l’accès distant en lecture seule ne peut ni l’activer ni l’arrêter.
+
+Ouvrez **Préférences > Outils > Modèle de décision Computer Use** pour choisir le modèle utilisé pour les exécutions avec bureau autorisé. **Identique à la conversation** conserve le modèle de la conversation. Un modèle nommé compatible avec les images le remplace au démarrage de l’exécution, uniquement pour ces tours. S’ils sont disponibles dans votre catalogue natif, Opus 5.5 avec réflexion minimale ou GPT-6 Luna avec réflexion minimale sont des points de départ pratiques. La disponibilité dépend de votre installation Prime Agent et de votre compte. [Guide complet](docs/computer-use.md)
+
+![Contrôles Computer Use sur PC dans une session de démonstration : case d’activation, commande d’arrêt du bureau et raccourci d’urgence, avec contenus fictifs.](docs/screenshots/desktop-computer-use.png)
+
+<p align="center"><em>Interface de démonstration avec contenus fictifs. Aucun vrai bureau n’a été contrôlé pour cette capture.</em></p>
 
 ## Connaissances du projet
 
@@ -266,7 +279,7 @@ L’application, construite avec Tauri 2, ouvre le Studio dans une fenêtre Wind
 
 ![Premier lancement de l’application Windows : état des composants et préparation guidée.](docs/screenshots/desktop-startup.png)
 
-Dans les sources actuelles, la préparation guidée associe le Studio à **Prime Agent 0.9.5**, **npm 10.9.4** et **uv 0.8.22**, avec Python 3.11. Les archives sont contrôlées contre leurs inventaires et empreintes avant validation ; aucun composant externe détecté automatiquement n’est exécuté sans votre choix explicite. Les composants résident dans le dossier de données, sous `engine/`, avec les noyaux Python dans `.local`.
+La préparation guidée télécharge les composants à la demande après votre choix. Les archives sont contrôlées contre leurs inventaires et empreintes avant validation ; aucun composant externe détecté automatiquement n’est exécuté sans votre choix explicite. Les composants résident dans le dossier de données, sous `engine/`, avec les noyaux Python dans `.local`.
 
 ![Mise à jour dans l’application Windows : version installée, serveur actif et redémarrage après les exécutions.](docs/screenshots/desktop-updates.png)
 
