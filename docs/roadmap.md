@@ -16,6 +16,8 @@ Une Roadmap absente reste vide jusqu’à son initialisation explicite. Ajoutez 
 
 Le compteur mesure les tâches terminales cochées, une fois chacune. Un groupe reflète ses enfants et sa case applique le même état à tous. Changer le statut d’un plan ne coche pas ses tâches. Les plans abandonnés restent consultables et sortent du compteur du projet ; les plans en pause y restent. Le backlog est compté séparément.
 
+Le menu d’un plan propose **Archiver**. Les plans archivés quittent les vues **Projet** et **Session**, les listes de jalons et les compteurs. Ils restent visibles dans l’onglet **Archivés** avec son compteur, en lecture seule, avec **Restaurer** (ou **Désarchiver**) et **Supprimer**. L’archivage demande la révision courante comme les autres modifications et ne supprime aucune donnée (un plan existant sans indicateur reste visible). Les agents ne voient pas les plans archivés et toute modification d’un agent sur un plan archivé est refusée.
+
 Sur téléphone, le panneau utilise la hauteur de l’écran. L’accès distant en lecture seule permet de consulter et de suivre les liens, sans modifier la Roadmap ni lancer un travail.
 
 Chaque plan avec des tâches affiche aussi son pourcentage. Les cases terminées sont vertes ; les groupes partiellement terminés gardent leur couleur. **Reste à faire uniquement** masque les tâches cochées sans changer la progression réelle. Les parents et les notes restent accessibles ; désactivez le filtre pour retrouver toutes les tâches.

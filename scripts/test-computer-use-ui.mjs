@@ -20,7 +20,6 @@ const fixture = `<!doctype html>
 <button id="computer-use-toggle" class="computer-use-toggle" type="button" aria-pressed="false">
 <span id="computer-use-dot" class="computer-use-dot" aria-hidden="true"></span><span id="computer-use-label">Bureau expert</span>
 </button>
-<span id="computer-use-status" class="computer-use-status" role="status"></span>
 <button id="computer-use-stop" class="computer-use-stop" type="button" hidden>Arreter le bureau</button>
 </div>
 <label class="questions-toggle"><input id="allow-computer-use" type="checkbox" /><span>Computer</span></label>
@@ -32,6 +31,7 @@ const fixture = `<!doctype html>
 <label><input type="radio" name="computer-backend-global" id="computer-backend-cua" value="cua" /><span id="computer-backend-cua-label" data-i18n="computer.backendCua">Cua</span></label>
 <p id="computer-backend-hint"></p>
 <button id="computer-model-button" type="button"><span id="computer-model-name"></span><span id="computer-model-provider"></span></button>
+<select id="computer-thinking"><option value=""></option><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
 <p id="computer-prefs-error" hidden></p>
 </section>
 <dl><div><dt>Controller</dt><dd id="computer-use-owner">-</dd></div>
@@ -68,7 +68,7 @@ window.__mock = {
   omitBackendFields: false,
   cleanupPending: false,
   cleanupFailed: false,
-  prefs: { computerBackend: 'native', computerModel: '' },
+  prefs: { computerBackend: 'native', computerModel: '', computerThinking: '' },
   models: [
     { id: 'test/vision', name: 'Vision', provider: 'test', input: ['text', 'image'] },
     { id: 'test/vision-2', name: 'Vision Two', provider: 'test', input: ['text', 'image'] },
@@ -100,7 +100,7 @@ window.__resetMock = () => {
   window.__mock.omitBackendFields = false;
   window.__mock.cleanupPending = false;
   window.__mock.cleanupFailed = false;
-  window.__mock.prefs = { computerBackend: 'native', computerModel: '' };
+  window.__mock.prefs = { computerBackend: 'native', computerModel: '', computerThinking: '' };
   window.__mock.models = [
     { id: 'test/vision', name: 'Vision', provider: 'test', input: ['text', 'image'] },
     { id: 'test/vision-2', name: 'Vision Two', provider: 'test', input: ['text', 'image'] },
@@ -217,6 +217,15 @@ const api = async (path, { method = 'GET', body } = {}) => {
         window.__mock.prefs.computerModel = '';
       }
     }
+    if ('computerThinking' in patch) {
+      const level = patch.computerThinking;
+      if (typeof level !== 'string' || (level !== '' && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(level))) {
+        const error = new Error('Invalid thinking level.');
+        error.status = 400;
+        throw error;
+      }
+      window.__mock.prefs.computerThinking = level;
+    }
     return JSON.parse(JSON.stringify(window.__mock.prefs));
   }
   if (path === '/api/computer-use' && method === 'POST') {
@@ -328,7 +337,8 @@ try {
   await expect(page.locator('#computer-use')).toBeVisible();
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer le bureau expert');
+  await expect(page.locator('#computer-use-status')).toHaveCount(0);
   await expect(page.locator('#computer-use-stop')).toBeHidden();
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
   await expect(page.locator('#allow-computer-use')).toBeEnabled();
@@ -340,7 +350,7 @@ try {
   const beforeDraft = await postCount();
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif au prochain envoi');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Désactiver le bureau expert');
   if ((await postCount()) !== beforeDraft) throw new Error('draft toggle must not POST');
   if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
     throw new Error('draft should feed POST /api/runs');
@@ -364,7 +374,8 @@ try {
     window.__mock.delayMs = 0;
   });
   await page.evaluate(() => window.__cu.refresh());
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
   await page.evaluate(() => {
     window.__ctx.sessionId = 'sess-B';
     window.__mock.delayMs = 250;
@@ -377,8 +388,8 @@ try {
   }));
   if (duringSwitch.status !== null) throw new Error('switch must clear scoped status');
   if (duringSwitch.include !== false) throw new Error('no stale permission reuse during reload');
-  await expect(page.locator('#computer-use-status')).toHaveText('Chargement');
-  await expect(page.locator('#computer-use-status')).toContainText('autre session', { timeout: 10000 });
+  await expect(page.locator('#computer-use-warning')).toHaveText('Chargement');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Test Session', { timeout: 10000 });
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
   if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
@@ -418,7 +429,7 @@ try {
   if (afterRace.sessB !== false) throw new Error('new session flag must stay off');
   if (afterRace.include !== false) throw new Error('new session must not reuse stale permission');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-status')).toContainText('autre session');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Test Session');
 
   // Existing session enable uses POST mode route.
   await page.evaluate(() => {
@@ -434,7 +445,7 @@ try {
     throw new Error('session switch must clear draft');
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
   await expect(page.locator('#allow-computer-use')).toBeChecked();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   const modeCall = await page.evaluate(() =>
@@ -473,8 +484,9 @@ try {
     window.__setController({ sessionId: 'other-999', name: 'Other session' });
   });
   await page.evaluate(() => window.__cu.refresh());
-  await expect(page.locator('#computer-use-status')).toContainText('Other session');
+  await expect(page.locator('#computer-use-owner')).toContainText('Other session');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer le bureau expert');
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeEnabled();
   await page.screenshot({ path: join(shotDir, 'computer-use-other.png') });
@@ -516,7 +528,7 @@ try {
     window.__mock.calls = [];
     window.__cu.onSessionChange();
   });
-  await expect(page.locator('#computer-use-status')).toHaveText('Etat indisponible');
+  await expect(page.locator('#computer-use-warning')).toHaveText('Etat indisponible');
   await expect(page.locator('#computer-use-toggle')).toBeDisabled();
   await expect(page.locator('#allow-computer-use')).toBeDisabled();
   if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
@@ -525,7 +537,8 @@ try {
     window.__mock.failGet = false;
     window.__cu.onSessionChange();
   });
-  await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer le bureau expert');
 
   // Unsupported system is handled without crash.
   await page.evaluate(() => {
@@ -564,10 +577,10 @@ try {
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   await page.evaluate(() => window.__setLanguage('en'));
   await expect(page.locator('#computer-use-label')).toHaveText('Expert desktop');
-  await expect(page.locator('#computer-use-status')).toHaveText('Off');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Enable expert desktop');
   await page.evaluate(() => window.__setLanguage('fr'));
   await expect(page.locator('#computer-use-label')).toHaveText('Bureau expert');
-  await expect(page.locator('#computer-use-status')).toHaveText('Inactif');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer le bureau expert');
 
   // Global engine in Preferences > Tools: names, one global PATCH, lock while on.
   await page.evaluate(() => {
@@ -739,6 +752,28 @@ try {
   if ((await page.evaluate(() => window.__cp.getModel())) !== '')
     throw new Error('empty choice must restore Same as conversation');
 
+  // Thinking select uses the standard reasoning levels and PATCHes globally.
+  await expect(page.locator('#computer-thinking')).toBeEnabled();
+  await page.locator('#computer-thinking').selectOption('high');
+  if ((await page.evaluate(() => window.__cp.getThinking())) !== 'high')
+    throw new Error('decision thinking getter must follow the selector');
+  const patchedThinking = await page.evaluate(
+    () =>
+      window.__mock.calls
+        .filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH')
+        .pop()?.body,
+  );
+  if (patchedThinking?.computerThinking !== 'high')
+    throw new Error('thinking choice must PATCH computerThinking globally');
+  const badThinking = await page.evaluate(() =>
+    window
+      .__api('/api/studio-preferences', { method: 'PATCH', body: { computerThinking: 'ultra' } })
+      .then(() => 'ok', (error) => `fail:${error.status}`),
+  );
+  if (badThinking !== 'fail:400') throw new Error('unknown thinking level must fail with 400');
+  if ((await page.evaluate(() => window.__cp.getThinking())) !== 'high')
+    throw new Error('refused thinking must not replace the stored level');
+
   // Read only locks the global controls; a failed prefs fetch disables them.
   await page.evaluate(() => {
     window.__ctx.readOnly = true;
@@ -747,18 +782,21 @@ try {
   await expect(page.locator('#computer-backend-native')).toBeDisabled();
   await expect(page.locator('#computer-backend-cua')).toBeDisabled();
   await expect(page.locator('#computer-model-button')).toBeDisabled();
+  await expect(page.locator('#computer-thinking')).toBeDisabled();
   await page.evaluate(() => {
     window.__ctx.readOnly = false;
     window.__cp.refresh();
   });
   await expect(page.locator('#computer-backend-native')).toBeEnabled();
   await expect(page.locator('#computer-model-button')).toBeEnabled();
+  await expect(page.locator('#computer-thinking')).toBeEnabled();
   await page.evaluate(() => {
     window.__mock.failPrefs = true;
     window.__cp.refresh();
   });
   await expect(page.locator('#computer-backend-native')).toBeDisabled();
   await expect(page.locator('#computer-model-button')).toBeDisabled();
+  await expect(page.locator('#computer-thinking')).toBeDisabled();
   await page.evaluate(() => {
     window.__mock.failPrefs = false;
     window.__cp.refresh();

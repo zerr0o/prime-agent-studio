@@ -508,19 +508,39 @@ export function createCommands({ api, getContext, action, onChange, onError, has
     restoreDraft() {
       const text = composerText(),
         requestedKey = key();
-      const match = text.match(/^\/([^\s/]+) ([\s\S]*)$/);
-      if (!match) return;
+      const tokens = text.match(/^(\/skill:[A-Za-z0-9-]+(?:\s+\/skill:[A-Za-z0-9-]+)*)\s+([\s\S]*)$/);
+      const single = !tokens && text.match(/^\/([^\s/]+) ([\s\S]*)$/);
+      if (!tokens && !single) return;
       void load()
         .then((data) => {
-          if (key() !== requestedKey || composerText() !== text || input.selectionStart < match[1].length + 2)
+          if (key() !== requestedKey || composerText() !== text) return;
+          if (tokens) {
+            const names = tokens[1].trim().split(/\s+/).map((token) => token.slice(1));
+            const entries = [];
+            for (const raw of names) {
+              const name = Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
+              const command = data.commands.find((c) => c.name === name && c.supported);
+              if (!command || command.source !== 'skill') return;
+              entries.push({ ...command, name: raw });
+            }
+            if (input.selectionStart < tokens[1].length + 1) return;
+            const offset = tokens[1].length + 1,
+              start = input.selectionStart - offset,
+              end = input.selectionEnd - offset;
+            setComposerText('');
+            for (const entry of entries) selectComposerCommand(entry, tokens[2]);
+            input.setSelectionRange(start, end);
+            onChange();
             return;
-          const name = Object.hasOwn(aliases, match[1]) ? aliases[match[1]] : match[1];
+          }
+          if (input.selectionStart < single[1].length + 2) return;
+          const name = Object.hasOwn(aliases, single[1]) ? aliases[single[1]] : single[1];
           const command = data.commands.find((c) => c.name === name && c.supported);
           if (!command) return;
-          const offset = match[1].length + 2,
+          const offset = single[1].length + 2,
             start = input.selectionStart - offset,
             end = input.selectionEnd - offset;
-          selectComposerCommand({ ...command, name: match[1] }, match[2]);
+          selectComposerCommand({ ...command, name: single[1] }, single[2]);
           input.setSelectionRange(start, end);
           onChange();
         })

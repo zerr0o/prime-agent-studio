@@ -92,6 +92,7 @@ test('referenced images read current project files, detect deletion and reject p
   await mkdir(outside);
   await mkdir(join(cwd, '.local'));
   const images = createProjectFiles({
+    protectedRoots: [join(cwd, '.local')],
     store: {
       findProject: async (value) => {
         assert.equal(value, cwd);

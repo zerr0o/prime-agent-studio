@@ -24,6 +24,7 @@ import { createInspector } from './inspector.js';
 import { fileLinkRenderer, bindFileLinks } from './file-links.js';
 import { createSessionActivity } from './session-activity.js';
 import { parseAgentEnvelope } from './agent-messages.js';
+import { parseSkillBlocks, readableCopyText } from './skill-blocks.js';
 import { applyRuntimeStatus, noteActivity } from './runtime-status.js';
 import { createProjectSorting } from './project-sorting.js';
 import { createSessionSorting } from './session-sorting.js';
@@ -209,6 +210,12 @@ const allSessions = () =>
   state.projects.flatMap((p) => (p.sessions || []).map((s) => ({ ...s, cwd: s.cwd || p.cwd })));
 const session = (id) => allSessions().find((s) => s.id === (id || state.sessionId));
 const execCwdOf = () => state.execCwd || state.projectCwd;
+const isValidRunCwd = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\') || trimmed.startsWith('/');
+};
 const isRunning = (run) => run && ['running', 'stopping'].includes(run.status);
 const activeRun = () =>
   state.runs.get(state.viewRunId) ||
@@ -1331,7 +1338,28 @@ function markdown(text, { cwd = execCwdOf(), basePath = '', imageRoot } = {}) {
       ADD_ATTR: ['data-studio-file', 'data-studio-image'],
     },
   );
-  bindFileLinks(n, references, (reference) => inspectorUI?.openDocument(reference, { cwd, basePath }));
+  bindFileLinks(
+    n,
+    references,
+    (reference) => inspectorUI?.openDocument(reference, { cwd, basePath }),
+    {
+      context: () => ({
+        cwd,
+        basePath,
+        remote: state.remote,
+        readOnly: state.readOnly,
+        nativeFileOpen: state.nativeFileOpen,
+        online: state.online,
+      }),
+      resolve: (reference, context) =>
+        api(
+          `/api/project-files/resolve?${new URLSearchParams({ cwd: context.cwd, reference, basePath: context.basePath || '' })}`,
+        ),
+      reveal: (folderCwd, path) => api('/api/projects/open', { method: 'POST', body: { cwd: folderCwd, path } }),
+      copy: (text) => copyText(text),
+      toast,
+    },
+  );
   bindInlineImages(n, images, { cwd, basePath, imageRoot });
   n.querySelectorAll('a').forEach((a) => {
     if (a.classList.contains('document-link')) return;
@@ -1514,7 +1542,37 @@ function renderMessage(m, index) {
   heading.append(el('span', 'message-time', () => dateLabel(m.timestamp)));
   n.append(heading);
   const body = el('div', 'message-body');
-  if (m.role === 'user') bindText(body, () => m.text || '');
+  if (m.role === 'user') {
+    const blocks = parseSkillBlocks(m.text || '');
+    const hasSkill = blocks.some((part) => part.type === 'skill');
+    if (!hasSkill) bindText(body, () => m.text || '');
+    else {
+      for (const part of blocks) {
+        if (part.type === 'skill') {
+          const disclosure = makeDetails('tool-block skill-block', `skill:${id}:${part.name}`);
+          const summary = el('summary');
+          summary.append(
+            icon('tool'),
+            el('span', 'tool-name', () => `${tr('ui.skill')} · ${part.name}`),
+            icon('chevron', 'chevron'),
+          );
+          disclosure.append(summary);
+          const content = el('div', 'tool-content');
+          content.append(el('h4', '', () => tr('ui.contenu_du_skill')));
+          const pre = el('pre');
+          pre.textContent = part.content;
+          content.append(pre);
+          if (part.location) content.append(el('span', 'command-source', () => part.location));
+          disclosure.append(content);
+          body.append(disclosure);
+        } else {
+          const text = el('div', 'user-text');
+          bindText(text, () => part.text);
+          body.append(text);
+        }
+      }
+    }
+  }
   else {
     if (m.thinking) {
       const d = makeDetails('thinking-block', `thinking:${id}`, reasoningMode(prefs) === 'expanded'),
@@ -1550,7 +1608,9 @@ function renderMessage(m, index) {
       icon('copy'),
       textNode(() => tr('ui.copier')),
     );
-    b.onclick = () => copyText(m.text, () => tr('ui.message_copie'));
+    b.onclick = () => {
+      copyText(readableCopyText(m.role, m.text), () => tr('ui.message_copie'));
+    };
     actions.append(b);
     n.append(actions);
   }
@@ -1692,7 +1752,10 @@ function newSession(execCwd) {
   if (state.readOnly) return;
   saveDraft();
   resetView();
-  state.execCwd = execCwd || state.projectCwd;
+  // Direct onclick wiring passes a MouseEvent as the first argument. Only a
+  // non-empty string is a valid execution cwd. Every caller routes through
+  // here, so ignore anything else and fall back to the selected project.
+  state.execCwd = typeof execCwd === 'string' && execCwd.trim() ? execCwd : state.projectCwd;
   selectNewConversationModel();
   state.archived = false;
   saveSelection();
@@ -2066,6 +2129,11 @@ async function sendMessage(event) {
     sessionId = state.sessionId,
     base = [...activeMessages()],
     token = state.requestId;
+  if (!isValidRunCwd(cwd)) {
+    toast(() => tr('conversation.missing_project'), true);
+    updateComposer();
+    return;
+  }
   const computerUse = computerUseUI?.shouldIncludeInRun() === true;
   // Global Computer Use model (Preferences > Tools): when a run has desktop
   // authorized it uses this model instead of the conversation model. The
@@ -3216,8 +3284,8 @@ projectNavigation = createProjectNavigation({
   addProject: openProjectDialog,
 });
 applyPreferences();
-$('new-session').onclick = newSession;
-$('project-new-session').onclick = newSession;
+$('new-session').onclick = () => newSession();
+$('project-new-session').onclick = () => newSession();
 $('header-project').onclick = () => {
   if (state.projectCwd) selectProject(state.projectCwd);
 };

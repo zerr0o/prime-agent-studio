@@ -40,6 +40,8 @@ The diff compares current contents with the latest commit, including staged and 
 
 Markdown links to project documents and file references written as code in messages are clickable. They open a preview with the same **Open** button, without switching sessions or losing the draft. Relative, absolute and `file://` paths are recognized, including line references. A bare filename is searched for within the project; if several files share that name, Studio lets you choose.
 
+Links are not limited to selected extensions: a binary file such as an `.exe` or `.zip` can open the panel without being executed. A link’s context menu offers **Open**, **Open folder**, and **Copy path**. The panel also includes **Open folder**, next to **Open**, to open the containing folder on the host PC.
+
 Previews accept UTF-8 text up to 512 KiB and PNG, JPEG, GIF or WebP images up to 8 MiB. Formatting affects display only: it does not modify project files. Deleted files have a diff but can no longer be opened. On Windows, scripts and code open as text in Notepad; this command does not launch executables or shortcuts. If a text file has no associated application, Studio uses Notepad.
 
-Access remains restricted to registered projects and the usual remote access code. Technical folders (`.git`, `node_modules`, `.local`, etc.), private engine data and links leaving the project are excluded. Remote read-only mode allows these views without allowing agent commands.
+Access remains restricted to registered projects and the usual remote access code. Technical folders (`.git`, `node_modules`, caches), private engine and Studio data, and links leaving the project are excluded. An explicit link into `.local` is accessible only when that folder is not Studio’s private data directory. Remote read-only mode allows these views without allowing agent commands.

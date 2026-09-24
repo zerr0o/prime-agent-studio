@@ -79,6 +79,24 @@
   column-gap: 10px;
   align-items: start;
 }
+.composer-commands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  align-items: start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.composer-commands[hidden] {
+  display: none;
+}
+.composer-commands .composer-command {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 #composer-form .has-command-chip textarea {
   width: 100%;
 }
@@ -291,6 +309,14 @@
   #composer-form .has-command-chip {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 2px 8px;
+  }
+  #composer-form .has-command-chip .composer-commands {
+    grid-column: 1;
+    grid-row: 1;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
   #composer-form .has-command-chip .composer-command {
     grid-column: 1;

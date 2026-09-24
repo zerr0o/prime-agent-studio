@@ -16,6 +16,8 @@ A missing Roadmap stays empty until explicitly initialized. Add a plan, then its
 
 Progress counts checked leaf tasks once each. A group reflects its children, and its checkbox applies the same state to all of them. Changing a plan’s status does not check its tasks. Abandoned plans remain readable and leave the project counter; paused plans remain included. Backlog is counted separately.
 
+The plan menu offers **Archive**. Archived plans leave the **Project** and **Session** views, milestone lists and progress totals. They remain visible in the **Archived** tab with its count, as a read only preview, with **Restore** (or **Unarchive**) and **Delete**. Archiving uses the current revision like other edits and deletes no data (an existing plan without the flag stays visible). Agents do not see archived plans and any agent edit targeting an archived plan is refused.
+
 On phones, the panel uses the screen height. Read-only remote access allows browsing and following links, without editing Roadmap or launching work.
 
 Each plan with tasks also shows its percentage. Completed checkboxes are green; partially completed groups keep their existing color. **Remaining only** hides checked tasks without changing actual progress. Parents and notes remain accessible; disable the filter to see all tasks again.

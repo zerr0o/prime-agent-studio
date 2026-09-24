@@ -642,6 +642,7 @@ export function createSettings({
     updates,
     getComputerBackend: () => computerPreferences.getBackend(),
     getComputerModel: () => computerPreferences.getModel(),
+    getComputerThinking: () => computerPreferences.getThinking(),
     refreshComputerPreferences: () => computerPreferences.refresh(),
   };
 }

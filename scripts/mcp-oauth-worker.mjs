@@ -1,6 +1,7 @@
 // Own process so cancellation also closes the native OAuth callback server.
 import { createInterface } from 'node:readline';
 import { createMcpConfigStore, mcpRevision } from '../lib/mcp-config.mjs';
+import { oauthErrorMessage } from '../lib/mcp-oauth-errors.mjs';
 
 const send = (data) => process.stdout.write(JSON.stringify(data) + '\n');
 let manualResolve,
@@ -45,12 +46,10 @@ async function login({ agentHome, name, revision }) {
     });
     await store.saveCredential(name, revision, credentials);
     send({ status: 'complete' });
-  } catch {
-    send({
-      status: 'error',
-      error:
-        'Connexion OAuth impossible ou annulée. Vérifiez que ce serveur prend en charge OAuth et l’enregistrement dynamique de clients.',
-    });
+  } catch (error) {
+    // Surface the real provider error (endpoint, HTTP status, reason) instead
+    // of a generic sentence. Details are sanitized: no code, state or secret.
+    send({ status: 'error', error: oauthErrorMessage(error) });
   } finally {
     input.close();
     process.stdin.destroy();

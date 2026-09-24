@@ -16,6 +16,7 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
   const $ = (id) => document.getElementById(id);
   let backend = COMPUTER_BACKEND_NATIVE;
   let model = '';
+  let thinking = '';
   let backends = null;
   let status = null;
   let supported = true;
@@ -90,22 +91,28 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
     return [];
   }
 
-  function modelDisplay(models) {
-    const draft = typeof model === 'string' ? model : '';
-    const found = models.find((entry) => entry?.id === draft);
+  // The model row reuses the shared Studio model picker (openModelPicker,
+  // the same menu as the conversation model). No filtering happens here:
+  // image support is validated server-side (400 for text-only models).
+  function modelDisplay(models, draft, emptyName, emptyDetail) {
+    const current = typeof draft === 'string' ? draft : '';
+    const found = models.find((entry) => entry?.id === current);
     const imageNote =
       found && Array.isArray(found.input) && !found.input.includes('image')
         ? tr('computer.modelImageNote')
         : '';
-    if (!draft)
-      return { draft, found: null, name: tr('computer.sameAsConversation'), provider: tr('computer.modelNote'), imageNote };
+    if (!current)
+      return { draft: current, found: null, name: tr(emptyName), provider: tr(emptyDetail), imageNote };
     return {
-      draft,
+      draft: current,
       found: found || null,
-      name: found?.name || tr('common.unavailable', { value1: draft }),
+      name: found?.name || tr('common.unavailable', { value1: current }),
       provider: found?.provider || (found ? '' : tr('ui.modele_indisponible')),
       imageNote,
     };
+  }
+  function decisionDisplay(models) {
+    return modelDisplay(models, model, 'computer.sameAsConversation', 'computer.modelNote');
   }
 
   function showError(message) {
@@ -146,18 +153,25 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
     if (hint) bindText(hint, () => hintText());
     if (button) {
       const models = liveModels();
-      const display = modelDisplay(models);
+      const display = decisionDisplay(models);
       button.disabled = locked() || busy || !known;
-      if (nameEl) bindText(nameEl, () => modelDisplay(liveModels()).name);
-      if (providerEl) bindText(providerEl, () => modelDisplay(liveModels()).provider);
+      if (nameEl) bindText(nameEl, () => decisionDisplay(liveModels()).name);
+      if (providerEl) bindText(providerEl, () => decisionDisplay(liveModels()).provider);
       if (nameEl) nameEl.textContent = display.name;
       if (providerEl) providerEl.textContent = display.provider;
       bindAttribute(button, 'title', () => display.draft || tr('computer.modelNote'));
       bindAttribute(
         button,
         'aria-label',
-        () => `${tr('computer.modelLabel')}: ${modelDisplay(liveModels()).name}`,
+        () => `${tr('computer.modelLabel')}: ${decisionDisplay(liveModels()).name}`,
       );
+    }
+    // The thinking select reuses the standard Studio reasoning levels
+    // (same options as the composer selector).
+    const thinkingSelect = $('computer-thinking');
+    if (thinkingSelect) {
+      thinkingSelect.disabled = locked() || busy || !known;
+      if (thinkingSelect.value !== thinking) thinkingSelect.value = thinking;
     }
   }
 
@@ -173,6 +187,7 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
       if (turn !== generation) return;
       backend = normalizeComputerBackend(prefs?.computerBackend);
       model = typeof prefs?.computerModel === 'string' ? prefs.computerModel : '';
+      thinking = typeof prefs?.computerThinking === 'string' ? prefs.computerThinking : '';
       if (computer && typeof computer === 'object') {
         known = true;
         supported = computer.supported !== false;
@@ -290,10 +305,48 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
       };
     const button = $('computer-model-button');
     if (button) button.onclick = () => openPicker();
+    const thinkingSelect = $('computer-thinking');
+    if (thinkingSelect)
+      thinkingSelect.onchange = () => {
+        void saveThinking(thinkingSelect.value || '');
+      };
     try {
       onLanguageChange(() => render());
     } catch {}
     render();
+  }
+
+  async function saveThinkingPref(field, wanted, apply) {
+    if (locked() || busy || !known) return false;
+    const previous = apply();
+    apply(wanted);
+    busy = true;
+    render();
+    try {
+      const result = await api('/api/studio-preferences', {
+        method: 'PATCH',
+        body: { [field]: wanted },
+      });
+      apply(typeof result?.[field] === 'string' ? result[field] : '');
+      showError(false);
+      render();
+      return true;
+    } catch (error) {
+      apply(previous);
+      showError(error?.message || 'computer.preferencesError');
+      render();
+      return false;
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+  function saveThinking(next) {
+    const wanted = typeof next === 'string' ? next : '';
+    return saveThinkingPref('computerThinking', wanted, (value) => {
+      if (value === undefined) return thinking;
+      thinking = value;
+    });
   }
 
   return {
@@ -302,8 +355,10 @@ export function createComputerPreferences({ api, getContext = () => ({}), getMod
     update: render,
     saveBackend,
     saveModel,
+    saveThinking,
     getBackend: () => backend,
     getModel: () => model,
+    getThinking: () => thinking,
     get backend() {
       return backend;
     },

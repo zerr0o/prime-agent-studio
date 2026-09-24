@@ -6,9 +6,9 @@
 //!   `latest.json` endpoint only. Preserved in updates.rs, untouched here.
 //! - Prerelease channel (includePrereleases=true) uses the fixed public GitHub
 //!   `zerr0o/prime-agent-studio` releases metadata, considers both eligible
-//!   stable and beta prereleases, picks the newest semver strictly greater
+//!   stable releases and all SemVer prereleases, picks the newest semver strictly greater
 //!   than current (never downgrade/equal), rejects drafts, unsupported tags
-//!   and releases missing their proper manifest asset, then builds a trusted
+//!   and releases missing a supported manifest asset, then builds a trusted
 //!   fixed `.../releases/download/v<version>/(beta.json|latest.json)` URL.
 //!   Arbitrary API URLs (browser_download_url, etc.) are never trusted.
 //! - Manifest version must match the selected tag exactly. A selected newer
@@ -35,127 +35,41 @@ pub const ERR_CHANNEL_CHANGED: &str = "update_channel_changed";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChannelVersion {
-    pub major: u64,
-    pub minor: u64,
-    pub patch: u64,
-    pub beta: Option<u64>,
-    pub is_beta: bool,
+    pub version: semver::Version,
     pub version_string: String,
     pub manifest_file: &'static str,
     pub tag: String,
 }
 
-fn has_leading_zero(s: &str) -> bool {
-    s.len() > 1 && s.starts_with('0')
-}
-
-fn parse_number(s: &str) -> Option<u64> {
-    if s.is_empty() {
-        return None;
-    }
-    if !s.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    if has_leading_zero(s) {
-        return None;
-    }
-    s.parse::<u64>().ok()
-}
-
-/// Parse a bare version string without leading `v`: `X.Y.Z` or `X.Y.Z-beta.N`.
-/// Strict: exactly 3 numeric core parts, no leading zeros (except single 0),
-/// beta suffix must be exactly `-beta.N` (lowercase, numeric, no leading zero).
-/// Rejects build metadata (+), other prerelease labels, whitespace inside,
-/// control chars and overlong input. Returns canonical ChannelVersion.
+/// Parse a canonical SemVer version, including arbitrary prerelease labels.
+/// Keep input bounded and let the updater's own version library reject unsafe syntax.
 pub fn parse_version_string(raw: &str) -> Option<ChannelVersion> {
     let s = raw.trim();
-    if s.is_empty() || s.len() > 32 {
+    if s.is_empty() || s.len() > 128 {
         return None;
     }
-    if s.chars().any(|c| c.is_control()) {
+    let version = semver::Version::parse(s).ok()?;
+    let version_string = version.to_string();
+    if s != version_string {
         return None;
     }
-    if s.chars().any(|c| {
-        matches!(
-            c,
-            ' ' | '\t' | '\n' | '\r' | '+' | '/' | '\\' | '?' | '#' | '@' | '%'
-        )
-    }) {
-        return None;
-    }
-    let (core, pre) = match s.split_once('-') {
-        None => (s, None),
-        Some((c, p)) => {
-            // Only a single '-' separator is allowed (beta suffix has no extra '-').
-            if p.contains('-') {
-                return None;
-            }
-            (c, Some(p))
-        }
+    let manifest_file = if version.pre.is_empty() {
+        STABLE_MANIFEST
+    } else {
+        BETA_MANIFEST
     };
-    let parts: Vec<&str> = core.split('.').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let major = parse_number(parts[0])?;
-    let minor = parse_number(parts[1])?;
-    let patch = parse_number(parts[2])?;
-    match pre {
-        None => {
-            let version_string = format!("{major}.{minor}.{patch}");
-            // Canonical round-trip: input core must already be canonical
-            // (parse_number rejected leading zeros, so this holds).
-            if core != version_string {
-                return None;
-            }
-            Some(ChannelVersion {
-                major,
-                minor,
-                patch,
-                beta: None,
-                is_beta: false,
-                version_string: version_string.clone(),
-                manifest_file: STABLE_MANIFEST,
-                tag: format!("v{version_string}"),
-            })
-        }
-        Some(p) => {
-            let (label, num) = p.split_once('.')?;
-            if label != "beta" {
-                return None;
-            }
-            if num.contains('.') {
-                return None;
-            }
-            let n = parse_number(num)?;
-            let version_string = format!("{major}.{minor}.{patch}-beta.{n}");
-            if s != version_string {
-                return None;
-            }
-            Some(ChannelVersion {
-                major,
-                minor,
-                patch,
-                beta: Some(n),
-                is_beta: true,
-                version_string: version_string.clone(),
-                manifest_file: BETA_MANIFEST,
-                tag: format!("v{version_string}"),
-            })
-        }
-    }
+    Some(ChannelVersion {
+        version,
+        version_string: version_string.clone(),
+        manifest_file,
+        tag: format!("v{version_string}"),
+    })
 }
 
-/// Parse a GitHub tag: must be `v` + bare version. Rejects missing prefix,
-/// capital V, surrounding logic handled by trim-then-exact match.
+/// GitHub tags must retain the canonical `v<SemVer>` shape.
 pub fn parse_tag_version(raw: &str) -> Option<ChannelVersion> {
     let s = raw.trim();
-    if s.len() < 2 || s.len() > 33 {
-        return None;
-    }
-    let rest = s.strip_prefix('v')?;
-    let v = parse_version_string(rest)?;
-    // Exact round-trip: tag must equal canonical `v<version>`.
+    let v = parse_version_string(s.strip_prefix('v')?)?;
     if s != v.tag {
         return None;
     }
@@ -163,16 +77,8 @@ pub fn parse_tag_version(raw: &str) -> Option<ChannelVersion> {
 }
 
 pub fn cmp_versions(a: &ChannelVersion, b: &ChannelVersion) -> Ordering {
-    a.major
-        .cmp(&b.major)
-        .then(a.minor.cmp(&b.minor))
-        .then(a.patch.cmp(&b.patch))
-        .then(match (a.beta, b.beta) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => Ordering::Greater,
-            (Some(_), None) => Ordering::Less,
-            (Some(x), Some(y)) => x.cmp(&y),
-        })
+    // Build metadata does not make an equal version an upgrade.
+    a.version.cmp_precedence(&b.version)
 }
 
 pub fn is_newer_than(candidate: &ChannelVersion, current: &ChannelVersion) -> bool {
@@ -200,7 +106,7 @@ pub fn build_manifest_url(v: &ChannelVersion) -> String {
 
 /// Validate that a URL is exactly the trusted fixed shape for some valid
 /// version: https scheme, github.com host, fixed owner/repo/download prefix,
-/// single `v<version>` segment, correct manifest file for that version type,
+/// single `v<version>` segment, allowlisted manifest filename,
 /// no query/fragment/encoding tricks. Used at runtime (defense in depth)
 /// and in endpoint-safety tests.
 pub fn manifest_url_is_trusted(url: &str) -> bool {
@@ -244,42 +150,33 @@ pub fn manifest_url_is_trusted(url: &str) -> bool {
     if file_part != STABLE_MANIFEST && file_part != BETA_MANIFEST {
         return false;
     }
-    let parsed = match parse_version_string(version_part) {
-        Some(v) => v,
-        None => return false,
-    };
-    if parsed.manifest_file != file_part {
+    let Some(parsed) = parse_version_string(version_part) else {
         return false;
-    }
-    // Canonical URL must round-trip exactly.
-    build_manifest_url(&parsed).as_str() == url
+    };
+    // Both known manifest names are allowed, never an API-provided URL.
+    format!("{}/{}/{}", DOWNLOAD_BASE_URL, parsed.tag, file_part) == url
 }
 
-/// Decide eligibility for one GitHub releases API entry (serde_json::Value).
-/// Rejects drafts, missing/unsupported tags, prerelease-flag mismatches and
-/// releases missing their proper manifest asset. Ignores every other field,
-/// especially arbitrary download URLs.
+/// Both GitHub stable releases and prereleases are eligible in this opt-in channel.
+/// The GitHub flag is metadata, not a constraint on the SemVer suffix.
+/// Require a published release and a known manifest asset; never trust its URL.
 pub fn eligible_from_api(value: &serde_json::Value) -> Option<ChannelVersion> {
     if value.get("draft").and_then(|v| v.as_bool()) != Some(false) {
         return None;
     }
+    value.get("prerelease")?.as_bool()?;
     let tag = value.get("tag_name").and_then(|v| v.as_str())?;
-    let parsed = parse_tag_version(tag)?;
-    let prerelease_flag = value.get("prerelease").and_then(|v| v.as_bool())?;
-    if parsed.is_beta != prerelease_flag {
-        return None;
-    }
+    let mut parsed = parse_tag_version(tag)?;
     let assets = value.get("assets").and_then(|v| v.as_array())?;
-    let mut found = false;
-    for asset in assets {
-        if asset.get("name").and_then(|v| v.as_str()) == Some(parsed.manifest_file) {
-            found = true;
-            break;
-        }
-    }
-    if !found {
-        return None;
-    }
+    // Prefer the historical name for this version, but accept either supported
+    // manifest name regardless of the release's suffix or GitHub channel flag.
+    parsed.manifest_file = [parsed.manifest_file, STABLE_MANIFEST, BETA_MANIFEST]
+        .into_iter()
+        .find(|name| {
+            assets
+                .iter()
+                .any(|asset| asset.get("name").and_then(|v| v.as_str()) == Some(*name))
+        })?;
     Some(parsed)
 }
 
@@ -329,7 +226,7 @@ pub fn validate_manifest_version(manifest_version: &str, selected: &ChannelVersi
     let Some(parsed) = parse_version_string(s) else {
         return false;
     };
-    parsed == *selected
+    parsed.version == selected.version
 }
 
 #[cfg(test)]
@@ -350,11 +247,11 @@ mod tests {
         assert!(include_prereleases_or_default(Some(true)));
         assert!(!include_prereleases_or_default(Some(false)));
         let stable = t("v3.10.0");
-        assert!(!stable.is_beta);
+        assert!(stable.version.pre.is_empty());
         assert_eq!(stable.manifest_file, "latest.json");
         assert_eq!(stable.version_string, "3.10.0");
         let beta = t("v3.10.0-beta.4");
-        assert!(beta.is_beta);
+        assert!(!beta.version.pre.is_empty());
         assert_eq!(beta.manifest_file, "beta.json");
         assert_eq!(beta.version_string, "3.10.0-beta.4");
     }
@@ -436,23 +333,76 @@ mod tests {
             eligible_from_api(&missing_draft).is_none(),
             "missing draft flag must be rejected (strict false required)"
         );
-        // Prerelease flag mismatch also excluded.
+        // GitHub prerelease status does not have to match a suffix.
         let stable_as_prerelease = serde_json::json!({
             "tag_name": "v3.10.0",
             "draft": false,
             "prerelease": true,
             "assets": [{"name": "latest.json"}]
         });
-        assert!(eligible_from_api(&stable_as_prerelease).is_none());
+        assert!(eligible_from_api(&stable_as_prerelease).is_some());
         let beta_as_stable = serde_json::json!({
             "tag_name": "v3.10.0-beta.4",
             "draft": false,
             "prerelease": false,
             "assets": [{"name": "beta.json"}]
         });
-        assert!(eligible_from_api(&beta_as_stable).is_none());
-        let _ = stable_as_prerelease;
-        let _ = beta_as_stable;
+        assert!(eligible_from_api(&beta_as_stable).is_some());
+    }
+
+    #[test]
+    fn all_semver_prereleases_are_selected_without_a_beta_suffix() {
+        let release = |tag: &str, manifest: &str| {
+            serde_json::json!({
+                "tag_name": tag, "draft": false, "prerelease": true,
+                "assets": [{"name": manifest, "browser_download_url": "https://evil.example/ignored"}]
+            })
+        };
+        // Regression: the installed 4.0.0 must see GitHub's prerelease 4.0.1.
+        let published = collect_eligible(&serde_json::json!([
+            release("v4.0.0", "latest.json"),
+            release("v4.0.1", "latest.json")
+        ]));
+        let selected = select_newest(&published, &v("4.0.0")).unwrap();
+        assert_eq!(selected.version_string, "4.0.1");
+        assert!(validate_manifest_version("4.0.1", selected));
+        assert!(!validate_manifest_version("4.0.0", selected));
+        assert!(select_newest(&published, &v("4.0.1")).is_none());
+
+        let tags = [
+            "v4.1.0-alpha.1",
+            "v4.1.0-beta.2",
+            "v4.1.0-beta.10",
+            "v4.1.0-rc.1",
+            "v4.1.0",
+        ];
+        for manifest in [STABLE_MANIFEST, BETA_MANIFEST] {
+            let pool: Vec<_> = tags
+                .iter()
+                .map(|tag| {
+                    let candidate = eligible_from_api(&release(tag, manifest)).unwrap();
+                    assert_eq!(candidate.manifest_file, manifest);
+                    assert!(manifest_url_is_trusted(&build_manifest_url(&candidate)));
+                    assert!(validate_manifest_version(
+                        &candidate.version_string,
+                        &candidate
+                    ));
+                    candidate
+                })
+                .collect();
+            for pair in pool.windows(2) {
+                assert!(is_newer_than(&pair[1], &pair[0]));
+            }
+            assert_eq!(
+                select_newest(&pool, &v("4.0.1")).unwrap().version_string,
+                "4.1.0"
+            );
+        }
+        assert!(!is_newer_than(&v("4.0.1+build.2"), &v("4.0.1+build.1")));
+        let mut bad_flag = release("v4.0.1", "latest.json");
+        bad_flag["prerelease"] = serde_json::json!("true");
+        assert!(eligible_from_api(&bad_flag).is_none());
+        assert!(eligible_from_api(&release("v4.0.1", "custom.json")).is_none());
     }
 
     #[test]
@@ -464,24 +414,15 @@ mod tests {
             "v1.2",
             "v1.2.3.4",
             "v1.2.3-",
-            "v1.2.3-beta",
             "v1.2.3-beta.",
-            "v1.2.3-beta.x",
-            "v1.2.3-beta.4.5",
-            "v1.2.3-alpha.1",
-            "v1.2.3-rc.1",
-            "v1.2.3+build",
             "v01.2.3",
             "v1.02.3",
             "v1.2.03",
             "v1.2.3-beta.04",
             "V1.2.3",
             "v1.2.3 beta.4",
-            "v1.2.3--beta.4",
             "v1..3",
             "v.2.3",
-            "v1.2.3-Beta.4",
-            "v1.2.3-beta.-1",
             "v999999999999999999999.0.0",
         ] {
             assert!(
@@ -489,14 +430,7 @@ mod tests {
                 "malformed tag must be rejected: {bad}"
             );
         }
-        for bad in [
-            "",
-            "1.2",
-            "1.2.3-beta",
-            "1.2.3-alpha.1",
-            "01.2.3",
-            "1.2.3-beta.04",
-        ] {
+        for bad in ["", "1.2", "01.2.3", "1.2.3-beta.04"] {
             assert!(
                 parse_version_string(bad).is_none(),
                 "malformed version must be rejected: {bad}"
@@ -508,7 +442,6 @@ mod tests {
             serde_json::json!(null),
             serde_json::json!({}),
             serde_json::json!([]),
-            serde_json::json!([{"name": "latest.json"}]),
             serde_json::json!([{"name": "BETA.JSON"}]),
             serde_json::json!([{"name": "beta.json "}]),
             serde_json::json!([{"other": "beta.json"}]),
@@ -525,14 +458,14 @@ mod tests {
                 "bad assets must be rejected"
             );
         }
-        // Stable requires latest.json, not beta.json.
+        // Either recognized manifest name can be used, including stable-form prereleases.
         let stable_wrong = serde_json::json!({
             "tag_name": "v3.10.0",
             "draft": false,
             "prerelease": false,
             "assets": [{"name": "beta.json"}]
         });
-        assert!(eligible_from_api(&stable_wrong).is_none());
+        assert!(eligible_from_api(&stable_wrong).is_some());
         let stable_good = serde_json::json!({
             "tag_name": "v3.10.0",
             "draft": false,
@@ -574,8 +507,6 @@ mod tests {
             "http://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0/latest.json",
             "https://evil.example/zerr0o/prime-agent-studio/releases/download/v3.10.0/latest.json",
             "https://github.com.evil.example/zerr0o/prime-agent-studio/releases/download/v3.10.0/latest.json",
-            "https://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0/beta.json",
-            "https://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0-beta.4/latest.json",
             "https://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0/latest.json?token=abc",
             "https://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0/latest.json#frag",
             "https://github.com/zerr0o/prime-agent-studio/releases/download/v3.10.0/../evil/latest.json",
@@ -726,6 +657,9 @@ mod tests {
             for (version, tamper, malformed, expect_some) in [
                 ("99.0.0-beta.1", false, false, true),
                 ("99.0.0-beta.1", true, false, true),
+                ("99.0.0-rc.1", false, false, true),
+                ("99.0.0", false, false, true),
+                ("99.0.0", true, false, true),
                 ("0.0.0-beta.1", false, false, false),
                 ("99.0.0-beta.1", false, true, false),
             ] {

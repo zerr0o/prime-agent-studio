@@ -51,7 +51,11 @@ A skill contains instructions and, optionally, scripts or a Python module. To in
 /skill:skill-name Your request and constraints
 ```
 
-Prime Agent reads `SKILL.md`, expands its contents and preserves the resource reference folder. Studio delegates this expansion to the engine. Skills also work in messages sent during a run, with images or documents.
+Select several skills through the **/** button: each selection adds a chip. **×** removes only that skill. You can also start a message with `/skill:first /skill:second Your request`.
+
+For one skill, Prime Agent expands `SKILL.md`. For multiple skills, Studio uses the native catalog files and the same block format, including each resource reference folder. Skills also work in messages sent during a run, with images or documents.
+
+In your messages, each expanded skill appears in a **Skill · name** block, collapsed by default. Click to read it; your request stays visible. **Copy** copies your text without the expanded instructions, or the full message if no text remains. Native history is unchanged.
 
 The catalog uses native discovery: global skills (`~/.prime/agent/skills`, `~/.agents/skills`), project and ancestor skills (`.prime/agent/skills`, `.agents/skills`), configured paths, installed packages and skills bundled with Prime Agent. Resource priority, exclusions and explicit-invocation-only skills are respected. The source path and description identify each skill.
 

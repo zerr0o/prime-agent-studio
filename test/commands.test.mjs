@@ -58,7 +58,7 @@ test('native catalogue respects project priority, metadata, explicit-only skills
   const service = createCommandService({ agentHome });
   t.after(async () => {
     service.close();
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   const dirs = [
     join(cwd, '.prime', 'agent', 'skills', 'example'),

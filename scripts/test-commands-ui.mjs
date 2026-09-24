@@ -71,10 +71,11 @@ const gateway = createLanGateway({
 await new Promise((done) => gateway.listen(0, '127.0.0.1', done));
 let browser;
 try {
-  browser = await chromium.launch({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await chromium.launch(
+    !process.env.PRIME_STUDIO_TEST_BROWSER || process.env.PRIME_STUDIO_TEST_BROWSER === 'chromium'
+      ? { headless: true }
+      : { channel: process.env.PRIME_STUDIO_TEST_BROWSER, headless: true },
+  );
   for (const mobile of [false, true]) {
     const context = await browser.newContext({
       locale: 'fr-FR',

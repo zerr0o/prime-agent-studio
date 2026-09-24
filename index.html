@@ -160,6 +160,22 @@
             ><span id="header-session" data-i18n="ui.nouvelle_session">Nouvelle session</span>
           </div>
           <div class="header-actions">
+            <span id="session-state" class="session-state" hidden></span>
+            <div id="computer-use" class="computer-use" hidden>
+              <button id="computer-use-toggle" class="computer-use-toggle" type="button" aria-pressed="false">
+                <span id="computer-use-dot" class="computer-use-dot" aria-hidden="true"></span
+                ><span id="computer-use-label" data-i18n="computer.label">Bureau expert</span>
+              </button>
+              <button
+                id="computer-use-stop"
+                class="computer-use-stop"
+                type="button"
+                data-i18n="computer.stop"
+                hidden
+              >
+                Arrêter le bureau
+              </button>
+            </div>
             <button
               id="open-roadmap"
               class="roadmap-button"
@@ -173,23 +189,6 @@
               <span data-icon="map" aria-hidden="true"></span><span>Roadmap</span
               ><span id="roadmap-progress" class="roadmap-progress" hidden></span>
             </button>
-            <span id="session-state" class="session-state" hidden></span>
-            <div id="computer-use" class="computer-use" hidden>
-              <button id="computer-use-toggle" class="computer-use-toggle" type="button" aria-pressed="false">
-                <span id="computer-use-dot" class="computer-use-dot" aria-hidden="true"></span
-                ><span id="computer-use-label" data-i18n="computer.label">Bureau expert</span>
-              </button>
-              <span id="computer-use-status" class="computer-use-status" role="status"></span>
-              <button
-                id="computer-use-stop"
-                class="computer-use-stop"
-                type="button"
-                data-i18n="computer.stop"
-                hidden
-              >
-                Arrêter le bureau
-              </button>
-            </div>
             <button
               id="session-menu-button"
               class="icon-button"
@@ -1556,6 +1555,19 @@
                   </span>
                   <span class="model-picker-chevron" data-icon="chevron" aria-hidden="true"></span>
                 </button>
+                <label for="computer-thinking" class="sr-only"
+                  ><span data-i18n="ui.reflexion_3">Réflexion</span></label
+                >
+                <select id="computer-thinking" data-i18n-aria-label="ui.reflexion_3" aria-label="Réflexion">
+                  <option value="" data-i18n="computer.sameAsConversation">Identique à la conversation</option>
+                  <option value="off" data-i18n="ui.desactivee">Désactivée</option>
+                  <option value="minimal" data-i18n="ui.minimale">Minimale</option>
+                  <option value="low" data-i18n="ui.faible">Faible</option>
+                  <option value="medium" data-i18n="ui.moyenne">Moyenne</option>
+                  <option value="high" data-i18n="ui.elevee">Élevée</option>
+                  <option value="xhigh" data-i18n="ui.tres_elevee">Très élevée</option>
+                  <option value="max" data-i18n="ui.maximum">Maximum</option>
+                </select>
               </div>
             </div>
             <p id="computer-prefs-error" class="form-error" role="alert" hidden></p>

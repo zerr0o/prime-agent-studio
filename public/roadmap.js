@@ -246,7 +246,7 @@ export function createRoadmap({
   }
   function plansProgress(plans) {
     return plans
-      .filter((plan) => plan.status !== 'abandoned')
+      .filter((plan) => plan.status !== 'abandoned' && !plan.archived)
       .reduce(
         (value, plan) => ({
           done: value.done + plan.progress.done,
@@ -639,7 +639,7 @@ export function createRoadmap({
     check.type = 'checkbox';
     check.checked = step.done;
     check.indeterminate = !!step.partial;
-    check.disabled = !canEdit();
+    check.disabled = !canEdit() || !!plan.archived;
     check.setAttribute('aria-label', step.text);
     check.onchange = () => act('step.check', { planId: plan.id, stepId: step.id, done: check.checked });
     const title = node('span', `rm-step-title${step.done ? ' rm-checked' : ''}`, step.text);
@@ -669,7 +669,7 @@ export function createRoadmap({
     if (step.note) text.append(description(`step:${key}`, step.note));
     text.append(activities('plan', plan.id, step.id));
     row.append(text);
-    if (canEdit())
+    if (canEdit() && !plan.archived)
       row.append(
         menu(
           [
@@ -701,7 +701,7 @@ export function createRoadmap({
           `${rt('actions')} · ${step.text}`,
         ),
       );
-    row.prepend(bindDrag(row, 'step', step.id, plan.id));
+    if (!plan.archived) row.prepend(bindDrag(row, 'step', step.id, plan.id));
     li.append(row);
     if (hasVisibleChildren) {
       const list = node('ul', 'rm-steps');
@@ -731,17 +731,28 @@ export function createRoadmap({
     toggle.setAttribute('aria-expanded', expanded.has(plan.id) ? 'true' : 'false');
     toggle.setAttribute('aria-controls', `rm-plan-${plan.id}`);
     head.append(toggle, inlineCount(plan.progress), planPercent(plan.progress));
-    if (canEdit())
-      head.append(
-        menu([
-          [rt('edit'), () => planForm(plan)],
-          [rt('remove'), () => confirmRemove('plan.delete', { planId: plan.id })],
-        ]),
-      );
+    if (canEdit()) {
+      if (plan.archived)
+        head.append(
+          menu([
+            [rt('restore'), () => act('plan.unarchive', { planId: plan.id })],
+            [rt('remove'), () => confirmRemove('plan.delete', { planId: plan.id })],
+          ]),
+        );
+      else
+        head.append(
+          menu([
+            [rt('edit'), () => planForm(plan)],
+            [rt('archive'), () => act('plan.archive', { planId: plan.id })],
+            [rt('remove'), () => confirmRemove('plan.delete', { planId: plan.id })],
+          ]),
+        );
+    }
     section.append(head);
     const meta = node('div', 'rm-plan-meta');
     meta.append(node('span', '', rt(plan.status)));
     if (plan.status === 'abandoned') meta.append(node('span', '', rt('excluded')));
+    if (plan.archived) meta.append(node('span', '', rt('archivedBadge')));
     section.append(meta, activities('plan', plan.id));
     const body = node('div', 'rm-plan-body');
     body.id = `rm-plan-${plan.id}`;
@@ -780,7 +791,7 @@ export function createRoadmap({
     if (showRemainingOnly && plan.steps.length && !plan.steps.some(hasRemaining))
       body.append(node('p', 'rm-note', rt('noRemaining')));
     const actions = node('div', 'rm-inline-actions');
-    if (canEdit())
+    if (canEdit() && !plan.archived)
       actions.append(
         button(rt('addStep'), () => stepForm(plan), 'rm-text-button'),
         button(rt('work'), () => work([{ kind: 'plan', planId: plan.id }]), 'rm-work-button'),
@@ -790,7 +801,7 @@ export function createRoadmap({
     links.append(node('summary', '', `${rt('conversations')} · ${plan.sessions.length}`));
     for (const sessionId of plan.sessions)
       links.append(button(sessionLabel(sessionId), () => openLink({ sessionId }), 'rm-session-link'));
-    if (getContext().sessionId && !plan.sessions.includes(getContext().sessionId) && canEdit())
+    if (getContext().sessionId && !plan.sessions.includes(getContext().sessionId) && canEdit() && !plan.archived)
       links.append(
         button(
           rt('attach'),
@@ -816,7 +827,7 @@ export function createRoadmap({
       else row.append(node('small', '', by));
       journal.append(row);
     }
-    if (canEdit())
+    if (canEdit() && !plan.archived)
       journal.append(
         button(
           rt('addEntry'),
@@ -862,7 +873,7 @@ export function createRoadmap({
       node('p', doc.overview.vision ? 'rm-description' : 'rm-note', doc.overview.vision || rt('visionHint')),
     );
     content.append(vision);
-    if (doc.plans.some((p) => p.steps.length)) {
+    if (doc.plans.some((p) => !p.archived && p.steps.length)) {
       const viewTools = node('div', 'rm-view-tools');
       viewTools.append(remainingToggle('project'));
       content.append(viewTools);
@@ -920,11 +931,12 @@ export function createRoadmap({
       body.id = `rm-milestone-${milestone.id}`;
       body.hidden = foldedMilestones.has(milestone.id);
       if (milestone.summary) body.append(description(`milestone:${milestone.id}`, milestone.summary));
-      for (const plan of doc.plans.filter((p) => p.milestone === milestone.id)) body.append(renderPlan(plan));
+      for (const plan of doc.plans.filter((p) => !p.archived && p.milestone === milestone.id))
+        body.append(renderPlan(plan));
       group.append(body);
       content.append(group);
     }
-    const ungrouped = doc.plans.filter((p) => !p.milestone);
+    const ungrouped = doc.plans.filter((p) => !p.archived && !p.milestone);
     if (ungrouped.length && doc.overview.milestones.length) {
       const group = node('section', 'rm-ungrouped-group'),
         body = node('div');
@@ -934,7 +946,7 @@ export function createRoadmap({
       group.append(groupHead('ungrouped', rt('ungrouped'), plansProgress(ungrouped)), body);
       content.append(group);
     } else for (const plan of ungrouped) content.append(renderPlan(plan));
-    if (!doc.plans.length) content.append(node('p', 'rm-note', rt('noPlans')));
+    if (!doc.plans.some((p) => !p.archived)) content.append(node('p', 'rm-note', rt('noPlans')));
     if (canEdit()) {
       const actions = node('div', 'rm-add-actions');
       actions.append(
@@ -943,6 +955,12 @@ export function createRoadmap({
       );
       content.append(actions);
     }
+  }
+  function renderArchived() {
+    content.append(node('p', 'rm-note', rt('archivedHint')));
+    const archived = doc.plans.filter((p) => p.archived);
+    if (!archived.length) content.append(node('p', 'rm-note', rt('noArchived')));
+    for (const plan of archived) content.append(renderPlan(plan));
   }
   function renderBacklog() {
     content.append(node('p', 'rm-note', rt('backlogHint')));
@@ -1080,8 +1098,11 @@ export function createRoadmap({
     content.replaceChildren();
     footer.replaceChildren();
     renderStatus();
-    for (const key of ['project', 'session', 'backlog']) {
-      const b = button(rt(key), () => {
+    for (const key of ['project', 'session', 'backlog', 'archived']) {
+      const archivedCount =
+        key === 'archived' ? doc?.plans.filter((p) => p.archived).length || 0 : 0;
+      const label = key === 'archived' ? `${rt(key)} (${archivedCount})` : rt(key);
+      const b = button(label, () => {
         tab = key;
         selected.clear();
         render();
@@ -1103,8 +1124,11 @@ export function createRoadmap({
       content.append(empty);
     } else if (tab === 'project') renderProject();
     else if (tab === 'backlog') renderBacklog();
+    else if (tab === 'archived') renderArchived();
     else {
-      const plans = doc.plans.filter((p) => p.sessions.includes(getContext().sessionId));
+      const plans = doc.plans.filter(
+        (p) => !p.archived && p.sessions.includes(getContext().sessionId),
+      );
       if (!plans.length)
         content.append(node('p', 'rm-note', rt(getContext().sessionId ? 'noSession' : 'chooseSession')));
       if (plans.some((p) => p.steps.length)) {
@@ -1155,7 +1179,7 @@ export function createRoadmap({
   function sessionProgress() {
     const value = { done: 0, total: 0, percent: 0 };
     for (const plan of doc.plans.filter(
-      (p) => p.sessions.includes(getContext().sessionId) && p.status !== 'abandoned',
+      (p) => p.sessions.includes(getContext().sessionId) && p.status !== 'abandoned' && !p.archived,
     )) {
       value.done += plan.progress.done;
       value.total += plan.progress.total;

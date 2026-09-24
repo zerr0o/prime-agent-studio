@@ -1208,14 +1208,40 @@ export function createInspector({
       }
     }
     if (!file.deleted && !current.readOnly && current.nativeFileOpen) {
-      const open = node('button', 'inspector-open', () =>
-        current.remote ? tr('ui.ouvrir_sur_le_pc') : tr('ui.ouvrir'),
-      );
-      open.type = 'button';
-      bindAttribute(open, 'title', () => tr('ui.ouvrir_dans_l_application_du_pc'));
       const cwd = current.cwd;
-      open.onclick = async () => {
-        open.disabled = true;
+      // Folders have no file content: the file endpoint would only refuse
+      // them, so directories keep the folder reveal action exclusively.
+      if (!file.directory) {
+        const open = node('button', 'inspector-open', () =>
+          current.remote ? tr('ui.ouvrir_sur_le_pc') : tr('ui.ouvrir'),
+        );
+        open.type = 'button';
+        bindAttribute(open, 'title', () => tr('ui.ouvrir_dans_l_application_du_pc'));
+        open.onclick = async () => {
+          open.disabled = true;
+          const feedback =
+            controls.querySelector('.inspector-open-feedback') ||
+            node('span', 'inspector-note inspector-open-feedback');
+          feedback.setAttribute('role', 'status');
+          bindText(feedback, () => tr('ui.ouverture_sur_le_pc'));
+          controls.append(feedback);
+          try {
+            await api('/api/project-files/open', { method: 'POST', body: { cwd, path: file.path } });
+            bindText(feedback, () => tr('ui.ouverture_demandee_sur_le_pc'));
+          } catch (error) {
+            bindText(feedback, () => translateKnown(error.message));
+          } finally {
+            open.disabled = false;
+          }
+        };
+        controls.append(open);
+      }
+      const folder = node('button', 'inspector-open-folder', () =>
+        current.remote ? tr('ui.ouvrir_le_dossier_sur_le_pc') : tr('ui.ouvrir_le_dossier'),
+      );
+      folder.type = 'button';
+      folder.onclick = async () => {
+        folder.disabled = true;
         const feedback =
           controls.querySelector('.inspector-open-feedback') ||
           node('span', 'inspector-note inspector-open-feedback');
@@ -1223,15 +1249,22 @@ export function createInspector({
         bindText(feedback, () => tr('ui.ouverture_sur_le_pc'));
         controls.append(feedback);
         try {
-          await api('/api/project-files/open', { method: 'POST', body: { cwd, path: file.path } });
+          await api('/api/projects/open', {
+            method: 'POST',
+            body: { cwd, path: file.directory ? file.path : parentFolder(file.path) },
+          });
           bindText(feedback, () => tr('ui.ouverture_demandee_sur_le_pc'));
         } catch (error) {
           bindText(feedback, () => translateKnown(error.message));
         } finally {
-          open.disabled = false;
+          folder.disabled = false;
         }
       };
-      controls.append(open);
+      controls.append(folder);
+    }
+    if (file.directory) {
+      empty(body, () => file.path);
+      return;
     }
     try {
       const data = await request('viewer', filesUrl(mode, { path: file.path }));
@@ -1281,8 +1314,11 @@ export function createInspector({
     beginView(reference.split(/[\\/]/).at(-1));
     try {
       const result = await request('viewer', filesUrl('resolve', { reference, basePath }));
-      if (result.path) {
-        await openFile({ path: result.path }, 'preview');
+      if (result.path || result.directory) {
+        await openFile(
+          { path: result.path, ...(result.directory ? { directory: true } : {}) },
+          'preview',
+        );
         return;
       }
       empty(body, () => tr('ui.plusieurs_documents_portent_ce_nom_choisissez_le_fichier_a_consul'));

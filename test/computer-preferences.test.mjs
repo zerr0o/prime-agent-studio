@@ -156,6 +156,7 @@ test('studio preferences default to the native engine and the conversation model
   const prefs = await store.getStudioPreferences();
   assert.equal(prefs.computerBackend, 'native');
   assert.equal(prefs.computerModel, '');
+  assert.equal(prefs.computerThinking, '');
   assert.equal(prefs.allowQuestionsByDefault, true);
 });
 
@@ -167,6 +168,9 @@ test('studio preferences store partial backend and model patches', async (t) => 
   const second = await store.setStudioPreferences({ computerModel: 'openai/other-vision' });
   assert.equal(second.computerModel, 'openai/other-vision');
   assert.equal(second.computerBackend, 'cua');
+  const thinking = await store.setStudioPreferences({ computerThinking: 'high' });
+  assert.equal(thinking.computerThinking, 'high');
+  await assert.rejects(() => store.setStudioPreferences({ computerThinking: 42 }), { status: 400 });
   const third = await store.setStudioPreferences({ allowQuestionsByDefault: false });
   assert.equal(third.allowQuestionsByDefault, false);
   assert.equal(third.computerBackend, 'cua');
@@ -261,6 +265,56 @@ test('runs with desktop authorized use the global computer model', async (t) => 
   assert.equal(started.json.computerUse, true);
   assert.equal(runtime.controls[0].input.model, 'openai/other-vision');
   runtime.controls[0].finish();
+});
+
+test('PATCH thinking level validates like run thinking', async (t) => {
+  const { api } = await fixture(t);
+  const ok = await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerThinking: 'high' },
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.computerThinking, 'high');
+  const cleared = await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerThinking: '' },
+  });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.json.computerThinking, '');
+  const bad = await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerThinking: 'ultra' },
+  });
+  assert.equal(bad.status, 400);
+});
+
+test('decision thinking applies to desktop runs like the conversation level', async (t) => {
+  const { api, runtime, cwd } = await fixture(t);
+  await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerModel: 'openai/other-vision', computerThinking: 'high' },
+  });
+  const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
+  assert.equal(started.status, 201);
+  assert.equal(started.json.model, 'openai/other-vision');
+  assert.equal(started.json.thinking, 'high');
+  assert.equal(runtime.controls[0].input.thinking, 'high');
+  runtime.controls[0].finish();
+});
+
+test('decision thinking overrides alone while the model stays the conversation model', async (t) => {
+  const { api, runtime, cwd } = await fixture(t);
+  await api('/api/studio-preferences', { method: 'PATCH', body: { computerThinking: 'low' } });
+  const desktop = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
+  assert.equal(desktop.status, 201);
+  assert.equal(desktop.json.model, 'openai/gpt-5.6-luna');
+  assert.equal(desktop.json.thinking, 'low');
+  assert.equal(runtime.controls[0].input.thinking, 'low');
+  runtime.controls[0].finish();
+  const plain = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi' } });
+  assert.equal(plain.status, 201);
+  assert.equal(plain.json.thinking, 'medium');
+  runtime.controls[1].finish();
 });
 
 test('runs without desktop keep the conversation model', async (t) => {

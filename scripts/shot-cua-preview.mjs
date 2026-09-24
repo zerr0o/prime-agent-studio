@@ -136,7 +136,7 @@ try {
   await page.locator('#session-list').getByText('Session A', { exact: true }).click();
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeEnabled();
-  await expect(page.locator('#computer-use-status')).toContainText('Nettoyage incomplet');
+  await expect(page.locator('#computer-use-warning')).toContainText('Nettoyage incomplet');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await page.screenshot({
     path: join(outDir, 'ui-preview-cleanup.png'),

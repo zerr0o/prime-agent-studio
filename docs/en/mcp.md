@@ -10,12 +10,14 @@ Choose **Add an MCP**, give it a unique name, then select its transport.
 
 | Transport | Configuration                                                                                                                                             |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **HTTP**  | The MCP endpoint address, such as `https://service.example/mcp`. Authentication can be anonymous, use a variable containing a Bearer token, or use OAuth. |
+| **HTTP**  | The MCP endpoint address, such as `https://service.example/mcp`. Authentication can be anonymous, use a direct token (secret stored as a private header), use a variable containing a Bearer token, or use OAuth. |
 | **stdio** | The executable installed on the PC, its arguments—one per line, without shell quotes—and its absolute working directory if needed.                        |
 
 A stdio server runs on the **PC hosting Prime Agent**, even when configured from a phone. Saving does not execute it. **Test** launches it in a separate process, hidden on Windows, then closes it after tool discovery. Install the required executable on the PC first; Studio does not download servers for you.
 
-For an environment variable, enter its **name**, not its value: `MY_SERVICE_TOKEN` for HTTP, or `TOKEN=MY_SERVICE_TOKEN` in the stdio area. The variable must be available in the Studio process environment and in new Prime Agent sessions. A variable defined after startup may require a restart, once agents finish. Missing variable names appear in the list.
+For an environment variable, enter its **name**, not its value: `MY_SERVICE_TOKEN` for HTTP, or `TOKEN=MY_SERVICE_TOKEN` in the stdio area. The variable must be available in the Studio process environment and in new Prime Agent sessions. A variable defined after startup may require a restart, once agents finish. Missing variable names appear in the list. If you paste a token into this field by mistake, the manager offers to switch to **Direct token** mode.
+
+**Direct token** mode stores the secret as a private `Authorization: Bearer` HTTP header: it is never shown again or returned to the browser. Leave the field empty when editing to keep the secret. Optional address parameters (for example `?read_only=true&project_ref=…` on Supabase) stay private and are kept while the displayed address is unchanged.
 
 Advanced options set startup and call timeouts, an allowlist of tools, a denylist of tools, and HTTP headers. An empty allowlist permits **no tools**. Without an allowlist, all tools except denied ones remain available.
 
@@ -37,6 +39,8 @@ For an OAuth-compatible HTTP server, choose **Connect**, then **Authorize in the
 - **On a phone**: after authorization, the browser may reach an inaccessible `http://localhost:5370…/callback?…` address. Copy this **complete URL**, return to the MCP manager, paste it into **Full return address** and confirm. Studio verifies that it belongs to the ongoing connection.
 
 You can cancel the connection; it expires after three minutes. Servers requiring a preregistered OAuth client ID are not supported by the form, matching the persistent options exposed by Prime Agent 0.9.1. Use token authentication if the service offers it.
+
+Some servers (Supabase, for example) issue a **confidential** client with a secret at dynamic registration: code exchange and later refresh both require that secret, which the current OAuth engine does not retain. Sign-in then fails after the browser returns, and the manager now shows the real reason instead of a generic message. In that case, use **Direct token** mode with a personal access token from the service.
 
 ## Configuration and privacy
 

@@ -1845,6 +1845,21 @@ kbd {
 .tool-content pre:last-child {
   margin-bottom: 0;
 }
+.skill-block {
+  margin: 8px 0;
+}
+.message.user .skill-block {
+  background: var(--bg);
+}
+.message.user .skill-block:first-child {
+  margin-top: 0;
+}
+.message.user .skill-block:last-child {
+  margin-bottom: 0;
+}
+.message.user .user-text {
+  min-width: 0;
+}
 .stream-caret {
   display: inline-block;
   width: 5px;

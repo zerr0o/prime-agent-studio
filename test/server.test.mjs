@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
-import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createApp } from '../server.mjs';
 import { commandCatalog } from '../lib/commands.mjs';
+import { cwdKey } from '../lib/store.mjs';
 
 const delay = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 
@@ -396,6 +397,47 @@ test('project context actions only open registered folders and removal never sto
   assert.equal((await f.api('/api/projects', { method: 'DELETE', body: { cwd: f.cwd } })).status, 200);
   assert.equal((await f.api('/api/overview')).json.projects.length, 0);
   assert.equal((await f.api('/api/history?id=native-session')).status, 200);
+});
+
+test('project folder reveal works inside managed worktrees and stays rejected elsewhere', async (t) => {
+  const opened = [];
+  const worktrees = {};
+  const f = await fixture(t, {
+    openDirectory: async (path) => {
+      opened.push(path);
+      return { opened: true };
+    },
+    worktrees,
+  });
+  const taskPath = join(f.root, 'managed', 'task-1');
+  await mkdir(join(taskPath, 'docs'), { recursive: true });
+  Object.assign(worktrees, {
+    managedRoot: join(f.root, 'managed'),
+    findByPath: async ({ path }) => (cwdKey(path) === cwdKey(taskPath) ? { id: 'task-1' } : null),
+    inspect: async () => ({ worktree: { path: taskPath, projectCwd: f.cwd }, task: { id: 'task-1' } }),
+  });
+  assert.equal(
+    (await f.api('/api/projects/open', { method: 'POST', body: { cwd: taskPath, path: 'docs' } }))
+      .status,
+    200,
+  );
+  assert.deepEqual(opened, [await realpath(join(taskPath, 'docs'))]);
+  assert.equal(
+    (await f.api('/api/projects/open', { method: 'POST', body: { cwd: taskPath } })).status,
+    200,
+  );
+  assert.deepEqual(opened, [await realpath(join(taskPath, 'docs')), await realpath(taskPath)]);
+  // Unmanaged folders stay rejected without launching anything.
+  assert.equal(
+    (
+      await f.api(
+        '/api/projects/open',
+        { method: 'POST', body: { cwd: join(f.root, 'unknown'), path: 'docs' } },
+      )
+    ).status,
+    404,
+  );
+  assert.equal(opened.length, 2);
 });
 
 test('SSE disconnect preserves execution and Last-Event-ID replays only unseen events', async (t) => {

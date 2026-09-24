@@ -132,6 +132,15 @@ const words = {
     'A conversation link could not be saved. The work was sent successfully.',
   ],
   repairLinks: ['Réparer les liens', 'Repair links'],
+  archived: ['Archivés', 'Archived'],
+  archive: ['Archiver', 'Archive'],
+  restore: ['Restaurer', 'Restore'],
+  archivedHint: [
+    'Les plans archivés sont en lecture seule. Restaurez un plan pour le modifier.',
+    'Archived plans are read only. Restore a plan to edit it.',
+  ],
+  noArchived: ['Aucun plan archivé.', 'No archived plans.'],
+  archivedBadge: ['Archivé', 'Archived'],
   sessionChanged: [
     'Le projet a changé. Votre brouillon est conservé.',
     'The project changed. Your draft is preserved.',

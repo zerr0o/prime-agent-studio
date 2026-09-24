@@ -84,7 +84,11 @@ const app = createApp({
 await new Promise((done) => app.server.listen(0, '127.0.0.1', done));
 let browser;
 try {
-  browser = await chromium.launch({ channel: 'msedge', headless: true });
+  browser = await chromium.launch(
+    !process.env.PRIME_STUDIO_TEST_BROWSER || process.env.PRIME_STUDIO_TEST_BROWSER === 'chromium'
+      ? { headless: true }
+      : { channel: process.env.PRIME_STUDIO_TEST_BROWSER, headless: true },
+  );
   for (const mobile of [false, true]) {
     const context = await browser.newContext({
       locale: 'fr-FR',
@@ -212,6 +216,12 @@ try {
         ]
       : [{ width: 1440, height: 960 }]) {
       await page.setViewportSize(viewport);
+      await expect
+        .poll(async () => {
+          const box = await page.locator('#composer-form').boundingBox();
+          return box.y + box.height;
+        })
+        .toBeLessThanOrEqual(viewport.height);
       const form = await page.locator('#composer-form').boundingBox();
       const rect = await chip.boundingBox();
       expect(rect.x).toBeGreaterThanOrEqual(form.x);

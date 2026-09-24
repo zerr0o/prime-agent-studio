@@ -400,6 +400,10 @@ export const messages = {
     fr: 'Le changement de réflexion en direct est momentanément indisponible.',
     en: 'Live thinking changes are temporarily unavailable.',
   },
+  'conversation.missing_project': {
+    fr: 'Sélectionnez un projet avant d’envoyer votre message.',
+    en: 'Select a project before sending your message.',
+  },
   'roadmap.open': { fr: 'Roadmap du projet', en: 'Project roadmap' },
   'roadmap.linkWarning': {
     fr: 'Le travail a été envoyé, mais son lien n’a pas pu être enregistré. Vous pouvez réparer les liens dans la Roadmap.',
@@ -2608,6 +2612,42 @@ export const messages = {
   'ui.variable_contenant_le_jeton': {
     fr: 'Variable contenant le jeton',
     en: 'Variable containing the token',
+  },
+  'ui.jeton_direct': {
+    fr: 'Jeton direct (secret)',
+    en: 'Direct token (secret)',
+  },
+  'ui.jeton_secret': {
+    fr: 'Jeton secret',
+    en: 'Secret token',
+  },
+  'ui.secret_enregistre_laissez_vide_pour_conserver': {
+    fr: 'Secret enregistré sur ce PC. Laissez vide pour le conserver.',
+    en: 'Secret saved on this PC. Leave empty to keep it.',
+  },
+  'ui.nom_de_variable_exemple_jeton_direct': {
+    fr: 'Nom de la variable sur le PC, par exemple MON_SERVICE_TOKEN. Pour coller un jeton, utilisez le mode Jeton direct.',
+    en: 'Variable name on the PC, for example MON_SERVICE_TOKEN. To paste a token, use Direct token mode.',
+  },
+  'ui.cela_ressemble_a_un_jeton_basculez': {
+    fr: 'Cela ressemble à un jeton collé. Basculez sur Jeton direct pour l’enregistrer comme secret.',
+    en: 'That looks like a pasted token. Switch to Direct token to save it as a secret.',
+  },
+  'ui.collez_le_jeton_secret': {
+    fr: 'Collez le jeton secret. Il est enregistré comme en-tête privé et n’est jamais réaffiché.',
+    en: 'Paste the secret token. It is stored as a private header and never shown again.',
+  },
+  'ui.jeton_invalide_espaces_interdits': {
+    fr: 'Jeton invalide : espaces et sauts de ligne interdits.',
+    en: 'Invalid token: spaces and line breaks are not allowed.',
+  },
+  'ui.retirez_authorization_des_en_tetes': {
+    fr: 'Retirez Authorization des en-têtes JSON : le jeton direct le définit déjà.',
+    en: 'Remove Authorization from the JSON headers: the direct token already sets it.',
+  },
+  'ui.indiquez_le_jeton_secret': {
+    fr: 'Indiquez le jeton secret.',
+    en: 'Enter the secret token.',
   },
   'ui.executable_sur_le_pc': {
     fr: 'Exécutable sur le PC',
@@ -5043,6 +5083,10 @@ export const messages = {
     fr: 'MON_SERVICE_TOKEN',
     en: 'MY_SERVICE_TOKEN',
   },
+  'example.tokenSecret': {
+    fr: 'Votre jeton secret',
+    en: 'Your secret token',
+  },
   'example.mcpCwd': {
     fr: 'C:\\mes-outils',
     en: 'C:\\my-tools',
@@ -5382,6 +5426,26 @@ export const messages = {
   'server.choisissez_oauth_ou_un_jeton_par_variable_pas_les_deux': {
     fr: 'Choisissez OAuth ou un jeton par variable, pas les deux.',
     en: 'Choose OAuth or a token environment variable, not both.',
+  },
+  'server.oauth_a_echoue_detail': {
+    fr: 'Connexion OAuth impossible : {value1}',
+    en: 'OAuth connection failed: {value1}',
+  },
+  'server.oauth_client_confidentiel_requis': {
+    fr: 'Ce serveur exige un client OAuth confidentiel avec secret, que Studio ne conserve pas. Utilisez le mode Jeton avec un jeton personnel, puis réessayez. Détail : {value1}',
+    en: 'This server requires a confidential OAuth client with a secret, which Studio does not retain. Use Token mode with a personal token instead, then retry. Detail: {value1}',
+  },
+  'server.connexion_oauth_annulee': {
+    fr: 'Connexion OAuth annulée.',
+    en: 'OAuth sign-in cancelled.',
+  },
+  'server.le_serveur_a_refuse_l_autorisation': {
+    fr: 'Le serveur a refusé l’autorisation : {value1}',
+    en: 'The server refused authorization: {value1}',
+  },
+  'server.cela_ressemble_a_un_jeton_utilisez_le_mode_jeton': {
+    fr: 'Cela ressemble à un jeton, pas à un nom de variable. Choisissez le mode Jeton pour coller un secret.',
+    en: 'That looks like a token, not a variable name. Choose Token mode to paste a secret.',
   },
   'server.variables_d_environnement_invalides': {
     fr: 'Variables d’environnement invalides.',
@@ -6145,7 +6209,7 @@ export const messages = {
     fr: 'Moteur et modèle globaux pour ce PC. Le changement de moteur demande un bureau éteint.',
     en: 'Global engine and model for this PC. Changing the engine needs the desktop off.',
   },
-  'computer.modelLabel': { fr: 'Modèle Computer Use', en: 'Computer Use model' },
+  'computer.modelLabel': { fr: 'Modèle de décision Computer Use', en: 'Computer Use decision model' },
   'computer.modelNote': {
     fr: 'Utilisé pour les exécutions avec bureau autorisé. Vide : même modèle que la conversation.',
     en: 'Used for runs with desktop authorized. Empty: same as conversation.',
@@ -6158,5 +6222,15 @@ export const messages = {
   'computer.preferencesError': {
     fr: 'Enregistrement impossible. Réessayez.',
     en: 'Save failed. Try again.',
+  },
+  'ui.skill': { fr: 'Skill', en: 'Skill' },
+  'ui.contenu_du_skill': { fr: 'Contenu du skill', en: 'Skill content' },
+  'server.skill_inconnu_dans_ce_projet': {
+    fr: 'Skill inconnu dans ce projet : /skill:{value1}. Ouvrez le menu pour choisir un skill.',
+    en: 'Unknown skill in this project: /skill:{value1}. Open the menu to choose a skill.',
+  },
+  'server.skills_trop_volumineux': {
+    fr: 'Les skills sélectionnés dépassent la taille autorisée. Retirez un skill ou raccourcissez le message.',
+    en: 'The selected skills exceed the allowed size. Remove a skill or shorten the message.',
   },
 };

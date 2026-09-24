@@ -51,7 +51,11 @@ Un skill contient des instructions, et éventuellement des scripts ou un module 
 /skill:nom-du-skill Votre demande et vos contraintes
 ```
 
-Prime Agent lit le fichier `SKILL.md`, développe son contenu et conserve le dossier de référence des ressources. Le Studio laisse cette expansion au moteur. Les skills fonctionnent aussi dans les messages envoyés en cours d’exécution, avec des images ou des documents.
+Vous pouvez sélectionner plusieurs skills depuis le bouton **/** : chaque sélection ajoute un chip. **×** retire uniquement le skill choisi. Vous pouvez aussi écrire `/skill:premier /skill:second Votre demande` en début de message.
+
+Pour un seul skill, Prime Agent développe le fichier `SKILL.md`. Pour plusieurs skills, le Studio utilise les fichiers du catalogue natif et le même format de bloc, avec leur dossier de référence. Les skills fonctionnent aussi dans les messages envoyés en cours d’exécution, avec des images ou des documents.
+
+Dans vos messages, chaque contenu développé apparaît dans un bloc **Skill · nom**, replié par défaut. Cliquez pour le lire ; votre demande reste visible. **Copier** copie votre texte sans les instructions développées, ou le message complet si aucun texte ne reste. L’historique natif n’est pas modifié.
 
 Le catalogue utilise la découverte native : skills globaux (`~/.prime/agent/skills`, `~/.agents/skills`), skills du projet et de ses ancêtres (`.prime/agent/skills`, `.agents/skills`), chemins configurés, packages installés et skills intégrés à Prime Agent. La priorité des ressources, les exclusions et les skills réservés à une invocation explicite sont respectés. Le chemin source et la description permettent d’identifier chaque skill.
 

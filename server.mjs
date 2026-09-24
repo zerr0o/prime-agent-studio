@@ -25,7 +25,8 @@ import { openTerminal } from './lib/open-terminal.mjs';
 import { createDirectoryPicker } from './lib/pick-directory.mjs';
 import { createMcpService } from './lib/mcp-service.mjs';
 import { createProviderService } from './lib/provider-service.mjs';
-import { createCommandService, parseCommand, validateCommand } from './lib/commands.mjs';
+import { createCommandService, parseCommand, parseMultiSkillCommand, validateCommand } from './lib/commands.mjs';
+import { expandMultiSkillMessage } from './lib/skill-expansion.mjs';
 import { createLiveMessages, routeLiveMessages } from './lib/live-messages.mjs';
 import { createLiveSessionClient } from './lib/live-session-client.mjs';
 import { createConversationSettings } from './lib/conversation-settings.mjs';
@@ -171,7 +172,7 @@ export function createApp(options = {}) {
       const prefs = await store.getStudioPreferences?.();
       if (prefs && typeof prefs === 'object') return prefs;
     } catch {}
-    return { allowQuestionsByDefault: true, computerBackend: 'native', computerModel: '', revision: 0 };
+    return { allowQuestionsByDefault: true, computerBackend: 'native', computerModel: '', computerThinking: '', revision: 0 };
   };
   const roadmap =
     options.roadmap || createRoadmapService({ resolveProject: (cwd) => store.knowledgeProject(cwd) });
@@ -387,6 +388,7 @@ export function createApp(options = {}) {
   });
   const liveMessages = createLiveMessages({
     fileStore,
+    getCatalog: (context) => commands.list(context),
     validateMessage: async (message, context) => {
       if (parseCommand(message))
         validateCommand(message, await commands.list(context), {
@@ -514,30 +516,46 @@ export function createApp(options = {}) {
           );
       }
     }
-    if ('computerModel' in body) {
-      const wanted = body.computerModel;
+    // The decision model (computerModel) must read screenshots when it
+    // drives the desktop. Unknown models fail with 400, unavailable models
+    // with 409, text-only models with 400. Empty stays valid (same as
+    // conversation).
+    async function validateComputerModelSetting(wanted) {
       if (typeof wanted !== 'string' || wanted.length > 500)
         throw new HttpError(400, tr('server.modele_invalide'));
       const trimmed = wanted.trim();
-      if (trimmed) {
-        let catalog = null;
-        try {
-          catalog = await models();
-        } catch {
-          catalog = null;
-        }
-        if (catalog?.models?.length) {
-          const selected = catalog.models.find((model) => model?.id === trimmed);
-          if (!selected)
-            throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
-          if (selected.availability === 'unavailable')
-            throw new HttpError(409, tr('model.unavailableSelection'));
-          if (!modelSupportsImages(trimmed, catalog))
-            throw new HttpError(
-              400,
-              'This model does not support images. Choose an image capable model for Computer Use.',
-            );
-        }
+      if (!trimmed) return;
+      let catalog = null;
+      try {
+        catalog = await models();
+      } catch {
+        catalog = null;
+      }
+      if (catalog?.models?.length) {
+        const selected = catalog.models.find((model) => model?.id === trimmed);
+        if (!selected)
+          throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
+        if (selected.availability === 'unavailable')
+          throw new HttpError(409, tr('model.unavailableSelection'));
+        if (!modelSupportsImages(trimmed, catalog))
+          throw new HttpError(
+            400,
+            'This model does not support images. Choose an image capable model for Computer Use.',
+          );
+      }
+    }
+    if ('computerModel' in body) await validateComputerModelSetting(body.computerModel);
+    // The decision thinking level validates exactly like run thinking:
+    // empty inherits the conversation level, otherwise one of the known
+    // levels.
+    for (const field of ['computerThinking']) {
+      if (field in body) {
+        const level = body[field];
+        if (
+          typeof level !== 'string' ||
+          (level !== '' && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(level))
+        )
+          throw new HttpError(400, tr('server.niveau_de_reflexion_invalide'));
       }
     }
     return store.setStudioPreferences(body);
@@ -698,7 +716,15 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.ecrivez_un_message_avant_de_l_envoyer'));
     if (body.message.length > 200000)
       throw new HttpError(400, tr('server.le_message_depasse_200_000_caracteres'));
-    if (parseCommand(body.message))
+    if (parseMultiSkillCommand(body.message)) {
+      const catalog = await commands.list({ cwd });
+      validateCommand(body.message, catalog, {
+        attachments: images.length + files.length > 0,
+      });
+      body.message = await expandMultiSkillMessage(body.message, catalog);
+      if (body.message.length > 200000)
+        throw new HttpError(400, tr('server.le_message_depasse_200_000_caracteres'));
+    } else if (parseCommand(body.message))
       validateCommand(body.message, await commands.list({ cwd }), {
         attachments: images.length + files.length > 0,
       });
@@ -770,6 +796,20 @@ export function createApp(options = {}) {
       globals = null;
     }
     const globalComputerBackend = globals?.computerBackend === 'cua' ? 'cua' : 'native';
+    // Decision thinking override (Preferences > Tools, default inherit).
+    // Stored values are PATCH-validated; an unexpected value stays lenient
+    // and inherits instead of failing the run.
+    const globalComputerThinking = [
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ].includes(globals?.computerThinking)
+      ? globals.computerThinking
+      : '';
     const globalComputerModel =
       typeof globals?.computerModel === 'string' ? globals.computerModel.trim() : '';
     let selectedModel =
@@ -789,8 +829,12 @@ export function createApp(options = {}) {
         );
       selectedModel = globalComputerModel;
     }
-    const selectedThinking =
+    let selectedThinking =
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
+    // Decision thinking applies to Computer Use runs the same way the
+    // conversation level does: it wins when explicitly set, even when the
+    // decision model itself stays the conversation model. Otherwise inherit.
+    if (computerAuthorizedForModel && globalComputerThinking) selectedThinking = globalComputerThinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
       throw new HttpError(400, tr('server.demande_invalide'));
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
@@ -1415,9 +1459,13 @@ export function createApp(options = {}) {
       }
       if (method === 'POST' && path === '/api/projects/open') {
         const body = await readBody(req);
-        const project = await store.findProject(body.cwd);
-        const folder =
-          body.path === undefined ? project.cwd : await projectFiles.localDirectory(project.cwd, body.path);
+        // filesFor routes managed task worktree folders through the same
+        // resolve safeguards as the file routes. Unmanaged folders still
+        // fail project lookup, so they stay rejected.
+        const folder = await filesFor(body.cwd).localDirectory(
+          body.cwd,
+          body.path === undefined ? '' : body.path,
+        );
         return json(res, 200, await (options.openDirectory || openDirectory)(folder));
       }
       if (method === 'POST' && path === '/api/projects/open-terminal') {

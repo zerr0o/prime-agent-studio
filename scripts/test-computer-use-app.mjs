@@ -160,6 +160,7 @@ try {
   await expect(page.locator('#computer-use')).toBeVisible();
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-status')).toHaveCount(0);
   report.push('Real header control visible, default off');
 
   // Draft activation on a new session sends computerUse true on the real route.
@@ -169,7 +170,7 @@ try {
   await page.locator('#allow-computer-use').click();
   await expect(page.locator('#allow-computer-use')).toBeChecked();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif au prochain envoi');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Désactiver le bureau expert');
   await page.locator('#composer').fill('Please use the desktop.');
   await page.locator('#send-button').click();
   await expect(page.locator('#stop-button')).toBeVisible();
@@ -235,7 +236,7 @@ try {
   });
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
   if (!enableCalls.length) throw new Error('session enable must POST to the mode route');
   if (enableCalls[enableCalls.length - 1]?.backend !== undefined)
     throw new Error('session enable must not POST a per-session backend, the server applies the global engine');
@@ -251,7 +252,7 @@ try {
   await page.locator('#session-list').getByText('Session B', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
-  await expect(page.locator('#computer-use-status')).toContainText('autre session');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer le bureau expert');
   await page.locator('#composer').fill('Plain message without desktop.');
   await page.locator('#send-button').click();
   await expect(page.locator('#stop-button')).toBeVisible();
@@ -270,7 +271,7 @@ try {
   if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
     await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-status')).toHaveText('Actif sur cette session');
+  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
   await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   await page.locator('#composer').fill('Run with desktop pref.');
   await page.locator('#send-button').click();
@@ -383,6 +384,36 @@ try {
     if (!cuaAvailable && stored?.computerBackend !== 'native')
       throw new Error('refused backend PATCH must not change the stored engine');
     if (stored?.computerModel !== '') throw new Error('refused model PATCHes must not change the stored model');
+    const badThinking = await page.evaluate(() =>
+      fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerThinking: 'ultra' }),
+      }).then((r) => r.status),
+    );
+    if (badThinking !== 400) throw new Error('unknown thinking levels must fail with 400');
+    const setThinking = await page.evaluate(() =>
+      fetch('/api/studio-preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ computerThinking: 'high' }),
+      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) })),
+    );
+    if (setThinking.status !== 200 || setThinking.json?.computerThinking !== 'high')
+      throw new Error('decision thinking must PATCH globally');
+    const storedThinking = await page.evaluate(() =>
+      fetch('/api/studio-preferences')
+        .then((r) => r.json())
+        .catch(() => null),
+    );
+    if (storedThinking?.computerThinking !== 'high')
+      throw new Error('thinking PATCH must persist server-side');
+    await page.reload();
+    await expect(page.locator('#connection-label')).not.toHaveText('Connexion…');
+    await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
+    await page.locator('#open-settings').click();
+    await page.locator('#settings-tab-tools').click();
+    await expect(page.locator('#computer-thinking')).toHaveValue('high');
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-dialog')).toBeHidden();
   }
@@ -464,7 +495,7 @@ try {
       fetch('/api/studio-preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ computerModel: '', computerBackend: 'native' }),
+        body: JSON.stringify({ computerModel: '', computerThinking: '', computerBackend: 'native' }),
       }).then((r) => r.status),
     );
     if (cleared !== 200) throw new Error('clearing the global Computer Use settings must succeed');

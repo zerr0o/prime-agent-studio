@@ -79,7 +79,7 @@ test('project browser bounds paths, ignores technical directories, pages and pre
   for (const path of [
     '../secret',
     '.git/config',
-    '.local/secret.txt',
+    'node_modules/pkg/index.js',
     '/absolute',
     'C:/Windows/file',
     'document.bin:ads',
@@ -87,6 +87,8 @@ test('project browser bounds paths, ignores technical directories, pages and pre
     'file\0x',
   ])
     assert.throws(() => projectPath(path));
+  // Other dot folders resolve like any project path when no protected root covers them.
+  assert.equal(projectPath('.local/secret.txt'), '.local/secret.txt');
   await assert.rejects(f.files.preview(f.root, 'secret.txt'), { status: 404 });
   await symlink(f.root, join(f.cwd, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(f.files.list(f.cwd, 'escape'), { status: 403 });
@@ -96,8 +98,8 @@ test('project browser bounds paths, ignores technical directories, pages and pre
     join(f.cwd, 'alias'),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
-  await assert.rejects(f.files.preview(f.cwd, 'alias/secret.txt'), { status: 403 });
-  await assert.rejects(f.files.preview(f.cwd, '.LOCAL/secret.txt'), { status: 403 });
+  assert.equal((await f.files.preview(f.cwd, 'alias/secret.txt')).text, 'private');
+  await assert.rejects(f.files.preview(f.cwd, '.GIT/config'), { status: 403 });
   const privateRoot = join(f.cwd, 'engine');
   await mkdir(privateRoot);
   await writeFile(join(privateRoot, 'auth.json'), 'private');
