@@ -233,51 +233,6 @@ export function removalMarker(dims, part) {
   );
 }
 
-// Report variant: { messages, dropped, droppedDetails }.
-// messages is a NEW array; untouched messages keep their reference; changed
-// tool results are shallow copies with image parts replaced in place by text
-// markers. Input is never mutated.
-export function filterComputerUseImagesWithReport(messages, options = {}) {
-  const limit =
-    Number.isSafeInteger(options.limit) && options.limit > 0 ? options.limit : MAX_IMAGE_DIMENSION;
-  if (!Array.isArray(messages)) return { messages, dropped: 0, droppedDetails: [] };
-  const droppedDetails = [];
-  let changed = false;
-  const out = messages.map((message, messageIndex) => {
-    if (!isComputerUseToolResult(message)) return message;
-    const content = message.content;
-    if (!Array.isArray(content)) return message;
-    let messageChanged = false;
-    const nextContent = content.map((part, partIndex) => {
-      if (!part || typeof part !== 'object' || part.type !== 'image') return part;
-      const dims = getImageDimensions(part);
-      if (!dims || !isOversizedDimensions(dims, limit)) return part;
-      messageChanged = true;
-      droppedDetails.push({
-        messageIndex,
-        partIndex,
-        toolCallId: message.toolCallId ?? null,
-        toolName: message.toolName ?? toolActionOf(message) ?? null,
-        width: dims.width,
-        height: dims.height,
-        format: dims.format,
-      });
-      return { type: 'text', text: removalMarker(dims, part) };
-    });
-    if (!messageChanged) return message;
-    changed = true;
-    return { ...message, content: nextContent };
-  });
-  if (!changed) return { messages, dropped: 0, droppedDetails: [] };
-  return { messages: out, dropped: droppedDetails.length, droppedDetails };
-}
-
-// Primary helper for the root hook: transient copy, same contract as above
-// but returns the filtered array directly.
-export function filterComputerUseImages(messages, options = {}) {
-  return filterComputerUseImagesWithReport(messages, options).messages;
-}
-
 // Marker for a dropped NON-CU image: downscaling was unavailable or failed,
 // so removal is the last resort that keeps the provider request alive.
 export function attachmentMarker(dims, part) {

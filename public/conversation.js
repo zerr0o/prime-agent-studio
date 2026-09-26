@@ -1,5 +1,19 @@
 import { t as tr, bindText, bindAttribute, textNode, translateKnown } from './i18n.js';
 // Presentation only: native messages and streaming events remain unchanged.
+const technicalTypes = new Set([
+  'agent_message', 'async_bash_completion', 'harness_digest',
+  'ipython_state', 'ipython_state_restored', 'refinement_notice', 'refinement_outcome',
+  'git_state',
+]);
+function isTechnicalMessage(message) {
+  if (message.role !== 'system' || message.error || message.isError) return false;
+  return Boolean(
+    message.agentMessage || technicalTypes.has(message.customType) ||
+    (message.customType === 'rlm_child_terminal_notice' &&
+      /^\[child-exited: cancelled child:/.test(message.text || '')) ||
+    (!message.customType && message.text === 'RLM quiescence wait cancelled')
+  );
+}
 export function isEmptyCompletedAssistant(message) {
   return (
     message.role === 'assistant' &&
@@ -75,9 +89,10 @@ export function createConversationRenderer({
       tools.filter((t) => t.isError).length + messages.filter((m) => translateKnown(m.error)).length;
     const running =
       messages.some((m) => m.streaming) || tools.some((t) => ['running', 'pending'].includes(t.status));
+    const events = messages.filter((m) => m.role !== 'assistant').length;
     const reasoning = messages.filter((m) => m.thinking).length;
     const latest = messages.findLast((m) => m.thinking?.trim())?.thinking || '';
-    part.preview.hidden = reasoningPreference !== 'preview' || !latest;
+    part.preview.hidden = reasoningPreference !== 'preview' || !latest || !running;
     if (!part.preview.hidden && part.latest !== latest) {
       part.preview.replaceChildren(markdown(latest));
       // The summary stays one accessible toggle; preview links are available in the full reflection.
@@ -93,6 +108,7 @@ export function createConversationRenderer({
         [
           tools.length ? tr('count.tools', { count: tools.length }) : '',
           reasoning ? tr('count.reflections', { count: reasoning }) : '',
+          events ? tr('count.events', { count: events }) : '',
         ]
           .filter(Boolean)
           .join(' · ') || tr('ui.preparation_2'),
@@ -111,7 +127,10 @@ export function createConversationRenderer({
     const steps = messages.map((m, index) => {
       const signature = JSON.stringify(m);
       let step = part.steps.get(m.id);
-      if (!step || step.signature !== signature) {
+      if (m.role !== 'assistant') {
+        step = { node: renderMessage(m, index), signature };
+        part.steps.set(m.id, step);
+      } else if (!step || step.signature !== signature) {
         const node = el('div', 'activity-step');
         node.dataset.messageId = m.id;
         node.append(el('div', 'activity-step-label', () => tr('ui.etape', { value1: index + 1 })));
@@ -229,7 +248,13 @@ export function createConversationRenderer({
     };
     for (const m of messages) {
       const hasTools = m.tools?.length > 0;
-      if (m.text && hasTools) {
+      if (m.role !== 'assistant') activity.push(m);
+      else if (m.error || m.stopReason === 'aborted' || m.stopReason === 'error') {
+        flush();
+        parts.push(textPart(turn, m));
+        if (m.thinking || hasTools)
+          activity.push({ ...m, text: '', error: undefined, attachments: [], streaming: false });
+      } else if (m.text && hasTools) {
         flush();
         parts.push(textPart(turn, { ...m, error: undefined, streaming: false }));
         activity.push(m);
@@ -283,7 +308,8 @@ export function createConversationRenderer({
       };
       messages.forEach((m, index) => {
         if (isEmptyCompletedAssistant(m)) return;
-        if (m.role === 'assistant') assistant.push({ ...m, id: idOf(m, index) });
+        if (m.role === 'assistant' || isTechnicalMessage(m))
+          assistant.push({ ...m, id: idOf(m, index) });
         else {
           flush();
           nodes.push(renderMessage(m, index));

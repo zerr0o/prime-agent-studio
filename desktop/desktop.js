@@ -820,6 +820,18 @@ if ($('back-studio')) $('back-studio').onclick = async () => {
     await start({ allowUnconfigured: true, background: false });
   } catch {}
 };
+function confirmRestart() {
+  const dialog = $('restart-confirm');
+  const accepted = new Promise((done) => {
+    dialog.returnValue = '';
+    $('restart-cancel').onclick = () => dialog.close('cancel');
+    $('restart-proceed').onclick = () => dialog.close('proceed');
+    dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
+  });
+  dialog.showModal();
+  $('restart-cancel').focus();
+  return accepted;
+}
 $('server-restart').onclick = async () => {
   if (restarting) return;
   restarting = true;
@@ -837,16 +849,7 @@ $('server-restart').onclick = async () => {
     // Confirmation before any cancel: impact of agents + current operation.
     if ((state && state.activeRuns) || (op && !op.terminal)) {
       if (op && op.cancellable) {
-        const dialog = $('restart-confirm');
-        const accepted = new Promise((done) => {
-          dialog.returnValue = '';
-          $('restart-cancel').onclick = () => dialog.close('cancel');
-          $('restart-proceed').onclick = () => dialog.close('proceed');
-          dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
-        });
-        dialog.showModal();
-        $('restart-cancel').focus();
-        if (!(await accepted)) return;
+        if (!(await confirmRestart())) return;
         force = Boolean(state && state.activeRuns);
         cancelCurrent = true;
       } else if (op && !op.cancellable) {
@@ -854,16 +857,7 @@ $('server-restart').onclick = async () => {
         updateStatus(t.updateDownloading + '…', false);
         return;
       } else {
-        const dialog = $('restart-confirm');
-        const accepted = new Promise((done) => {
-          dialog.returnValue = '';
-          $('restart-cancel').onclick = () => dialog.close('cancel');
-          $('restart-proceed').onclick = () => dialog.close('proceed');
-          dialog.addEventListener('close', () => done(dialog.returnValue === 'proceed'), { once: true });
-        });
-        dialog.showModal();
-        $('restart-cancel').focus();
-        if (!(await accepted)) return;
+        if (!(await confirmRestart())) return;
         force = true;
       }
     }

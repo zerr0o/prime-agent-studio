@@ -1,11 +1,5 @@
 import { t, bindText, onLanguageChange } from './i18n.js';
-export function isNewComponentsBridgeAvailable() {
-  return (
-    window.__PRIME_STUDIO_COMPONENTS__ === true &&
-    window.__PRIME_STUDIO_DESKTOP__ === true &&
-    typeof window.__TAURI__?.core?.invoke === 'function'
-  );
-}
+import { isNewComponentsBridgeAvailable } from './desktop-components-action.js';
 function core() {
   return window.__TAURI__?.core;
 }
@@ -71,10 +65,6 @@ export function readComponentsStatus() {
     });
   return statusFlight;
 }
-export async function diagnoseComponentsPanel() {
-  const result = await invokeComponents('diagnose', { component: null });
-  return normalizeComponentsResult(result);
-}
 export async function cancelComponentsInstall() {
   const c = core();
   if (!c || typeof c.invoke !== 'function') return false;
@@ -133,13 +123,6 @@ export function componentsErrorKey(code) {
     update_busy: 'components.error_setup_busy',
   };
   return map[value] || 'components.error_preparation';
-}
-export function componentsActivationKey(result) {
-  if (!result) return null;
-  if (result.activation === 'active') return 'components.activation_active';
-  if (result.activation === 'deferred') return 'components.activation_deferred';
-  if (result.activation === 'failed') return 'components.activation_failed';
-  return null;
 }
 function formatBytes(value, language) {
   const n = Number(value);

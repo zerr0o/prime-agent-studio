@@ -4,6 +4,15 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.1.1
+
+- **Conversation**: agent messages and technical notifications grouped inside Agent activity without changing history. Replies and interactions remain accessible; completed reasoning previews are hidden.
+
+- **Maintenance**: remove unused kernel, Computer Use bridge and components UI helpers; share component-bridge detection and restart confirmation without changing authorization or cancellation rules.
+- **Shared implementations**: reuse provider JSONC override detection, PowerShell launch setup and the existing Rust atomic writer while preserving validation and error handling.
+- **Image safety tests**: remove obsolete image filters and test the active context normalizer directly. Computer Use screenshot limits and input history remain unchanged.
+- **Regression coverage**: strengthen restart cancellation and atomic-write failure cleanup checks. No new dependencies.
+
 ## 4.1.0 (pre-release)
 
 - **Prime Agent 0.9.6**: pinned engine preparation with a separate managed Python environment. Runtime checks require the new generic MCP discovery methods. The upstream background-command fix is recognized without rewriting its native implementation.

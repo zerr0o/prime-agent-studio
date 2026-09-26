@@ -98,6 +98,70 @@ fn initial_stage_mapping() {
 }
 
 #[test]
+fn atomic_write_roundtrip_overwrite_and_failure_cleanup() {
+    let dir = std::env::temp_dir().join(format!(
+        "upd-op-atomic-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("w.json");
+    assert!(atomic_write_bytes(&path, b"{\"a\":1}"));
+    assert_eq!(std::fs::read(&path).unwrap(), b"{\"a\":1}");
+    assert!(atomic_write_bytes(&path, b"{\"a\":2}"));
+    assert_eq!(std::fs::read(&path).unwrap(), b"{\"a\":2}");
+    // Failure result with cleanup: parent path is a file, so no file appears.
+    let blocker = dir.join("blocker");
+    std::fs::write(&blocker, b"x").unwrap();
+    assert!(!atomic_write_bytes(&blocker.join("w.json"), b"{}"));
+    assert!(!blocker.join("w.json").exists());
+    // Failed rename cleans up: replacing a non-empty directory fails on every
+    // platform, so the directory and its sentinel child must survive intact.
+    let victim = dir.join("victim");
+    let _ = std::fs::create_dir_all(&victim);
+    let sentinel = victim.join("sentinel.txt");
+    std::fs::write(&sentinel, b"keep").unwrap();
+    assert!(!atomic_write_bytes(&victim, b"{}"));
+    assert!(victim.is_dir(), "failed rename must not remove the directory");
+    assert_eq!(
+        std::fs::read(&sentinel).unwrap(),
+        b"keep",
+        "sentinel child must survive a failed replacement"
+    );
+    let litter = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "tmp"))
+        .count();
+    assert_eq!(litter, 0, "no .tmp files must remain after all failure cases");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_write_refuses_symlink_and_keeps_0600() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let dir = std::env::temp_dir().join(format!(
+        "upd-op-symlink-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let _ = std::fs::create_dir_all(&dir);
+    let target = dir.join("real.json");
+    std::fs::write(&target, b"real").unwrap();
+    let link = dir.join("link.json");
+    let _ = std::fs::remove_file(&link);
+    symlink(&target, &link).unwrap();
+    assert!(!atomic_write_bytes(&link, b"evil"));
+    assert_eq!(std::fs::read(&target).unwrap(), b"real");
+    let path = dir.join("mode.json");
+    assert!(atomic_write_bytes(&path, b"{}"));
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "tmp created 0600, kept across rename");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn stale_nonterminal_normalizes_to_interrupted_error() {
     let s = OperationSnapshot::new("upd-stale".into(), "install", "downloading", true);
     assert!(!s.terminal);

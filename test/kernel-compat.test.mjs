@@ -11,8 +11,6 @@ import {
   KERNEL_COMPAT_SCRIPT,
   kernelCompatIdentity,
   applyKernelCompat,
-  checkKernelCompat,
-  externalCompatError,
 } from '../lib/kernel-compat.mjs';
 import { discoverCli } from '../lib/agent.mjs';
 
@@ -86,7 +84,7 @@ test('compat identity tracks version and script content', async () => {
   assert.notEqual(changed.sha256, identity.sha256);
 });
 
-test('apply and check call the compat script with a bounded read-only probe', async () => {
+test('apply calls the compat script with bounded execution', async () => {
   const calls = [];
   let progressed = 0;
   const run = async (command, args, env, timeout, signal) => {
@@ -106,26 +104,6 @@ test('apply and check call the compat script with a bounded read-only probe', as
   assert.equal(calls[0].timeout, 60000);
   assert.equal(progressed, 1);
   await assert.rejects(applyKernelCompat('/fake/python', {}), /execute runner required/);
-  assert.equal(await checkKernelCompat('/fake/python', { run }), true);
-  assert.deepEqual(calls[1].args, [KERNEL_COMPAT_SCRIPT, '--check-only', '--json']);
-  const unpatched = async () => {
-    const error = new Error('KERNEL_COMPAT_UNPATCHED: supported unpatched form, patch required');
-    throw error;
-  };
-  assert.equal(await checkKernelCompat('/fake/python', { run: unpatched }), false);
-  const broken = async () => {
-    throw new Error('KERNEL_COMPAT_UNRECOGNIZED: weird');
-  };
-  await assert.rejects(checkKernelCompat('/fake/python', { run: broken }), /UNRECOGNIZED/);
-});
-
-test('external override error is actionable and never patches', () => {
-  const error = externalCompatError('/fake/external python');
-  assert.match(error.message, /\/fake\/external python/);
-  assert.match(error.message, /PRIME_AGENT_KERNEL_PYTHON/);
-  assert.match(error.message, /never modified/);
-  assert.match(error.message, /--check-only/);
-  assert.equal(error.message.includes('\u2014'), false);
 });
 
 test('owned compat files carry no em dashes', async () => {

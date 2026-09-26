@@ -26,7 +26,8 @@ use update_operation::{
     append_log_file as op_append_log, clamp_detail as op_clamp_detail,
     compute_percent as op_compute_percent, initial_stage_for_kind as op_initial_stage,
     is_valid_kind as op_is_valid, load_snapshot as op_load, normalize_stage as op_norm_stage,
-    now_ms as op_now_ms, persist_snapshot as op_persist, sanitize_error as op_sanitize_err,
+    now_ms as op_now_ms, persist_snapshot as op_persist, atomic_write_bytes as op_atomic_write,
+    sanitize_error as op_sanitize_err,
     sanitize_log_message as op_sanitize_log, normalize_stale_persisted as op_normalize_stale,
     OperationSnapshot,
 };
@@ -1405,60 +1406,6 @@ async fn acquire_update_lock(root: &Path) -> Option<UpdateLockGuard> {
     }
 }
 
-static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn unique_tmp_path(path: &Path) -> PathBuf {
-    let count = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or(0);
-    let file = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "tmp".to_string());
-    path.with_file_name(format!("{file}.{}.{nanos}.{count}.tmp", std::process::id()))
-}
-
-/// Atomic write mirroring `writeJsonAtomic`: refuse symlink targets (never
-/// follow), create `<path>.<pid>.<nanos>.<n>.tmp` with O_EXCL + 0600, rename.
-fn atomic_write_file(path: &Path, bytes: &[u8]) -> bool {
-    if is_symlink(path) {
-        return false;
-    }
-    let Some(parent) = path.parent() else {
-        return false;
-    };
-    if std::fs::create_dir_all(parent).is_err() {
-        return false;
-    }
-    let tmp = unique_tmp_path(path);
-    if is_symlink(&tmp) {
-        return false;
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = match options.open(&tmp) {
-        Ok(file) => file,
-        Err(_) => return false,
-    };
-    if file.write_all(bytes).is_err() {
-        let _ = std::fs::remove_file(&tmp);
-        return false;
-    }
-    drop(file);
-    if std::fs::rename(&tmp, path).is_err() {
-        let _ = std::fs::remove_file(&tmp);
-        return false;
-    }
-    true
-}
-
 /// Server displays `detail` sliced to 500 chars; bound it at the source too.
 fn clamp_detail(detail: &str) -> String {
     if detail.chars().count() <= 500 {
@@ -1531,7 +1478,7 @@ async fn cas_set_status(
         serde_json::json!(clamp_detail(detail)),
     );
     let text = serde_json::to_string(&next).ok()?;
-    if !atomic_write_file(&intent_path(root), text.as_bytes()) {
+    if !op_atomic_write(&intent_path(root), text.as_bytes()) {
         return None;
     }
     Some(next)
@@ -1569,7 +1516,7 @@ fn refresh_phase(root: &Path, id: &str, expected: &str, status: &str, detail: &s
     let Ok(text) = serde_json::to_string(&next) else {
         return false;
     };
-    atomic_write_file(&intent_path(root), text.as_bytes())
+    op_atomic_write(&intent_path(root), text.as_bytes())
 }
 
 struct Pick {
@@ -1657,7 +1604,7 @@ fn write_poller_heartbeat(root: &Path, app_version: &str) {
     let Ok(text) = serde_json::to_string(&body) else {
         return;
     };
-    let _ = atomic_write_file(&poller_path(root), text.as_bytes());
+    let _ = op_atomic_write(&poller_path(root), text.as_bytes());
 }
 
 /// Status probe through the existing desktop-control script (`action: status`

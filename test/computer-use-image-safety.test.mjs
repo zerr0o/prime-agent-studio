@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import {
   MAX_IMAGE_DIMENSION,
   attachmentMarker,
-  filterComputerUseImages,
-  filterComputerUseImagesWithReport,
   getImageDimensions,
   isComputerUseToolResult,
   isOversizedDimensions,
@@ -97,19 +95,19 @@ test('boundary 2000x2000 is kept, 2001 on any side is oversized', () => {
   assert.equal(isOversizedDimensions({ width: 100, height: 2001 }), true);
 });
 
-test('small CU images are preserved untouched', () => {
+test('small CU images are preserved untouched', async () => {
   const msg = cuResult({
     parts: [
       { type: 'image', data: pngBase64(1280, 800), mimeType: 'image/png' },
       { type: 'text', text: JSON.stringify({ frame: { frameId: 'f-1' } }) },
     ],
   });
-  const out = filterComputerUseImages([msg]);
+  const { messages: out } = await normalizeContextImagesWithReport([msg]);
   assert.equal(out[0], msg); // same reference, nothing copied
   assert.equal(out[0].content[0].data, pngBase64(1280, 800));
 });
 
-test('large PNG landscape CU screenshot is dropped with a take-new-observation marker', () => {
+test('large PNG landscape CU screenshot is dropped with a take-new-observation marker', async () => {
   const data = pngBase64(3840, 2160);
   const msg = cuResult({
     toolName: 'computer_observe',
@@ -119,7 +117,7 @@ test('large PNG landscape CU screenshot is dropped with a take-new-observation m
     ],
   });
   const before = JSON.stringify(msg);
-  const { messages, dropped, droppedDetails } = filterComputerUseImagesWithReport([msg]);
+  const { messages, dropped, droppedDetails } = await normalizeContextImagesWithReport([msg]);
   assert.equal(dropped, 1);
   assert.equal(droppedDetails[0].width, 3840);
   assert.equal(droppedDetails[0].height, 2160);
@@ -137,13 +135,13 @@ test('large PNG landscape CU screenshot is dropped with a take-new-observation m
   assert.equal(JSON.stringify(msg), before); // input never mutated
 });
 
-test('large JPEG portrait CU screenshot via computer_act is dropped', () => {
+test('large JPEG portrait CU screenshot via computer_act is dropped', async () => {
   const data = jpegBase64(2160, 3840);
   const msg = cuResult({
     toolName: 'computer_act',
     parts: [{ type: 'image', data, mimeType: 'image/jpeg' }],
   });
-  const out = filterComputerUseImages([msg]);
+  const { messages: out } = await normalizeContextImagesWithReport([msg]);
   assert.equal(out[0].content.length, 1);
   assert.equal(out[0].content[0].type, 'text');
   assert.match(out[0].content[0].text, /2160x3840/);
@@ -151,17 +149,17 @@ test('large JPEG portrait CU screenshot via computer_act is dropped', () => {
   assert.equal(out[0].toolCallId, 'call-1');
 });
 
-test('bad base64 data in CU results is preserved fail-open', () => {
+test('bad base64 data in CU results is preserved fail-open', async () => {
   const msg = cuResult({
     parts: [{ type: 'image', data: '!!!not-base64!!!', mimeType: 'image/png' }],
   });
-  const out = filterComputerUseImages([msg]);
+  const { messages: out } = await normalizeContextImagesWithReport([msg]);
   assert.equal(out[0], msg);
   const short = cuResult({ parts: [{ type: 'image', data: 'aGk=', mimeType: 'image/png' }] });
-  assert.equal(filterComputerUseImages([short])[0], short);
+  assert.equal((await normalizeContextImagesWithReport([short])).messages[0], short);
 });
 
-test('non-CU images are never touched, even when oversized', () => {
+test('oversized non-CU images use attachment resizing, not CU removal', async () => {
   const big = pngBase64(3840, 2160);
   const userMsg = {
     role: 'user',
@@ -176,15 +174,21 @@ test('non-CU images are never touched, even when oversized', () => {
     isError: false,
     timestamp: 2,
   };
-  const out = filterComputerUseImages([userMsg, otherTool]);
-  assert.equal(out[0], userMsg);
-  assert.equal(out[1], otherTool);
+  const before = JSON.stringify([userMsg, otherTool]);
+  const resized = pngBase64(1920, 1080);
+  const report = await normalizeContextImagesWithReport([userMsg, otherTool], {
+    resizeImage: async () => ({ data: resized, mimeType: 'image/png' }),
+  });
+  assert.equal(report.resized, 2);
+  assert.equal(report.dropped, 0);
+  for (const message of report.messages) assert.equal(message.content[0].data, resized);
+  assert.equal(JSON.stringify([userMsg, otherTool]), before);
   assert.equal(isComputerUseToolResult(userMsg), false);
   assert.equal(isComputerUseToolResult(otherTool), false);
   assert.equal(isComputerUseToolResult(cuResult({ parts: [] })), true);
 });
 
-test('mixed and empty CU content keeps result semantics', () => {
+test('mixed and empty CU content keeps result semantics', async () => {
   const big = jpegBase64(3000, 100);
   const small = jpegBase64(100, 100);
   const msg = cuResult({
@@ -194,18 +198,18 @@ test('mixed and empty CU content keeps result semantics', () => {
       { type: 'text', text: '{"executed":1}' },
     ],
   });
-  const out = filterComputerUseImages([msg]);
+  const { messages: out } = await normalizeContextImagesWithReport([msg]);
   assert.equal(out[0].content[0].type, 'text');
   assert.equal(out[0].content[1].type, 'image');
   assert.equal(out[0].content[1].data, small);
   assert.equal(out[0].content[2].type, 'text');
   const empty = cuResult({ parts: [{ type: 'text', text: 'ok' }] });
-  assert.equal(filterComputerUseImages([empty])[0], empty);
-  assert.deepEqual(filterComputerUseImages([]), []);
-  assert.deepEqual(filterComputerUseImages(null), null);
+  assert.equal((await normalizeContextImagesWithReport([empty])).messages[0], empty);
+  assert.deepEqual((await normalizeContextImagesWithReport([])).messages, []);
+  assert.deepEqual((await normalizeContextImagesWithReport(null)).messages, null);
 });
 
-test('multi-MB irrelevant tail is never scanned', () => {
+test('multi-MB irrelevant tail is never scanned', async () => {
   const tail = 'A'.repeat(3 * 1024 * 1024); // 3M valid-alphabet chars, never decoded
   const big = pngBase64(3840, 2160) + tail;
   assert.deepEqual(getImageDimensions({ data: big }), {
@@ -216,16 +220,16 @@ test('multi-MB irrelevant tail is never scanned', () => {
   const msg = cuResult({
     parts: [{ type: 'image', data: big, mimeType: 'image/png' }],
   });
-  const out = filterComputerUseImages([msg]);
+  const { messages: out } = await normalizeContextImagesWithReport([msg]);
   assert.equal(out[0].content[0].type, 'text');
   assert.match(out[0].content[0].text, /3840x2160/);
   const small = cuResult({
     parts: [{ type: 'image', data: pngBase64(640, 480) + tail, mimeType: 'image/png' }],
   });
-  assert.equal(filterComputerUseImages([small])[0], small);
+  assert.equal((await normalizeContextImagesWithReport([small])).messages[0], small);
 });
 
-test('JPEG with APP/COM/DQT headers before SOF parses within bounds', () => {
+test('JPEG with APP/COM/DQT headers before SOF parses within bounds', async () => {
   const bytes = [
     0xff,
     0xd8, // SOI
@@ -272,7 +276,7 @@ test('JPEG with APP/COM/DQT headers before SOF parses within bounds', () => {
     toolName: 'computer_act',
     parts: [{ type: 'image', data, mimeType: 'image/jpeg' }],
   });
-  assert.equal(filterComputerUseImages([msg])[0].content[0].type, 'text');
+  assert.equal((await normalizeContextImagesWithReport([msg])).messages[0].content[0].type, 'text');
 });
 
 test('whitespace-interspersed base64 prefix still parses', () => {

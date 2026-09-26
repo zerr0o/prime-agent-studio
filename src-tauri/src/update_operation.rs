@@ -209,7 +209,7 @@ fn is_symlink(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> bool {
+pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> bool {
     if is_symlink(path) {
         return false;
     }

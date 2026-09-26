@@ -3997,6 +3997,10 @@ export const messages = {
       other: '{count} errors',
     },
   },
+  'count.events': {
+    fr: { one: '{count} événement', other: '{count} événements' },
+    en: { one: '{count} event', other: '{count} events' },
+  },
   'count.reflections': {
     fr: {
       one: '{count} réflexion',

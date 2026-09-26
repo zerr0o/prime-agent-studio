@@ -4,6 +4,15 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.1.1
+
+- **Conversation** : messages inter-agents et notifications techniques regroupés dans « Activité de l’agent », sans modifier l’historique. Les réponses et interactions restent accessibles ; les aperçus de réflexion terminés sont masqués.
+
+- **Maintenance** : suppression des helpers inutilisés du noyau, du bridge Computer Use et des composants UI ; détection du bridge et confirmation de redémarrage partagées, sans changer les règles d’autorisation ou d’annulation.
+- **Implémentations partagées** : réutilisation de la détection des configurations JSONC, de la préparation des lancements PowerShell et du writer atomique Rust existant, avec conservation des validations et des erreurs.
+- **Tests de sécurité des images** : retrait des filtres obsolètes et tests directs du normaliseur de contexte actif. Les limites des captures Computer Use et l’historique en entrée restent inchangés.
+- **Couverture de régression** : vérifications renforcées de l’annulation du redémarrage et du nettoyage après échec d’écriture atomique. Aucune nouvelle dépendance.
+
 ## 4.1.0 (pre-release)
 
 - **Prime Agent 0.9.6** : préparation du moteur épinglé avec un environnement Python géré distinct. Les contrôles exigent les nouvelles méthodes de découverte MCP. Le correctif natif des commandes en arrière-plan est reconnu sans réécrire son implémentation.

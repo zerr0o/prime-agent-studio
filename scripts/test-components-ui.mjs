@@ -105,7 +105,7 @@ try {
                 restartReason: null,
                 operation: null,
               };
-            if (name === 'desktop_update_operation') return { operation: null, log: [] };
+            if (name === 'desktop_update_operation') return { operation: window.testOperation || null, log: [] };
             if (name === 'desktop_update_cancel') return { operation: null, log: [] };
             if (name === 'desktop_server_restart') {
               window.restartCalls.push({ args });
@@ -200,7 +200,10 @@ try {
     await page.screenshot({ path: `.local/components-ui/restart-confirm-${locale}.png`, fullPage: true });
     await page.locator('#restart-proceed').click();
     await expect.poll(() => page.evaluate(() => window.restartCalls.length)).toBe(1);
-    assert.equal(await page.evaluate(() => window.restartCalls[0].args.force), true);
+    assert.deepEqual(await page.evaluate(() => window.restartCalls[0].args), {
+      force: true,
+      cancelCurrent: false,
+    });
     await expect(page.locator('#server-agents')).toContainText(fr ? 'utilise maintenant' : 'now using');
     await expect(page.locator('#migration-dialog')).toHaveCount(0);
     await expect(page.locator('#components-apply')).toHaveCount(0);
@@ -208,6 +211,28 @@ try {
     await page.setViewportSize({ width: 390, height: 850 });
     await page.locator('#components-toggle').click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    // Independent restart scenario: fresh shell after the preceding simulated restart.
+    await page.goto(url + '/?settings');
+    await expect(page.locator('#server-restart')).toBeEnabled();
+    // The same dialog must not cancel an operation until explicitly accepted.
+    await page.evaluate(() => {
+      window.runs = 0;
+      window.testOperation = { stage: 'download', terminal: false, cancellable: true };
+    });
+    await page.locator('#server-restart').click();
+    await expect(page.locator('#restart-cancel')).toBeFocused();
+    await page.locator('#restart-cancel').click();
+    await expect(page.locator('#restart-confirm')).not.toBeVisible();
+    assert.equal(await page.evaluate(() => window.restartCalls.length), 0);
+    assert.equal(await page.evaluate(() => window.calls.some((c) => c.name === 'desktop_update_cancel')), false);
+    await page.locator('#server-restart').click();
+    await page.locator('#restart-proceed').click();
+    await expect.poll(() => page.evaluate(() => window.restartCalls.length)).toBe(1);
+    assert.deepEqual(await page.evaluate(() => window.restartCalls[0].args), {
+      force: false,
+      cancelCurrent: true,
+    });
+    await page.evaluate(() => { window.testOperation = null; });
     await page.goto(url + '/?background');
     await expect
       .poll(() => page.evaluate(() => window.calls.some((c) => c.name === 'desktop_start')))

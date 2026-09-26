@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { stripJsonComments } from '../lib/jsonc.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,6 @@ import {
   ensureMetaProvider,
   hasUserMetaConfig,
   isMetaPlaceholderStatus,
-  stripMetaJsonComments,
 } from '../lib/meta-provider.mjs';
 import { MODEL_APIS } from '../lib/model-config.mjs';
 import studioMetaProvider from '../runtime/studio-meta-provider-extension.mjs';
@@ -267,7 +267,7 @@ test('user override detection is JSONC-aware and fails closed', async (t) => {
   // Malformed content fails closed: never let canonical clobber the unknown.
   await writeFile(file, '{ "providers": {');
   assert.equal(hasUserMetaConfig(file), true);
-  assert.equal(stripMetaJsonComments('// c\n{"a":1,}').includes('//'), false);
+  assert.equal(stripJsonComments('// c\n{"a":1,}').includes('//'), false);
 });
 
 async function loadNativeRegistry(t, agentHome) {
