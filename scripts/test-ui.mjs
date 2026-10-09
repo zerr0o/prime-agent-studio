@@ -352,10 +352,7 @@ const url = `http://127.0.0.1:${app.server.address().port}`;
 let browser;
 const report = [];
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await launchStudioBrowser();
   const context = await browser.newContext({
     locale: 'fr-FR',
     viewport: { width: 1512, height: 982 },

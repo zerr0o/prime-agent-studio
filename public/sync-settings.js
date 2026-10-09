@@ -124,25 +124,6 @@ export function patchSyncSession(id, syncState) {
   notifyShared();
 }
 
-// Badge for a project folder. Returns 'synced', 'pending', 'syncing',
-// 'error' or null (no badge: sync off, unconfigured, opted out, missing).
-export function projectSyncState(project, snapshot = sharedData) {
-  if (!snapshot?.configured) return null;
-  if (!project || project.sync === false) return null;
-  if (project.exists === false) return null;
-  if (snapshot.running) return 'syncing';
-  const last = snapshot.lastSync;
-  if (last && last.ok === false) return 'error';
-  const map = snapshot.sessions || {};
-  for (const s of project.sessions || []) {
-    if (!s?.id) continue;
-    const st = map[s.id];
-    if (st === 'pending') return 'pending';
-    if (st !== 'synced') return 'pending';
-  }
-  return 'synced';
-}
-
 export function createSyncSettings({ api, getContext, toast }) {
   const $ = (id) => document.getElementById(id);
   const form = $('sync-form');

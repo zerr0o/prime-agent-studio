@@ -61,10 +61,7 @@ try {
   expect(opened).toEqual([]);
   expect((await post('')).status).toBe(200);
   expect(opened.pop()).toBe(await realpath(cwd));
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 960 },
     locale: 'fr-FR',

@@ -150,10 +150,7 @@ async function setLanguage(value) {
 }
 
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));

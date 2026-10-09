@@ -149,4 +149,3 @@ const words = {
 export function rt(key) {
   return words[key]?.[getLanguage() === 'fr' ? 0 : 1] || key;
 }
-export { words as roadmapTranslations };

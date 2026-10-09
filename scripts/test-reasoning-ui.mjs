@@ -113,10 +113,7 @@ const app = createApp({
 });
 await new Promise((done) => app.server.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${app.server.address().port}`;
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-  headless: true,
-});
+const browser = await launchStudioBrowser();
 const context = await browser.newContext({
   locale: 'fr-FR',
   viewport: { width: 1440, height: 1000 },

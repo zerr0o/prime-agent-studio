@@ -120,7 +120,7 @@ async function loadedPanel(page) {
 }
 
 try {
-  browser = await launchStudioBrowser({ channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome', headless: true });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const page = track(await browser.newPage({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } }));
   await page.goto(url);
   await expect(page.locator('#connection-label')).toContainText('connect', { timeout: 15000 });

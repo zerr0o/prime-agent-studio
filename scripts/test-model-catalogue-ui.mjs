@@ -9,10 +9,7 @@ const errors = [],
   checks = [];
 let browser;
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const page = await browser.newPage({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } });
   page.on('pageerror', (error) => errors.push(error.message));
   let reads = 0,

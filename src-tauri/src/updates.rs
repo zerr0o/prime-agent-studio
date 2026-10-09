@@ -27,6 +27,7 @@ use update_operation::{
     compute_percent as op_compute_percent, initial_stage_for_kind as op_initial_stage,
     is_valid_kind as op_is_valid, load_snapshot as op_load, normalize_stage as op_norm_stage,
     now_ms as op_now_ms, persist_snapshot as op_persist, atomic_write_bytes as op_atomic_write,
+    is_symlink as op_is_symlink,
     sanitize_error as op_sanitize_err,
     sanitize_log_message as op_sanitize_log, normalize_stale_persisted as op_normalize_stale,
     OperationSnapshot,
@@ -1262,19 +1263,6 @@ fn update_lock_path(root: &Path) -> PathBuf {
     root.join("data").join("update-request.lock")
 }
 
-fn is_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path)
-        .map(|meta| meta.file_type().is_symlink())
-        .unwrap_or(false)
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 /// Cross-process mutex mirroring `lib/remote-updates.mjs` (`{pid, createdAt}`
 /// created with O_EXCL). Deleted on drop only when the content is still ours.
 struct UpdateLockGuard {
@@ -1300,7 +1288,7 @@ enum LockClaim {
 }
 
 fn lock_token() -> String {
-    serde_json::json!({"pid": std::process::id(), "createdAt": now_ms()}).to_string()
+    serde_json::json!({"pid": std::process::id(), "createdAt": op_now_ms()}).to_string()
 }
 
 fn try_create_lock(root: &Path) -> LockClaim {
@@ -1310,7 +1298,7 @@ fn try_create_lock(root: &Path) -> LockClaim {
             return LockClaim::Fatal;
         }
     }
-    if is_symlink(&path) {
+    if op_is_symlink(&path) {
         return LockClaim::Busy;
     }
     let mut options = std::fs::OpenOptions::new();
@@ -1342,7 +1330,7 @@ fn try_create_lock(root: &Path) -> LockClaim {
 /// else is contention, never a takeover.
 fn update_lock_is_stale(root: &Path) -> bool {
     let path = update_lock_path(root);
-    if is_symlink(&path) {
+    if op_is_symlink(&path) {
         return false;
     }
     let content = std::fs::read_to_string(&path).ok();
@@ -1351,7 +1339,7 @@ fn update_lock_is_stale(root: &Path) -> bool {
         .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
         .and_then(|owner| owner.get("createdAt").and_then(|v| v.as_u64()));
     if let Some(created_at) = created_at {
-        return now_ms().saturating_sub(created_at) > LOCK_STALE_AFTER_MS;
+        return op_now_ms().saturating_sub(created_at) > LOCK_STALE_AFTER_MS;
     }
     std::fs::metadata(&path)
         .and_then(|meta| meta.modified())
@@ -1417,7 +1405,7 @@ fn clamp_detail(detail: &str) -> String {
 
 fn read_intent_file(root: &Path) -> Option<serde_json::Value> {
     let path = intent_path(root);
-    if is_symlink(&path) {
+    if op_is_symlink(&path) {
         return None;
     }
     let bytes = std::fs::read(path).ok()?;

@@ -98,10 +98,7 @@ async function assertFits() {
 }
 
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   for (const width of [1440, 390, 320]) {
     const context = await openPage({ width });
     const button = page.locator('#open-project-folder');

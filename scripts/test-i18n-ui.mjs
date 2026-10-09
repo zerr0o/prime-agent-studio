@@ -120,10 +120,7 @@ const gateway = createLanGateway({
 });
 await new Promise((resolve) => gateway.listen(0, '127.0.0.1', resolve));
 const remoteUrl = `http://127.0.0.1:${gateway.address().port}`;
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-  headless: true,
-});
+const browser = await launchStudioBrowser();
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();

@@ -51,10 +51,7 @@ const wtCwd = join(fixture.root, 'worktree-task');
 
 let browser;
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));

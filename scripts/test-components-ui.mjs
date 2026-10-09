@@ -23,10 +23,7 @@ const server = createServer(async (req, res) => {
   res.end(await readFile(join('desktop', name)));
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 await mkdir('.local/components-ui', { recursive: true });
 const READY_COMPONENTS = {
   engine: {

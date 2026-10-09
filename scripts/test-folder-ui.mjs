@@ -120,10 +120,7 @@ async function completeNative(page, index, { value = null, error } = {}) {
 const nativeCalls = (page) => page.evaluate(() => window.__folderPickerFixture.calls);
 
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
 
   const page = await newPage();
   await expect(page.locator('#project-browse')).toBeVisible();

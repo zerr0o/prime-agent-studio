@@ -6,10 +6,7 @@ import { preferencesFixture } from './preview-preferences.mjs';
 const fixture = await preferencesFixture();
 let browser;
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await launchStudioBrowser();
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage(),
     errors = [];

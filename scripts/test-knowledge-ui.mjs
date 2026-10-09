@@ -11,10 +11,7 @@ const createApplication = packaged
   ? (await import(pathToFileURL(resolve(packaged, 'server.mjs')))).createApp
   : undefined;
 const fixture = await createKnowledgeFixture({ longHistory: true, createApplication });
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [],
   checks = [];
 let gateway;

@@ -2,7 +2,7 @@ import { readFile, access } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve } from 'node:path';
-import { probeHealth, isDirectInvocation, readJson } from './launcher-common.mjs';
+import { probeHealth, isDirectInvocation, readJson, sleep } from './launcher-common.mjs';
 import { stopServer } from './stop-server.mjs';
 import { startDesktop } from './desktop-start.mjs';
 import {
@@ -21,10 +21,6 @@ async function activity(port) {
   const { runs } = await response.json();
   if (!Array.isArray(runs)) throw new Error('server_status_failed');
   return runs.filter((run) => ['running', 'stopping', 'queued'].includes(run.status)).length;
-}
-
-function sleep(ms) {
-  return new Promise((done) => setTimeout(done, ms));
 }
 
 function makeEmitter(options, deps) {

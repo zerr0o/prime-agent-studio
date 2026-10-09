@@ -5,10 +5,7 @@ import { preferencesFixture } from './preview-preferences.mjs';
 const f = await preferencesFixture();
 let browser;
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await launchStudioBrowser();
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1280, height: 860 } });
   await context.addInitScript(() =>
     Object.defineProperty(window, '__PRIME_STUDIO_DESKTOP__', { value: true }),

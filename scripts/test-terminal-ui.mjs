@@ -58,10 +58,7 @@ async function waitForOpened(count) {
 }
 
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
 
   const page = await newPage();
   await page.locator('.project-header', { hasText: 'Annexe' }).locator('.project-more').click();

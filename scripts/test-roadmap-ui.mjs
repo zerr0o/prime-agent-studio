@@ -6,10 +6,7 @@ import { resolve } from 'node:path';
 import { createRoadmapFixture } from './fixtures/roadmap.mjs';
 
 const fixture = await createRoadmapFixture();
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [],
   checks = [],
   out = resolve('test-results/roadmap');

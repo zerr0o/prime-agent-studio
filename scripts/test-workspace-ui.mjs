@@ -132,10 +132,7 @@ async function boxInside(selector, width, height) {
   return box;
 }
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await launchStudioBrowser();
   page = await browser.newPage({
     locale: 'fr-FR',
     viewport: { width: 390, height: 844 },

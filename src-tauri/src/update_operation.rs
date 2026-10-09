@@ -203,7 +203,7 @@ pub fn make_id(now: u64, counter: u64) -> String {
     format!("upd-{now}-{counter}")
 }
 
-fn is_symlink(path: &Path) -> bool {
+pub(crate) fn is_symlink(path: &Path) -> bool {
     std::fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)

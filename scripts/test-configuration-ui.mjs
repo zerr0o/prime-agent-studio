@@ -4,10 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { createRoadmapFixture } from './fixtures/roadmap.mjs';
 
 const fixture = await createRoadmapFixture();
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [];
 await mkdir('test-results/configuration', { recursive: true });
 try {

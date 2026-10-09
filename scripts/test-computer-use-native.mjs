@@ -8,13 +8,14 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, isAbsolute, sep, dirname } from 'node:path';
-import { deflateSync } from 'node:zlib';
+import { join, resolve, dirname } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { open, realpath, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createAgentRuntime, discoverCli, agentEnvironment } from '../lib/agent.mjs';
-import { createStore, validId, cwdKey } from '../lib/store.mjs';
+import { createStore } from '../lib/store.mjs';
+import { createRoadmapCallerResolver } from '../lib/roadmap-bridge.mjs';
 import { createComputerUseManager } from '../lib/computer-use.mjs';
 import { createComputerUseBridge, toPhysicalCoordinates } from '../lib/computer-use-bridge.mjs';
 
@@ -106,23 +107,6 @@ function imageEvidence(messages, pngPrefix) {
 }
 
 // Minimal deterministic PNG writer (truecolor, no external deps).
-const CRC_TABLE = (() => {
-  const table = new Int32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c;
-  }
-  return table;
-})();
-
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (let index = 0; index < buffer.length; index += 1)
-    crc = CRC_TABLE[(crc ^ buffer[index]) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
 function pngChunk(type, data) {
   const length = Buffer.alloc(4);
   length.writeUInt32BE(data.length, 0);
@@ -310,120 +294,6 @@ function createFakeDesktopDriver({ pngBase64 }) {
   };
 }
 
-async function readSessionHeader(file, roots) {
-  const denied = () =>
-    Object.assign(new Error('Test caller is not an active native session.'), { status: 403 });
-  if (typeof file !== 'string' || !isAbsolute(file) || file.length > 32768) throw denied();
-  const actual = await realpath(file).catch(() => null);
-  if (!actual) throw denied();
-  const key = (value) => (process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value));
-  if (key(actual) !== key(file)) throw denied();
-  if (!roots.some((root) => key(actual).startsWith(key(root) + sep))) throw denied();
-  const handle = await open(actual, 'r');
-  try {
-    const bytes = Buffer.alloc(65536);
-    const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-    const end = bytes.subarray(0, bytesRead).indexOf(10);
-    if (end < 0) throw denied();
-    const header = JSON.parse(bytes.subarray(0, end).toString('utf8'));
-    if (header.type !== 'session' || !validId(header.id) || !isAbsolute(header.cwd || '')) throw denied();
-    return { ...header, file: actual };
-  } finally {
-    await handle.close();
-  }
-}
-
-function createTestCallerResolver({ getRuns, store, agentHome, sessionDir }) {
-  let ledger;
-  const liveEdges = async () => {
-    if (!ledger) {
-      const { discoverCli: discover } = await import('../lib/agent.mjs');
-      const cli = discover();
-      if (!cli || !cli.packageDir) throw new Error('Test caller needs the installed engine package.');
-      const { RlmSpawnLedger } = await import(
-        (await import('node:url')).pathToFileURL(
-          (await import('node:path')).join(cli.packageDir, 'dist/modes/daemon/rlm-ledger.js'),
-        ).href
-      );
-      ledger = new RlmSpawnLedger(agentHome, sessionDir);
-    }
-    return ledger.liveEdges();
-  };
-  const denied = () =>
-    Object.assign(new Error('This agent no longer owns an active Studio session.'), { status: 403 });
-  return async (identity) => {
-    if (
-      !identity ||
-      typeof identity !== 'object' ||
-      !validId(identity.sessionId) ||
-      !isAbsolute(identity.cwd || '')
-    )
-      throw denied();
-    const project = await store.findProject(identity.cwd);
-    const roots = [sessionDir, join(agentHome, 'session-artifacts')];
-    const own = await readSessionHeader(identity.sessionFile, roots).catch(() => {
-      throw denied();
-    });
-    if (own.id !== identity.sessionId) throw denied();
-    if (cwdKey(own.cwd) !== cwdKey(identity.cwd)) throw denied();
-    if (cwdKey(project.cwd) !== cwdKey(own.cwd)) throw denied();
-    const matching = () =>
-      getRuns().filter((run) => run && run.status === 'running' && cwdKey(run.cwd) === cwdKey(own.cwd));
-    const direct = matching().find((run) => run.sessionId === own.id);
-    if (direct)
-      return {
-        cwd: project.cwd,
-        sessionId: own.id,
-        rootSessionId: own.id,
-        ownerId: direct.id,
-        name: 'Prime Agent',
-      };
-    const edges = await liveEdges().catch(() => []);
-    const byChild = new Map();
-    for (const edge of edges) {
-      if (
-        !edge.deleted &&
-        validId(edge.childId) &&
-        isAbsolute(edge.child || '') &&
-        isAbsolute(edge.parent || '')
-      ) {
-        const key = cwdKey(edge.child);
-        if (byChild.has(key)) throw denied();
-        byChild.set(key, edge);
-      }
-    }
-    let current = own;
-    let ownEdge = null;
-    let parentSessionId = null;
-    const visited = new Set();
-    for (let depth = 0; depth < 32; depth += 1) {
-      const key = cwdKey(current.file);
-      if (visited.has(key)) throw denied();
-      visited.add(key);
-      const edge = byChild.get(key);
-      if (!edge) throw denied();
-      if (!ownEdge) ownEdge = edge;
-      current = await readSessionHeader(edge.parent, roots).catch(() => {
-        throw denied();
-      });
-      if (cwdKey(current.cwd) !== cwdKey(own.cwd)) throw denied();
-      if (!parentSessionId) parentSessionId = current.id;
-      const run = matching().find((candidate) => candidate.sessionId === current.id);
-      if (run)
-        return {
-          cwd: project.cwd,
-          sessionId: own.id,
-          rootSessionId: current.id,
-          parentSessionId,
-          agentId: ownEdge.childId,
-          ownerId: run.id,
-          name: String(ownEdge.name || 'Sous-agent').slice(0, 200),
-        };
-    }
-    throw denied();
-  };
-}
-
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROOF_ROOT = resolve(join(SCRIPT_DIR, '..'));
 const COMPUTER_EXTENSION = join(SCRIPT_DIR, '..', 'runtime', 'studio-computer-use-extension.mjs');
@@ -575,7 +445,7 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
   };
   const bridge = createComputerUseBridge({
     manager,
-    resolveCaller: createTestCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
+    resolveCaller: createRoadmapCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
     isOwnerActive: (id) => run.id === id && run.status === 'running',
   });
   await bridge.ready;

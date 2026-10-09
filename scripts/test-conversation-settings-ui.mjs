@@ -124,10 +124,7 @@ async function select(page, id) {
   await expect(page.locator('#thinking-select')).toBeEnabled();
 }
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   const page = await pageFor();
   await expect(page.locator('#model-select')).toHaveValue('fixture/a');
   await expect(page.locator('#thinking-select')).toHaveValue('high');

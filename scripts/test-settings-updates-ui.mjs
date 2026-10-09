@@ -12,10 +12,7 @@ const TITLES = {
 };
 
 const fixture = await createStabilityFixture();
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const calls = (page, command) =>
   page.evaluate(
     (command) => window.updateFixture.calls.filter((c) => c.command === command),

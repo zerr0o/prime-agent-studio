@@ -57,10 +57,7 @@ const remote = `http://127.0.0.1:${gateway.address().port}`;
 let browser;
 const errors = [];
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'msedge',
-    headless: true,
-  });
+  browser = await launchStudioBrowser();
   const page = await browser.newPage({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } });
   page.setDefaultTimeout(15000);
   page.on('pageerror', (e) => errors.push(e.message));

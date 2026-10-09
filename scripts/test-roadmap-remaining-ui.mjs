@@ -5,10 +5,7 @@ import { join, resolve } from 'node:path';
 import { createRoadmapFixture } from './fixtures/roadmap.mjs';
 
 const fixture = await createRoadmapFixture();
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [];
 const out = resolve('test-results/roadmap-remaining');
 await mkdir(out, { recursive: true });

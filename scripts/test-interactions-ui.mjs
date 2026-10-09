@@ -16,10 +16,7 @@ const gateway = createLanGateway({
 });
 await new Promise((resolve) => gateway.listen(0, '127.0.0.1', resolve));
 const remote = `http://127.0.0.1:${gateway.address().port}`;
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [];
 const desktop = await browser.newContext({
   viewport: { width: 1500, height: 1050 },

@@ -15,12 +15,12 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, isAbsolute, sep, dirname } from 'node:path';
-import { deflateSync } from 'node:zlib';
-import { open, realpath } from 'node:fs/promises';
+import { join, resolve, dirname } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createAgentRuntime, discoverCli, agentEnvironment } from '../lib/agent.mjs';
-import { createStore, validId, cwdKey } from '../lib/store.mjs';
+import { createStore } from '../lib/store.mjs';
+import { createRoadmapCallerResolver } from '../lib/roadmap-bridge.mjs';
 import { createComputerUseManager } from '../lib/computer-use.mjs';
 import { createComputerUseBridge, toPhysicalCoordinates } from '../lib/computer-use-bridge.mjs';
 
@@ -83,20 +83,6 @@ function imageEvidence(messages, prefix) {
   return { hasBase64, hasImagePart, partTypes: [...partTypes] };
 }
 // Minimal PNG writer for small native fixture.
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c;
-  }
-  return t;
-})();
-function crc32(b) {
-  let c = 0xffffffff;
-  for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
 function pngChunk(type, data) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(data.length, 0);
@@ -381,118 +367,6 @@ function createFakeCuaDriver({ smallPngBase64 }) {
     },
   };
 }
-async function readSessionHeader(file, roots) {
-  const denied = () =>
-    Object.assign(new Error('Test caller is not an active native session.'), { status: 403 });
-  if (typeof file !== 'string' || !isAbsolute(file) || file.length > 32768) throw denied();
-  const actual = await realpath(file).catch(() => null);
-  if (!actual) throw denied();
-  const key = (v) => (process.platform === 'win32' ? resolve(v).toLowerCase() : resolve(v));
-  if (key(actual) !== key(file)) throw denied();
-  if (!roots.some((r) => key(actual).startsWith(key(r) + sep))) throw denied();
-  const handle = await open(actual, 'r');
-  try {
-    const bytes = Buffer.alloc(65536);
-    const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-    const end = bytes.subarray(0, bytesRead).indexOf(10);
-    if (end < 0) throw denied();
-    const header = JSON.parse(bytes.subarray(0, end).toString('utf8'));
-    if (header.type !== 'session' || !validId(header.id) || !isAbsolute(header.cwd || '')) throw denied();
-    return { ...header, file: actual };
-  } finally {
-    await handle.close();
-  }
-}
-function createTestCallerResolver({ getRuns, store, agentHome, sessionDir }) {
-  let ledger;
-  const liveEdges = async () => {
-    if (!ledger) {
-      const { discoverCli: discover } = await import('../lib/agent.mjs');
-      const cli = discover();
-      if (!cli || !cli.packageDir) throw new Error('Test caller needs the installed engine package.');
-      const { RlmSpawnLedger } = await import(
-        (await import('node:url')).pathToFileURL(
-          (await import('node:path')).join(cli.packageDir, 'dist/modes/daemon/rlm-ledger.js'),
-        ).href
-      );
-      ledger = new RlmSpawnLedger(agentHome, sessionDir);
-    }
-    return ledger.liveEdges();
-  };
-  const denied = () =>
-    Object.assign(new Error('This agent no longer owns an active Studio session.'), { status: 403 });
-  return async (identity) => {
-    if (
-      !identity ||
-      typeof identity !== 'object' ||
-      !validId(identity.sessionId) ||
-      !isAbsolute(identity.cwd || '')
-    )
-      throw denied();
-    const project = await store.findProject(identity.cwd);
-    const roots = [sessionDir, join(agentHome, 'session-artifacts')];
-    const own = await readSessionHeader(identity.sessionFile, roots).catch(() => {
-      throw denied();
-    });
-    if (own.id !== identity.sessionId) throw denied();
-    if (cwdKey(own.cwd) !== cwdKey(identity.cwd)) throw denied();
-    if (cwdKey(project.cwd) !== cwdKey(own.cwd)) throw denied();
-    const matching = () =>
-      getRuns().filter((r) => r && r.status === 'running' && cwdKey(r.cwd) === cwdKey(own.cwd));
-    const direct = matching().find((r) => r.sessionId === own.id);
-    if (direct)
-      return {
-        cwd: project.cwd,
-        sessionId: own.id,
-        rootSessionId: own.id,
-        ownerId: direct.id,
-        name: 'Prime Agent',
-      };
-    const edges = await liveEdges().catch(() => []);
-    const byChild = new Map();
-    for (const edge of edges) {
-      if (
-        !edge.deleted &&
-        validId(edge.childId) &&
-        isAbsolute(edge.child || '') &&
-        isAbsolute(edge.parent || '')
-      ) {
-        const k = cwdKey(edge.child);
-        if (byChild.has(k)) throw denied();
-        byChild.set(k, edge);
-      }
-    }
-    let current = own;
-    let ownEdge = null;
-    let parentSessionId = null;
-    const visited = new Set();
-    for (let d = 0; d < 32; d++) {
-      const k = cwdKey(current.file);
-      if (visited.has(k)) throw denied();
-      visited.add(k);
-      const edge = byChild.get(k);
-      if (!edge) throw denied();
-      if (!ownEdge) ownEdge = edge;
-      current = await readSessionHeader(edge.parent, roots).catch(() => {
-        throw denied();
-      });
-      if (cwdKey(current.cwd) !== cwdKey(own.cwd)) throw denied();
-      if (!parentSessionId) parentSessionId = current.id;
-      const run = matching().find((c) => c.sessionId === current.id);
-      if (run)
-        return {
-          cwd: project.cwd,
-          sessionId: own.id,
-          rootSessionId: current.id,
-          parentSessionId,
-          agentId: ownEdge.childId,
-          ownerId: run.id,
-          name: String(ownEdge.name || 'Sous-agent').slice(0, 200),
-        };
-    }
-    throw denied();
-  };
-}
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROOF_ROOT = resolve(join(SCRIPT_DIR, '..'));
 function sanitizeChildNodeOptions(value, root) {
@@ -546,7 +420,7 @@ async function runHistoryCase({ pngBase64, pngPrefix, resultsDir }) {
   const manager = createComputerUseManager({ createDriver, isSupported: true });
   const bridge = createComputerUseBridge({
     manager,
-    resolveCaller: createTestCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
+    resolveCaller: createRoadmapCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
     isOwnerActive: (id) => run.id === id && run.status === 'running',
   });
   await bridge.ready;
@@ -1007,7 +881,7 @@ async function runCuaCase({ resultsDir }) {
   });
   const bridge = createComputerUseBridge({
     manager,
-    resolveCaller: createTestCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
+    resolveCaller: createRoadmapCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
     isOwnerActive: (id) => run.id === id && run.status === 'running',
   });
   await bridge.ready;

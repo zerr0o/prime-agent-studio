@@ -4,6 +4,15 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.2.1-beta.1
+
+Maintenance beta based on 4.2.0. No new user-facing feature or API change.
+
+- **Less duplicate code**: Computer Use integration tests now use the production caller resolver; JSONC parsing, desktop polling and Rust updater helpers reuse their existing implementations.
+- **Standard CRC32**: archive and image fixtures use Node.js CRC32 instead of maintaining separate copies. A regression test covers stored and compressed archives and rejects damaged payloads.
+- **Frontend cleanup**: removed unused sync-status code, an unused import and an unused translation export.
+- **Simpler maintenance**: UI tests keep the same browser overrides and fallbacks with less setup code. One release workflow now handles both new builds and draft rebuilds.
+
 ## 4.2.0
 
 Stable release. Includes every 4.1.5 beta below, plus:

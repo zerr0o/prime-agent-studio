@@ -70,10 +70,7 @@ for (let index = 0; index < 5; index++) {
     steps: [{ text: 'Conserver un résultat vérifiable' }],
   });
 }
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const pages = [];
 async function open({ locale = 'fr-FR', width = 1600, mobile = false, readOnly = false } = {}) {
   const page = await browser.newPage({

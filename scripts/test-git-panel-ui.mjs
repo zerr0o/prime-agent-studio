@@ -160,10 +160,7 @@ async function openFilesTab({ width, language, readOnly = false }) {
 }
 
 try {
-  browser = await launchStudioBrowser({
-    channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-    headless: true,
-  });
+  browser = await launchStudioBrowser({ channel: 'chrome' });
   // French desktop: full flow on 1440 px.
   {
     const { context, page } = await openFilesTab({ width: 1440 });

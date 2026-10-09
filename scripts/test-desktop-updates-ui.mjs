@@ -25,10 +25,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 await mkdir('test-results', { recursive: true });
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const VIEWPORTS = {
   desktop: { width: 1440, height: 960 },
   mobile: { width: 390, height: 844 },

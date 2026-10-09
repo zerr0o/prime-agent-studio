@@ -60,10 +60,7 @@ const roGateway = createLanGateway({
 await new Promise((done) => roGateway.listen(0, '127.0.0.1', done));
 const fullUrl = `http://127.0.0.1:${fullGateway.address().port}`;
 const roUrl = `http://127.0.0.1:${roGateway.address().port}`;
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 const errors = [];
 async function login(page, url) {
   page.on('pageerror', (error) => errors.push(error.message));

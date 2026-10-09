@@ -59,7 +59,6 @@ import {
   openDesktopComponents,
 } from './desktop-components-action.js';
 import {
-  normalizeComponentsResult,
   needsComponentsUpdate,
   readComponentsStatus,
 } from './desktop-components.js';

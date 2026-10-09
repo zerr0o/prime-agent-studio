@@ -6,10 +6,7 @@ import { launchStudioBrowser } from './fixtures/browser.mjs';
 import { createStabilityFixture } from './fixtures/session-stability.mjs';
 import { mockDesktopUpdates } from './fixtures/desktop-updates.mjs';
 const fixture = await createStabilityFixture();
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 try {
   await mkdir('test-results', { recursive: true });
   for (const locale of ['fr-FR', 'en-US']) {

@@ -226,10 +226,7 @@ const gateway = createLanGateway({
 });
 await new Promise((done) => gateway.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${gateway.address().port}`;
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 let page;
 const errors = [],
   results = [];

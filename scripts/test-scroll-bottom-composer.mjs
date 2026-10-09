@@ -48,10 +48,7 @@ const fixture = {
     await rm(root, { recursive: true, force: true, maxRetries: 5 });
   },
 };
-const browser = await launchStudioBrowser({
-  channel: process.env.PRIME_STUDIO_TEST_BROWSER || 'chrome',
-  headless: true,
-});
+const browser = await launchStudioBrowser({ channel: 'chrome' });
 try {
   const page = await browser.newPage({
     viewport: { width: 390, height: 844 },

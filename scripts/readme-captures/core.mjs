@@ -20,7 +20,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync } from 'node:zlib';
+import { crc32, deflateSync } from 'node:zlib';
 import { chromium, expect } from '@playwright/test';
 import { createApp } from '../../server.mjs';
 import { createFileStore } from '../../lib/files.mjs';
@@ -43,21 +43,6 @@ const output = outputArg ? resolve(root, outputArg) : join(root, '.local', 'read
 // Original demo PNG generator (pure node, no dependency, no external asset).
 // A small abstract workspace mockup used as the demonstration attachment.
 // ---------------------------------------------------------------------------
-function crc32(buffer) {
-  let table = crc32.cache;
-  if (!table) {
-    table = new Int32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      table[n] = c;
-    }
-    crc32.cache = table;
-  }
-  let c = 0xffffffff;
-  for (let i = 0; i < buffer.length; i++) c = table[(c ^ buffer[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
 function chunk(type, data) {
   const body = Buffer.alloc(4 + data.length);
   body.write(type, 0, 'ascii');
