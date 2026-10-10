@@ -173,7 +173,13 @@ export function createRoadmap({
     try {
       const next = await api('/api/roadmap', {
         method: 'POST',
-        body: { cwd: targetCwd, action, expectedRevision: revision, ...params },
+        body: {
+          cwd: targetCwd,
+          action,
+          expectedRevision: revision,
+          ...(action === 'step.check' && getContext().sessionId ? { sessionId: getContext().sessionId } : {}),
+          ...params,
+        },
       });
       if (version === generation) {
         error = '';
@@ -688,6 +694,42 @@ export function createRoadmap({
             ),
     });
   }
+  function completionDetails(step, key) {
+    const completion = step.completion;
+    if (!step.done || !completion?.machineId) return null;
+    const stateKey = `completion:${key}`;
+    const details = node('details', 'rm-completion');
+    details.dataset.completionStep = step.id;
+    details.open = visibleDescriptions.has(stateKey);
+    const summary = node('summary', '', rt('completion'));
+    summary.dataset.rmFocus = stateKey;
+    details.append(summary);
+    const fields = node('dl');
+    fields.append(
+      node('dt', '', rt('completionMachine')),
+      node('dd', 'rm-completion-id', completion.machineId),
+    );
+    const conversation = node('dd');
+    if (completion.sessionId) {
+      const link = button(
+        sessionLabel(completion.sessionId),
+        () => openLink({ sessionId: completion.sessionId }),
+        'rm-completion-link',
+      );
+      link.title = completion.sessionId;
+      conversation.append(link, node('code', 'rm-completion-id', completion.sessionId));
+    } else conversation.textContent = rt('completionNoSession');
+    fields.append(node('dt', '', rt('destination')), conversation);
+    fields.append(
+      node('dt', '', rt('completionDate')),
+      node('dd', '', new Date(completion.completedAt).toLocaleString()),
+    );
+    details.append(fields);
+    details.addEventListener('toggle', () => {
+      details.open ? visibleDescriptions.add(stateKey) : visibleDescriptions.delete(stateKey);
+    });
+    return details;
+  }
   function renderStep(plan, step, depth, index, siblings) {
     if (showRemainingOnly && !hasRemaining(step)) return null;
     const li = node('li', 'rm-step'),
@@ -729,6 +771,8 @@ export function createRoadmap({
     const text = node('div', 'rm-step-copy');
     if (hasChildren) main.append(inlineCount(leafProgress(step.children)));
     text.append(main);
+    const completion = completionDetails(step, key);
+    if (completion) text.append(completion);
     if (step.note) text.append(description(`step:${key}`, step.note));
     text.append(activities('plan', plan.id, step.id));
     row.append(text);
@@ -1169,7 +1213,7 @@ export function createRoadmap({
     const focusKey = focus && (focus.getAttribute('aria-label') || focus.textContent);
     const stableFocus = focus?.dataset.rmFocus;
     const focusKind = focus?.tagName;
-    const openDetails = [...content.querySelectorAll('details[open]')].map((d) => ({
+    const openDetails = [...content.querySelectorAll('details[open]:not(.rm-completion)')].map((d) => ({
       plan: d.closest('[data-plan-id]')?.dataset.planId,
       label: d.querySelector('summary')?.textContent,
     }));
@@ -1235,7 +1279,7 @@ export function createRoadmap({
         rt('more'),
       ),
     );
-    for (const d of content.querySelectorAll('details'))
+    for (const d of content.querySelectorAll('details:not(.rm-completion)'))
       if (
         openDetails.some(
           (x) =>

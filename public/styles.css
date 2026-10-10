@@ -2693,10 +2693,32 @@ a.sidebar-settings {
     display: flex;
   }
   .workspace-header {
-    padding: 0 13px;
-    height: 58px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'menu crumb'
+      'actions actions';
+    column-gap: 9px;
+    row-gap: 6px;
+    height: auto;
     min-height: 58px;
-    gap: 9px;
+    padding: 6px 13px;
+    align-items: center;
+  }
+  .workspace-header > #toggle-sidebar {
+    grid-area: menu;
+  }
+  .workspace-header > .breadcrumb {
+    grid-area: crumb;
+  }
+  .workspace-header > .header-actions {
+    grid-area: actions;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+  }
+  /* Transient status badges take their own row only while syncing. */
+  .workspace-header > :not(#toggle-sidebar):not(.breadcrumb):not(.header-actions) {
+    grid-column: 1 / -1;
   }
   .breadcrumb {
     gap: 8px;
@@ -2711,9 +2733,20 @@ a.sidebar-settings {
   }
   .header-actions {
     gap: 3px;
+    flex-shrink: 1;
+    min-width: 0;
   }
   .header-actions .icon-button {
-    width: 27px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .header-actions .roadmap-button {
+    height: 32px;
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 8px;
   }
   .session-state {
     display: none;
@@ -2866,6 +2899,10 @@ a.sidebar-settings {
   }
   .control-separator {
     margin: 0 1px;
+  }
+  /* At 320 the Roadmap chip compacts to icon + progress; full name stays in aria/title. */
+  .header-actions .roadmap-label {
+    display: none;
   }
 }
 @media (max-height: 820px) and (min-width: 761px) {

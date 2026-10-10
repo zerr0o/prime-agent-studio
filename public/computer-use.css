@@ -204,7 +204,25 @@
     display: none;
   }
   .computer-use-toggle {
-    padding: 4px 7px;
+    min-height: 32px;
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  /* Narrow header: emergency stop compacts to a labelled stop square
+     (full name stays in aria-label/title for AT and tooltips). */
+  .computer-use-stop {
+    width: 32px;
+    min-height: 32px;
+    padding: 4px 0;
+    justify-content: center;
+    gap: 0;
+    border-radius: 8px;
+    font-size: 0;
+  }
+  .computer-use-stop::before {
+    content: '\25a0';
+    font-size: 12px;
+    line-height: 1;
   }
   .workspace-header {
     height: auto;

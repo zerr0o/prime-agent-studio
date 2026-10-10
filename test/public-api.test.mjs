@@ -1342,3 +1342,363 @@ test('roadmap changes converge through a shared in-memory object store without c
   );
   assert.ok(calls.put > 0 && calls.get > 0, 'the exchange used the injected store');
 });
+
+test('roadmap step completion attributes the checking Studio and caller conversation', async (t) => {
+  const f = await fixture(t);
+  const { credential, machineId, projects } = await enableApi(f);
+  const auth = bearer(credential);
+  const projectId = projectIdFor(projects, f.cwd);
+
+  const machine = await f.api('/api/v1/machine', { headers: auth });
+  assert.equal(machine.status, 200);
+  assert.equal(machine.json.machineId, machineId);
+
+  let document = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: auth })).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'init', expectedRevision: document.revision },
+      headers: auth,
+    })
+  ).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'plan.create', expectedRevision: document.revision, title: 'Deliver' },
+      headers: auth,
+    })
+  ).json.roadmap;
+  const planId = document.plans[0].id;
+  for (const text of ['First task', 'Second task']) {
+    document = (
+      await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+        method: 'POST',
+        body: { action: 'step.add', expectedRevision: document.revision, planId, text },
+        headers: auth,
+      })
+    ).json.roadmap;
+  }
+  const firstStepId = document.plans[0].steps[0].id;
+  const secondStepId = document.plans[0].steps[1].id;
+
+  // Check with a caller conversation: the Studio reports its own machine plus the caller.
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: {
+        action: 'step.check',
+        expectedRevision: document.revision,
+        planId,
+        stepId: firstStepId,
+        done: true,
+        sessionId: 'native-session',
+      },
+      headers: auth,
+    })
+  ).json.roadmap;
+  let first = document.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.equal(first.done, true);
+  assert.ok(first.completion, 'done steps carry server-owned completion');
+  assert.equal(first.completion.machineId, machineId);
+  assert.equal(first.completion.sessionId, 'native-session');
+  assert.ok(Number.isSafeInteger(first.completion.completedAt) && first.completion.completedAt > 0);
+  const firstCompletedAt = first.completion.completedAt;
+
+  // Readback returns the same attribution.
+  const readback = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: auth })).json.roadmap;
+  const readbackFirst = readback.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.deepEqual(readbackFirst.completion, first.completion);
+
+  // Persistence across restart: the file holds the same attribution.
+  const stored = JSON.parse(await readFile(join(f.cwd, '.prime', 'studio', 'roadmap.json'), 'utf8'));
+  const storedPlan = stored.plans.find((plan) => plan.id === planId);
+  const storedFirst = storedPlan.steps.find((step) => step.id === firstStepId);
+  assert.deepEqual(storedFirst.completion, first.completion);
+
+  // Actual restart with the same directories keeps the attribution.
+  await f.app.close();
+  const runtime2 = fakeRuntime();
+  const live2 = liveStub();
+  const app2 = createApp({
+    agentHome: f.agentHome,
+    sessionDir: f.sessionDir,
+    dataDir: f.dataDir,
+    initialCwd: f.cwd,
+    runtime: runtime2,
+    liveClient: live2,
+  });
+  await new Promise((done) => app2.server.listen(0, '127.0.0.1', done));
+  t.after(async () => {
+    await app2.close().catch(() => {});
+  });
+  const port2 = app2.server.address().port;
+  const base2 = `http://127.0.0.1:${port2}`;
+  async function api2(path, { method = 'GET', body, rawBody, headers = {} } = {}) {
+    const payload = rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined;
+    const response = await fetch(`${base2}${path}`, {
+      method,
+      headers: { ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
+      body: payload,
+    });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const text = buffer.toString('utf8');
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* Non-JSON payload. */
+    }
+    return { status: response.status, headers: response.headers, text, json, buffer };
+  }
+  const afterRestart = (await api2(`/api/v1/projects/${projectId}/roadmap`, { headers: auth })).json.roadmap;
+  const restartedFirst = afterRestart.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.deepEqual(restartedFirst.completion, first.completion);
+  document = afterRestart;
+
+  // Check without a caller conversation: machine is set, caller stays null.
+  document = (
+    await api2(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'step.check', expectedRevision: document.revision, planId, stepId: secondStepId, done: true },
+      headers: auth,
+    })
+  ).json.roadmap;
+  const second = document.plans[0].steps.find((step) => step.id === secondStepId);
+  assert.equal(second.done, true);
+  assert.equal(second.completion.machineId, machineId);
+  assert.equal(second.completion.sessionId, null);
+  assert.ok(Number.isSafeInteger(second.completion.completedAt) && second.completion.completedAt > 0);
+
+  // Reopen clears the attribution.
+  document = (
+    await api2(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'step.check', expectedRevision: document.revision, planId, stepId: firstStepId, done: false },
+      headers: auth,
+    })
+  ).json.roadmap;
+  first = document.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.equal(first.done, false);
+  assert.equal(first.completion, null);
+
+  // Recheck creates a fresh attribution.
+  document = (
+    await api2(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: {
+        action: 'step.check',
+        expectedRevision: document.revision,
+        planId,
+        stepId: firstStepId,
+        done: true,
+        sessionId: 'native-session',
+      },
+      headers: auth,
+    })
+  ).json.roadmap;
+  first = document.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.equal(first.completion.machineId, machineId);
+  assert.equal(first.completion.sessionId, 'native-session');
+  assert.ok(first.completion.completedAt >= firstCompletedAt);
+
+  // Repeating the same done state preserves the attribution.
+  const preserved = first.completion;
+  document = (
+    await api2(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: {
+        action: 'step.check',
+        expectedRevision: document.revision,
+        planId,
+        stepId: firstStepId,
+        done: true,
+        sessionId: 'native-session',
+      },
+      headers: auth,
+    })
+  ).json.roadmap;
+  first = document.plans[0].steps.find((step) => step.id === firstStepId);
+  assert.deepEqual(first.completion, preserved);
+});
+
+test('roadmap step.check validates the caller conversation and rejects forged completion', async (t) => {
+  const f = await fixture(t, { secondProject: true });
+  const { credential, projects } = await enableApi(f);
+  const auth = bearer(credential);
+  const projectId = projectIdFor(projects, f.cwd);
+
+  let document = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: auth })).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'init', expectedRevision: document.revision },
+      headers: auth,
+    })
+  ).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'plan.create', expectedRevision: document.revision, title: 'Deliver' },
+      headers: auth,
+    })
+  ).json.roadmap;
+  const planId = document.plans[0].id;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'step.add', expectedRevision: document.revision, planId, text: 'Verify' },
+      headers: auth,
+    })
+  ).json.roadmap;
+  const stepId = document.plans[0].steps[0].id;
+  const revision = document.revision;
+
+  // A conversation from another project is rejected.
+  const wrongProject = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+    method: 'POST',
+    body: {
+      action: 'step.check',
+      expectedRevision: revision,
+      planId,
+      stepId,
+      done: true,
+      sessionId: 'second-session',
+    },
+    headers: auth,
+  });
+  assert.equal(wrongProject.status, 404);
+
+  // Unknown conversations are rejected the same way.
+  const unknown = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+    method: 'POST',
+    body: {
+      action: 'step.check',
+      expectedRevision: revision,
+      planId,
+      stepId,
+      done: true,
+      sessionId: 'missing-session-1',
+    },
+    headers: auth,
+  });
+  assert.equal(unknown.status, 404);
+
+  // Malformed caller identifiers are rejected as invalid requests.
+  const malformed = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+    method: 'POST',
+    body: {
+      action: 'step.check',
+      expectedRevision: revision,
+      planId,
+      stepId,
+      done: true,
+      sessionId: 'bad id!',
+    },
+    headers: auth,
+  });
+  assert.equal(malformed.status, 400);
+
+  // sessionId on other actions keeps its existing meaning and stays rejected.
+  const misplaced = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+    method: 'POST',
+    body: { action: 'vision', expectedRevision: revision, text: 'v', sessionId: 'native-session' },
+    headers: auth,
+  });
+  assert.equal(misplaced.status, 400);
+
+  // Forged completion, machineId and completedAt are rejected, top-level and nested.
+  for (const body of [
+    { action: 'step.check', expectedRevision: revision, planId, stepId, done: true, completion: null },
+    { action: 'step.check', expectedRevision: revision, planId, stepId, done: true, machineId: 'm' },
+    {
+      action: 'step.check',
+      expectedRevision: revision,
+      planId,
+      stepId,
+      done: true,
+      sessionId: 'native-session',
+      completion: { machineId: 'm', sessionId: null, completedAt: 1 },
+    },
+    {
+      action: 'plan.create',
+      expectedRevision: revision,
+      title: 'Spoof',
+      steps: [{ text: 'hi', completion: null }],
+    },
+    {
+      action: 'plan.steps',
+      expectedRevision: revision,
+      planId,
+      steps: [{ id: stepId, text: 'hi', done: false, children: [], completedAt: 5 }],
+    },
+    { action: 'backlog.add', expectedRevision: revision, items: [{ text: 'hi', machineId: 'm' }] },
+  ]) {
+    const spoofed = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body,
+      headers: auth,
+    });
+    assert.equal(spoofed.status, 400, JSON.stringify(body));
+  }
+
+  // The rejected attempts changed nothing.
+  const unchanged = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: auth })).json.roadmap;
+  assert.equal(unchanged.revision, revision);
+  assert.equal(unchanged.plans[0].steps[0].done, false);
+});
+
+test('read-only tokens still read roadmaps but never check steps', async (t) => {
+  const f = await fixture(t);
+  const full = await enableApi(f, { name: 'full' });
+  const admin = await f.api('/api/public-api');
+  const projectId = projectIdFor(admin.json.projects, f.cwd);
+  const reader = await f.api('/api/public-api/tokens', {
+    method: 'POST',
+    body: { name: 'reader', scopes: ['read'], projectIds: [projectId], revision: admin.json.revision },
+  });
+  assert.equal(reader.status, 201);
+  const readAuth = bearer(reader.json.credential);
+  const writeAuth = bearer(full.credential);
+
+  let document = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: writeAuth })).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'init', expectedRevision: document.revision },
+      headers: writeAuth,
+    })
+  ).json.roadmap;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'plan.create', expectedRevision: document.revision, title: 'Deliver' },
+      headers: writeAuth,
+    })
+  ).json.roadmap;
+  const planId = document.plans[0].id;
+  document = (
+    await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+      method: 'POST',
+      body: { action: 'step.add', expectedRevision: document.revision, planId, text: 'Verify' },
+      headers: writeAuth,
+    })
+  ).json.roadmap;
+  const stepId = document.plans[0].steps[0].id;
+
+  assert.equal((await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: readAuth })).status, 200);
+  const denied = await f.api(`/api/v1/projects/${projectId}/roadmap/mutations`, {
+    method: 'POST',
+    body: {
+      action: 'step.check',
+      expectedRevision: document.revision,
+      planId,
+      stepId,
+      done: true,
+      sessionId: 'native-session',
+    },
+    headers: readAuth,
+  });
+  assert.equal(denied.status, 403);
+  const current = (await f.api(`/api/v1/projects/${projectId}/roadmap`, { headers: writeAuth })).json.roadmap;
+  assert.equal(current.plans[0].steps[0].done, false);
+});

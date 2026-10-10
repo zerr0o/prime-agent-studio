@@ -182,6 +182,9 @@
   color: var(--muted);
 }
 
+.questions-toggle .toggle-short {
+  display: none;
+}
 /* Completed activity takes one compact row when space permits. */
 .activity-stack:not(.is-running):not([open]) {
   margin-block: 8px;
@@ -301,10 +304,12 @@
     font-size: 10px;
   }
   #composer-form {
-    padding: 10px 10px 8px;
+    padding: 8px 10px 7px;
   }
   #composer-form textarea {
-    min-height: 40px;
+    /* Two 16px/1.5 content lines plus 8px padding: the long
+       running-state placeholder must fit with no inner scroll. */
+    min-height: 56px;
     max-height: min(160px, calc(var(--studio-height, 100dvh) * 0.22));
     font-size: 16px;
     line-height: 1.5;
@@ -312,7 +317,7 @@
   }
   #composer-form .composer-toolbar {
     gap: 8px;
-    margin-top: 4px;
+    margin-top: 2px;
     align-items: start;
   }
   #composer-form #send-button,
@@ -349,5 +354,24 @@
   }
   .composer-footnote {
     display: none;
+  }
+  /* Narrow composer: short permission labels fit whole; full names stay
+     in checkbox aria-labels and the label title. */
+  .questions-toggle .toggle-full {
+    display: none;
+  }
+  .questions-toggle .toggle-short {
+    display: inline;
+  }
+}
+/* Very narrow screens: narrower attach buttons leave the textarea wide
+   enough for the long placeholder in two lines instead of three. */
+@media (max-width: 400px) {
+  #composer-form .attachment-controls .attach-image-button {
+    width: 34px;
+    flex-basis: 34px;
+  }
+  #composer-form .composer-input-row {
+    gap: 6px;
   }
 }

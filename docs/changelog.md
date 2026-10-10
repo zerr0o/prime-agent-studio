@@ -4,6 +4,13 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.2.1-beta.3
+
+- **Bandeau et champ de saisie mobiles** : les actions regroupées tiennent à 320 et 390 px, le texte indicatif reste entièrement visible pendant un tour, et les libellés courts des permissions conservent leurs noms accessibles complets. La disposition desktop et le panneau de détails mobile plein écran sont préservés.
+- **Provenance des validations Roadmap** : chaque nouvelle étape validée enregistre l’identifiant du Studio, la conversation associée (si disponible) et la date de validation. Ces détails se consultent sous l’étape sans lancer d’agent.
+- **Historique conservé** : recocher une étape déjà validée ou modifier un autre champ conserve l’attribution ; rouvrir l’étape l’efface. La synchronisation et l’export/import `.pastudio` conservent la source sans l’attribuer au Studio destinataire. Les anciennes validations ne sont pas renseignées rétroactivement.
+- **API et OpenAPI** : les métadonnées `completion`, en lecture seule, sont documentées et renvoyées pour les étapes Roadmap. `step.check` accepte un `sessionId` facultatif vérifié dans le projet choisi ; les agents natifs utilisent leur conversation courante vérifiée, y compris une conversation enfant.
+
 ## 4.2.1-beta.2
 
 - **API publique v1 pour les intégrations externes** : jetons Bearer limités aux projets choisis, projets et conversations, contrôle des runs, SSE avec reprise, lecture et écriture Roadmap, téléchargement des fichiers liés. L’API est désactivée par défaut et se gère localement dans **Préférences → API**.

@@ -47,6 +47,7 @@ import { openFile as openLocalFile, fileLaunchMode } from './lib/open-file.mjs';
 import { createSessionInspector } from './lib/session-inspector.mjs';
 import { createKnowledge } from './lib/knowledge.mjs';
 import { createRoadmapService } from './lib/roadmap.mjs';
+import { getStudioMachineId } from './lib/studio-identity.mjs';
 import { createRoadmapBridge, createRoadmapCallerResolver } from './lib/roadmap-bridge.mjs';
 import { createRoadmapRoutes } from './lib/roadmap-routes.mjs';
 import { createRoadmapSessionResolver } from './lib/roadmap-session.mjs';
@@ -211,6 +212,7 @@ export function createApp(options = {}) {
     options.roadmap ||
     createRoadmapService({
       resolveProject: (cwd) => store.knowledgeProject(cwd),
+      getMachineId: () => getStudioMachineId(dataDir),
       onChange: () => syncSoon(2000),
     });
   const roadmapBridge =

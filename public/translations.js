@@ -361,6 +361,7 @@ export const messages = {
   'questions.title': { fr: 'Question de l’agent', en: 'Agent question' },
   'questions.pending': { fr: 'Question en attente', en: 'Question awaiting an answer' },
   'questions.toggle': { fr: 'Autoriser les questions', en: 'Allow questions' },
+  'questions.toggleShort': { fr: 'Questions', en: 'Questions' },
   'questions.allow': { fr: 'Autoriser les questions', en: 'Allow questions' },
   'questions.scope': {
     fr: 'Propre à cette conversation · modifiable entre deux exécutions',

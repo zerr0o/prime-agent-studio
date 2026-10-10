@@ -251,3 +251,168 @@ test('openapi paths cover every operation exactly once', () => {
   const expected = publicApiOperations.map((entry) => `${entry.method.toLowerCase()} ${entry.operationId}`);
   assert.deepEqual(covered.sort(), expected.sort());
 });
+
+test('step.check accepts an optional caller sessionId; other actions keep their meaning', () => {
+  assert.deepEqual(roadmapMutationFields['step.check'].fields.includes('sessionId'), true);
+  const base = { action: 'step.check', expectedRevision: 0, planId: 'plan-abc', stepId: 'step-1', done: true };
+  assert.equal(validatePublicApiBody('mutateRoadmap', base).ok, true);
+  assert.equal(validatePublicApiBody('mutateRoadmap', { ...base, sessionId: 'native-session' }).ok, true);
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', { ...base, sessionId: 'bad id!' }).ok,
+    false,
+  );
+  // Other actions do not gain sessionId: vision stays closed.
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', { action: 'vision', expectedRevision: 0, text: 'v', sessionId: 'native-session' })
+      .ok,
+    false,
+  );
+  // Existing sessionId meanings are unchanged.
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', { action: 'plan.attach', expectedRevision: 0, planId: 'plan-abc', sessionId: 'native-session' })
+      .ok,
+    true,
+  );
+  const work = {
+    requestId: 'abcdefghijklmnop',
+    expectedRevision: 0,
+    targets: [{ kind: 'plan', planId: 'plan-abc' }],
+    sessionId: 'native-session',
+  };
+  assert.equal(validatePublicApiBody('roadmapWork', work).ok, true);
+});
+
+test('completion, machineId and completedAt are output-only and never accepted', () => {
+  const base = { action: 'step.check', expectedRevision: 0, planId: 'plan-abc', stepId: 'step-1', done: true };
+  for (const forged of [
+    { ...base, completion: null },
+    { ...base, machineId: 'm' },
+    { ...base, completedAt: 1 },
+    { ...base, sessionId: 'native-session', completion: { machineId: 'm', sessionId: null, completedAt: 1 } },
+  ])
+    assert.equal(validatePublicApiBody('mutateRoadmap', forged).ok, false);
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', {
+      action: 'plan.create',
+      expectedRevision: 0,
+      title: 'T',
+      steps: [{ text: 'hi', completion: null }],
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', {
+      action: 'plan.steps',
+      expectedRevision: 0,
+      planId: 'plan-abc',
+      steps: [{ id: 'step-1', text: 'hi', done: false, children: [], machineId: 'm' }],
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePublicApiBody('mutateRoadmap', {
+      action: 'backlog.add',
+      expectedRevision: 0,
+      items: [{ text: 'hi', completedAt: 5 }],
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validatePublicApiBody('roadmapWork', {
+      requestId: 'abcdefghijklmnop',
+      expectedRevision: 0,
+      targets: [{ kind: 'plan', planId: 'plan-abc' }],
+      completion: null,
+    }).ok,
+    false,
+  );
+});
+
+test('RoadmapStep input stays closed; completion lives in output schemas only', () => {
+  const document = generateOpenApi();
+  const input = document.components.schemas.RoadmapStep;
+  assert.equal(input.additionalProperties, false);
+  assert.ok(!('completion' in input.properties));
+  assert.ok(!('machineId' in input.properties));
+  assert.ok(!('completedAt' in input.properties));
+  const completion = document.components.schemas.RoadmapCompletion;
+  // OAS 3.0.x: nullable object, never { type: 'null' }.
+  assert.equal(completion.type, 'object');
+  assert.equal(completion.nullable, true);
+  assert.equal(completion.readOnly, true);
+  assert.deepEqual(completion.required, ['machineId', 'sessionId', 'completedAt']);
+  assert.equal(completion.additionalProperties, false);
+  assert.equal(completion.properties.sessionId.nullable, true);
+  const output = document.components.schemas.RoadmapOutputStep;
+  assert.ok('completion' in output.properties);
+  assert.ok(!('allOf' in output));
+  assert.ok(!('oneOf' in output.properties.completion));
+  assert.equal(output.properties.completion.$ref, '#/components/schemas/RoadmapCompletion');
+  assert.deepEqual(output.required, ['id', 'text', 'done', 'completion', 'children']);
+  const childrenRef = output.properties.children.items.$ref;
+  assert.equal(childrenRef, '#/components/schemas/RoadmapOutputStep');
+  // OAS 3.0.x forbids { type: 'null' }: walk the whole document.
+  const nullTypes = [];
+  const forbidNull = (schema, where) => {
+    if (!schema || typeof schema !== 'object') return;
+    if (schema.type === 'null') nullTypes.push(where);
+    if (Array.isArray(schema.oneOf)) schema.oneOf.forEach((entry, index) => forbidNull(entry, `${where}.oneOf[${index}]`));
+    if (schema.properties)
+      for (const [key, entry] of Object.entries(schema.properties)) forbidNull(entry, `${where}.${key}`);
+    if (schema.items) forbidNull(schema.items, `${where}[]`);
+  };
+  forbidNull(document.components.schemas, 'schemas');
+  for (const [path, item] of Object.entries(document.paths))
+    for (const [method, operation] of Object.entries(item)) {
+      if (operation.requestBody) forbidNull(operation.requestBody, `${method} ${path} request`);
+      for (const [status, response] of Object.entries(operation.responses || {}))
+        forbidNull(response, `${method} ${path} ${status}`);
+    }
+  assert.deepEqual(nullTypes, []);
+  const docSchema = document.components.schemas.RoadmapDocument;
+  assert.ok(docSchema.properties.plans);
+  assert.equal(document.components.schemas.Roadmap.properties.roadmap.$ref, '#/components/schemas/RoadmapDocument');
+  assert.equal(
+    document.components.schemas.RoadmapWorkAccept.properties.roadmap.$ref,
+    '#/components/schemas/RoadmapDocument',
+  );
+  // Request mutations still reference the closed input step, not the output.
+  const mutations =
+    document.paths['/api/v1/projects/{projectId}/roadmap/mutations'].post.requestBody.content[
+      'application/json'
+    ].schema.oneOf;
+  const refs = [];
+  const collect = (schema) => {
+    if (!schema || typeof schema !== 'object') return;
+    if (schema.$ref) refs.push(schema.$ref);
+    if (Array.isArray(schema.oneOf)) schema.oneOf.forEach(collect);
+    if (schema.properties) Object.values(schema.properties).forEach(collect);
+    if (schema.items) collect(schema.items);
+  };
+  mutations.forEach(collect);
+  assert.ok(refs.includes('#/components/schemas/RoadmapStep'));
+  assert.ok(!refs.includes('#/components/schemas/RoadmapOutputStep'));
+  assert.ok(!refs.includes('#/components/schemas/RoadmapCompletion'));
+});
+
+test('forged-key guard never recurses into RangeError on deeply nested bodies', () => {
+  let deep = { text: 'leaf' };
+  for (let depth = 0; depth < 5000; depth++) deep = { nest: deep };
+  const body = { action: 'plan.create', expectedRevision: 0, title: 'T', steps: [deep] };
+  let result;
+  assert.doesNotThrow(() => {
+    result = validatePublicApiBody('mutateRoadmap', body);
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  let hidden = { text: 'leaf' };
+  for (let depth = 0; depth < 5000; depth++) hidden = { nest: hidden };
+  hidden.completion = null;
+  const forged = { action: 'plan.create', expectedRevision: 0, title: 'T', steps: [hidden] };
+  let rejected;
+  assert.doesNotThrow(() => {
+    rejected = validatePublicApiBody('mutateRoadmap', forged);
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.status, 400);
+});

@@ -4,6 +4,13 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.2.1-beta.3
+
+- **Mobile header and composer**: grouped header actions fit at 320 and 390 px, the full running-state placeholder stays visible, and compact permission labels retain their full accessible names. Desktop layout and the full-screen mobile details panel are preserved.
+- **Roadmap completion provenance**: each newly completed step records the Studio machine ID, the associated conversation (when available), and the completion time. The details can be opened below the step without starting an agent.
+- **Preserved history**: repeated checks and unrelated edits keep the original attribution; reopening a step clears it. Synchronization and `.pastudio` export/import retain the source without attributing it to the receiving Studio. Historical checks are not retroactively filled in.
+- **API and OpenAPI**: read-only `completion` metadata is documented and returned for Roadmap steps. `step.check` accepts an optional `sessionId` checked against the selected project; native agents use their verified current conversation, including child conversations.
+
 ## 4.2.1-beta.2
 
 - **Public API v1 for external integrations**: project-scoped Bearer tokens, projects and conversations, run control, resumable SSE, Roadmap reads and writes, and linked file downloads. The API is disabled by default and managed locally in **Preferences → API**.

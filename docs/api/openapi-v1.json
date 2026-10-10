@@ -1841,6 +1841,10 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 16000
+                      },
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$"
                       }
                     }
                   },
@@ -3335,8 +3339,7 @@
             "type": "string"
           },
           "roadmap": {
-            "type": "object",
-            "description": "Current roadmap DTO, identical to the native document minus cwd."
+            "$ref": "#/components/schemas/RoadmapDocument"
           }
         }
       },
@@ -3372,8 +3375,7 @@
             "nullable": true
           },
           "roadmap": {
-            "type": "object",
-            "description": "Bare roadmap document (no machineId/projectId envelope)."
+            "$ref": "#/components/schemas/RoadmapDocument"
           },
           "linkWarning": {
             "type": "boolean"
@@ -3442,6 +3444,113 @@
             ]
           }
         }
+      },
+      "RoadmapCompletion": {
+        "type": "object",
+        "nullable": true,
+        "readOnly": true,
+        "required": [
+          "machineId",
+          "sessionId",
+          "completedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Server-owned completion. machineId equals GET /machine on the Studio that executed the check; after sync it may differ from the current envelope Studio. sessionId is the associated conversation (project membership checked) or null without context; natively the verified actual caller (child, not root).",
+        "properties": {
+          "machineId": {
+            "type": "string",
+            "description": "Stable identity of the Studio that executed the check (GET /machine there; may differ from the reading Studio after sync)."
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Associated conversation selected by the caller (project membership checked), or null without context. Natively the verified actual caller."
+          },
+          "completedAt": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Epoch milliseconds when the step was checked."
+          }
+        }
+      },
+      "RoadmapOutputStep": {
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "done",
+          "completion",
+          "children"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "completion": {
+            "$ref": "#/components/schemas/RoadmapCompletion",
+            "description": "Null when undone or when a historical done step predates attribution; otherwise the executing Studio, associated conversation and time (after sync, the executing Studio may differ from the reading Studio)."
+          },
+          "children": {
+            "type": "array",
+            "maxItems": 2000,
+            "items": {
+              "$ref": "#/components/schemas/RoadmapOutputStep"
+            },
+            "description": "Checklists accept three levels and 2 000 steps at most."
+          },
+          "partial": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoadmapDocument": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "plans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "steps"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$"
+                },
+                "steps": {
+                  "type": "array",
+                  "maxItems": 2000,
+                  "items": {
+                    "$ref": "#/components/schemas/RoadmapOutputStep"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Current roadmap DTO, identical to the native document minus cwd. Step completion is output/read-only; its machineId is the executing Studio and may differ from the envelope machineId after sync."
       },
       "RoadmapStep": {
         "type": "object",

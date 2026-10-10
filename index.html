@@ -198,7 +198,7 @@
               aria-controls="roadmap-panel"
               disabled
             >
-              <span data-icon="map" aria-hidden="true"></span><span>Roadmap</span
+              <span data-icon="map" aria-hidden="true"></span><span class="roadmap-label">Roadmap</span
               ><span id="roadmap-progress" class="roadmap-progress" hidden></span>
             </button>
             <button
@@ -581,7 +581,8 @@
                         aria-label="Autoriser les questions"
                         data-i18n-aria-label="questions.allow"
                       />
-                      <span data-i18n="questions.toggle">Autoriser les questions</span>
+                      <span class="toggle-full" data-i18n="questions.toggle">Autoriser les questions</span
+                      ><span class="toggle-short" data-i18n="questions.toggleShort">Questions</span>
                     </label>
                     <label
                       class="questions-toggle"
@@ -594,7 +595,8 @@
                         aria-label="Autoriser le Computer Use"
                         data-i18n-aria-label="computer.allow"
                       />
-                      <span data-i18n="computer.allow">Autoriser le Computer Use</span>
+                      <span class="toggle-full" data-i18n="computer.allow">Autoriser le Computer Use</span
+                      ><span class="toggle-short" data-i18n="computer.label">Computer Use</span>
                     </label>
                   </div>
                   <button
