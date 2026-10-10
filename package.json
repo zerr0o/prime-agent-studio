@@ -41,6 +41,7 @@
     "test:roadmap:packaged": "node scripts/test-roadmap-native-packaged.mjs",
     "test:mobile": "node scripts/test-mobile-control.mjs",
     "test:workspace": "node scripts/test-workspace-ui.mjs",
+    "test:docking": "node --test test/docking-layout.test.mjs && node scripts/test-docking-ui.mjs",
     "test:inspector": "node scripts/test-inspector-ui.mjs && node scripts/test-file-context-ui.mjs && node scripts/test-inspector-folder-ui.mjs",
     "test:git-panel": "node scripts/test-git-panel-ui.mjs",
     "test:file-links": "node scripts/test-file-links-ui.mjs",

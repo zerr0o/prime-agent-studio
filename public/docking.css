@@ -1,0 +1,428 @@
+/* Desktop docking is opt-in. No rule changes classic or mobile panel geometry. */
+/* Layout follows the pointer directly, including with reduced motion. The
+   global short-duration rule must not turn implicit transition-property: all
+   into grid-track animations. */
+.dock-workspace,
+.dock-split,
+.dock-group,
+.dock-content,
+.dock-panel-frame,
+.dock-panel {
+  transition: none;
+}
+
+#open-docking.is-active {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+@media (max-width: 1080px) {
+  #open-docking {
+    display: none;
+  }
+}
+.workspace-body.is-docked {
+  position: relative;
+  overflow: hidden;
+}
+.dock-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+  gap: 6px;
+}
+.dock-split {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-split[data-direction='row'] {
+  grid-template-columns: minmax(var(--dock-min-first), var(--dock-first)) 6px minmax(
+      var(--dock-min-second),
+      var(--dock-second)
+    );
+  grid-template-rows: minmax(0, 1fr);
+}
+.dock-split[data-direction='column'] {
+  grid-template-rows: minmax(var(--dock-min-first), var(--dock-first)) 6px minmax(
+      var(--dock-min-second),
+      var(--dock-second)
+    );
+  grid-template-columns: minmax(0, 1fr);
+}
+.dock-group {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.dock-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  min-height: 35px;
+  padding-right: 4px;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar);
+}
+.dock-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.dock-tab {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 10px 13px 9px;
+  border-radius: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--muted);
+  cursor: grab;
+  white-space: nowrap;
+}
+.dock-tab:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.dock-tab[aria-selected='true'] {
+  color: var(--text);
+  background: var(--bg);
+}
+.dock-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0 12px auto;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+}
+.dock-chrome-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.dock-chrome-button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.dock-content,
+.dock-panel-frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.dock-panel-frame {
+  container: dock-panel / inline-size;
+}
+.dock-content > [hidden],
+.dock-workspace [hidden] {
+  display: none !important;
+}
+.dock-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-empty {
+  align-self: center;
+  margin: auto;
+}
+.dock-splitter {
+  position: relative;
+  z-index: 1;
+  border-radius: 3px;
+  touch-action: none;
+  cursor: col-resize;
+}
+.dock-split[data-direction='column'] > .dock-splitter {
+  cursor: row-resize;
+}
+.dock-splitter:hover,
+.dock-splitter:focus-visible,
+.is-resizing .dock-splitter {
+  background: var(--accent-bg);
+}
+.dock-splitter:focus-visible,
+.dock-tab:focus-visible,
+.dock-chrome-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.dock-workspace.is-resizing,
+.dock-workspace.is-dragging {
+  user-select: none;
+}
+.dock-drop-preview {
+  position: absolute;
+  z-index: 20;
+  inset: 36px 4px 4px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-bg) 80%, transparent);
+  pointer-events: none;
+}
+.dock-drop-preview[data-zone='left'] {
+  right: 50%;
+}
+.dock-drop-preview[data-zone='right'] {
+  left: 50%;
+}
+.dock-drop-preview[data-zone='top'] {
+  bottom: 50%;
+}
+.dock-drop-preview[data-zone='bottom'] {
+  top: 50%;
+}
+.dock-drop-preview span {
+  background: var(--surface);
+  color: var(--accent-text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 9px;
+  max-width: 100%;
+  font-size: 11px;
+  text-align: center;
+}
+#dock-workspace #details-panel {
+  width: 100%;
+  border: 0;
+}
+#dock-workspace .inspector-heading {
+  display: none;
+}
+#dock-workspace .inspector-tabs {
+  padding: 8px 10px;
+}
+#dock-workspace .inspector-tabs button {
+  min-height: 32px;
+  border-radius: 5px;
+}
+#dock-workspace #roadmap-panel {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border: 0;
+  z-index: auto;
+}
+#dock-workspace .rm-header {
+  padding: 16px 18px 12px;
+  gap: 10px;
+}
+#dock-workspace .rm-header h2 {
+  font-size: 15px;
+}
+#dock-workspace .rm-header-actions {
+  display: none;
+}
+#dock-workspace .rm-overall,
+#dock-workspace .rm-tabs,
+#dock-workspace .rm-status,
+#dock-workspace .rm-content,
+#dock-workspace .rm-footer {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+#dock-workspace .rm-tabs {
+  flex-wrap: wrap;
+}
+#dock-workspace .rm-content {
+  min-height: 0;
+}
+.docking-settings {
+  width: 610px;
+  max-width: calc(100vw - 32px);
+  padding: 24px;
+}
+.docking-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.docking-heading h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.docking-mode {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.docking-mode input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.docking-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.docking-settings > .docking-help {
+  margin: 12px 0 24px;
+}
+.docking-controls {
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 18px 0 0;
+  min-width: 0;
+}
+.docking-controls legend {
+  color: var(--muted);
+  padding-right: 10px;
+  font-size: 11px;
+}
+.docking-controls:disabled {
+  opacity: 0.5;
+}
+.docking-openers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.docking-movement {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.docking-movement label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.docking-movement select {
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  font: inherit;
+}
+.docking-movement > button {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.docking-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+@container dock-panel (max-width: 640px) {
+  .dock-panel .welcome,
+  .dock-panel .project-overview {
+    padding: 24px 18px;
+  }
+  .dock-panel .welcome h1 {
+    font-size: 30px;
+  }
+  .dock-panel .starter-grid {
+    grid-template-columns: 1fr;
+  }
+  .dock-panel .messages {
+    padding: 20px 16px 24px;
+  }
+  .dock-panel .message-body {
+    padding-left: 0;
+  }
+  .dock-panel .message.user .message-body {
+    margin-left: 0;
+  }
+  .dock-panel .composer-area {
+    padding: 12px 14px;
+  }
+  .dock-panel .composer-toolbar {
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .dock-panel .model-controls {
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .dock-panel .model-icon,
+  .dock-panel .control-separator {
+    display: none;
+  }
+  .dock-panel .model-picker-button {
+    flex: 1 1 115px;
+    max-width: 100%;
+  }
+  .dock-panel .model-controls #thinking-select {
+    flex: 0 1 108px;
+    max-width: 108px;
+  }
+  .dock-panel .questions-toggle .toggle-full {
+    display: none;
+  }
+  .dock-panel .questions-toggle .toggle-short {
+    display: inline;
+  }
+  .dock-panel .questions-toggle {
+    max-width: 100%;
+    font-size: 10px;
+  }
+  .dock-panel .composer-footnote {
+    line-height: 1.5;
+  }
+  .dock-panel #composer {
+    font-size: 13px;
+  }
+}
+@container dock-panel (max-width: 360px) {
+  .dock-panel .messages,
+  .dock-panel .inspector-content {
+    padding: 14px 12px;
+  }
+  .dock-panel .composer-area {
+    padding: 8px;
+  }
+  .dock-panel .rm-plan-head {
+    flex-wrap: wrap;
+  }
+  .dock-panel .rm-section-head {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  .docking-movement {
+    grid-template-columns: 1fr;
+  }
+}

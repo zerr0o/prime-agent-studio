@@ -52,6 +52,14 @@ Pour retrouver un serveur arrêté, ouvrez **Préférences du Studio** depuis l�
 
 Un raccourci Windows peut utiliser l’argument `--settings` pour ouvrir directement les préférences ou le secours natif, y compris lorsqu’elle fonctionne déjà en arrière-plan.
 
+## Espace modulable — aperçu 4.3
+
+**En développement, pas encore publié.** Sur grand écran (plus de 1080 px), ouvrez **Agencement** dans le bandeau et activez **Espace modulable**. Déplacez les onglets **Conversation**, **Roadmap** et **Inspecteur** : au centre d’une zone pour les regrouper, sur un bord pour créer une séparation. Faites glisser les séparateurs pour redimensionner les panneaux.
+
+Le dialogue Agencement permet aussi de déplacer un panneau au clavier, de le réafficher après fermeture et de réinitialiser la disposition. Les flèches redimensionnent un séparateur sélectionné ; Échap annule un déplacement en cours. L’agencement est conservé dans ce profil de navigateur, sans stocker ni dupliquer les conversations. Désactiver le mode rend l’interface classique. Sur une fenêtre étroite ou un mobile, cette interface revient automatiquement, sans effacer la disposition desktop.
+
+Cette première tranche conserve les onglets Session, Agents et Fichiers dans un seul Inspecteur. Les fenêtres natives détachées sur plusieurs écrans et les vues de conversations multiples ne sont pas encore disponibles.
+
 ## Données et mises à jour
 
 Les données se trouvent dans `%LOCALAPPDATA%\com.primeagent.studio` :

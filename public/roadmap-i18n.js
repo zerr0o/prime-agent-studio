@@ -35,6 +35,7 @@ const words = {
     'Ouvrez une conversation pour consulter ses plans.',
     'Open a conversation to see its plans.',
   ],
+  chooseProject: ['Choisissez un projet pour afficher sa roadmap.', 'Choose a project to view its roadmap.'],
   ungrouped: ['Autres plans', 'Other plans'],
   milestone: ['Jalon', 'Milestone'],
   none: ['Aucun', 'None'],

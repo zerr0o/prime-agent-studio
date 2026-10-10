@@ -108,7 +108,13 @@ export function createRoadmap({
     foldedGroups = new Set(),
     visibleDescriptions = new Set(),
     expandedActivities = new Set();
-  const canEdit = () => !getContext().readOnly && getContext().online !== false && !pending;
+  // Docked with no project selected: mutations stay disabled (no init/write without cwd).
+  const canEdit = () =>
+    !!getContext().cwd && !getContext().readOnly && getContext().online !== false && !pending;
+  // Narrow docking state. Null = classic mode. Parent reparents the SAME panel node;
+  // this module never recreates state, only flips visibility without focus steals.
+  let dock = null;
+  const isDocked = () => !!dock;
   const activityFor = (kind, id, stepId) =>
     (doc?.activity || []).filter((entry) =>
       entry.targets?.some(
@@ -1236,6 +1242,12 @@ export function createRoadmap({
       b.setAttribute('aria-current', key === tab ? 'page' : 'false');
       tabs.append(b);
     }
+    if (!cwd) {
+      // Docked with no project: empty state only. canEdit() already blocks
+      // mutations without cwd, so no init/default-project write can happen here.
+      content.append(node('p', 'rm-note', rt('chooseProject')));
+      return;
+    }
     if (!doc) {
       content.append(node('p', 'rm-note', error || rt('loading')));
       return;
@@ -1475,8 +1487,9 @@ export function createRoadmap({
     editor.onclose = () => {
       if (!completed) persist();
       editorState = null;
-      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
-      else close.focus();
+      // Never steal focus to a hidden trigger/close (docked tab hidden case).
+      if (trigger?.isConnected && trigger.getClientRects().length) trigger.focus({ preventScroll: true });
+      else if (!panel.hidden && close.getClientRects().length) close.focus();
     };
     editorState = { persist, busy: () => busy };
     editor.showModal();
@@ -1538,6 +1551,19 @@ export function createRoadmap({
   let inertShell = null,
     previousInert = false;
   function updatePresentation() {
+    if (isDocked()) {
+      // Docked: parent CSS owns sizing; never take over the page.
+      document.body.classList.remove('roadmap-open');
+      document.body.classList.remove('roadmap-expanded');
+      enlarge.hidden = true;
+      panel.removeAttribute('role');
+      panel.removeAttribute('aria-modal');
+      if (inertShell) {
+        inertShell.inert = previousInert;
+        inertShell = null;
+      }
+      return;
+    }
     const modal = opened && (enlarged || innerWidth < 900);
     document.body.classList.toggle('roadmap-expanded', opened && enlarged);
     enlarge.hidden = innerWidth < 900;
@@ -1579,29 +1605,79 @@ export function createRoadmap({
     }
   }
   function setEnlarged(value) {
+    if (isDocked()) return;
     const scroll = content.scrollTop;
     enlarged = value;
     updatePresentation();
     content.scrollTop = scroll;
     enlarge.focus({ preventScroll: true });
   }
+  // Single context-reset helper (review item 2). Partial reset (show-path) keeps
+  // the activity epoch and summary badge until refresh; full reset (update-path,
+  // or leaving to no-project) clears them. Classic and docked share it; the
+  // statement sets are identical to the blocks it replaces, so behavior is kept.
+  function resetContext(nextCwd, full) {
+    cwd = nextCwd;
+    doc = null;
+    generation++;
+    expanded.clear();
+    selected.clear();
+    foldedMilestones.clear();
+    foldedSteps.clear();
+    foldedGroups.clear();
+    visibleDescriptions.clear();
+    expandedActivities.clear();
+    appliedSequence = 0;
+    error = '';
+    if (full) {
+      activityEpoch = '';
+      activityRevision = -1;
+      lastSummaryRefresh = 0;
+      onSummary(null);
+    }
+  }
   function show(trigger, nextTab = 'project') {
+    if (isDocked()) {
+      // Docked: ask the parent controller to activate our dock tab, then render
+      // the normal context/tab/content with no page-level chrome and no focus steal.
+      dock.onOpen?.();
+      if (!getContext().cwd) {
+        // No project: translated empty state, no mutations, never init a default.
+        if (!editorState?.busy() && cwd !== '') {
+          editorState?.persist();
+          resetContext('', true);
+        }
+        tab = nextTab;
+        dock.visible = true;
+        opened = true;
+        panel.hidden = false;
+        opener = trigger || document.activeElement;
+        updatePresentation();
+        render();
+        return;
+      }
+      if (cwd !== getContext().cwd) {
+        // Never switch/reset underneath a busy editor; its draft must survive.
+        if (!editorState?.busy()) {
+          editorState?.persist();
+          resetContext(getContext().cwd, true);
+        }
+      }
+      tab = nextTab;
+      dock.visible = true;
+      opened = true;
+      panel.hidden = false;
+      opener = trigger || document.activeElement;
+      updatePresentation();
+      render();
+      void refresh();
+      return;
+    }
     if (!getContext().cwd) return;
     opener = trigger || document.activeElement;
     tab = nextTab;
     if (cwd !== getContext().cwd) {
-      cwd = getContext().cwd;
-      doc = null;
-      generation++;
-      expanded.clear();
-      selected.clear();
-      foldedMilestones.clear();
-      foldedSteps.clear();
-      foldedGroups.clear();
-      visibleDescriptions.clear();
-      expandedActivities.clear();
-      appliedSequence = 0;
-      error = '';
+      resetContext(getContext().cwd, false);
     }
     opened = true;
     panel.hidden = false;
@@ -1612,6 +1688,21 @@ export function createRoadmap({
     void refresh();
   }
   function hide() {
+    if (isDocked()) {
+      // Docked close (X / Escape): preserve any open editor dialog by design and
+      // ask the parent to remove our dock tab. Parent syncs visibility via
+      // setDocked({ visible: false }); no focus back to a possibly hidden opener.
+      if (editorState?.busy()) return;
+      dock.onClose?.();
+      if (!dock.onClose) {
+        dock.visible = false;
+        opened = false;
+        generation++;
+        panel.hidden = true;
+        updatePresentation();
+      }
+      return;
+    }
     if (editorState?.busy()) return;
     if (editor.open) editor.close();
     opened = false;
@@ -1626,10 +1717,11 @@ export function createRoadmap({
     if (event.key === 'Escape' && !event.defaultPrevented) {
       event.preventDefault();
       event.stopPropagation();
-      if (enlarged && innerWidth >= 900) setEnlarged(false);
+      if (isDocked()) hide();
+      else if (enlarged && innerWidth >= 900) setEnlarged(false);
       else hide();
     }
-    if (event.key === 'Tab' && (enlarged || innerWidth < 900)) {
+    if (event.key === 'Tab' && !isDocked() && (enlarged || innerWidth < 900)) {
       const nodes = [...panel.querySelectorAll('button,summary,input,a,select,textarea')].filter((el) => {
         if (el.disabled || el.tabIndex < 0 || !el.getClientRects().length || el.closest('[hidden]'))
           return false;
@@ -1705,27 +1797,24 @@ export function createRoadmap({
   function update() {
     const context = getContext();
     if (context.cwd !== cwd) {
-      editorState?.persist();
-      if (opened) hide();
-      if (editorState?.busy()) return;
-      cwd = context.cwd || '';
-      doc = null;
-      generation++;
-      appliedSequence = 0;
-      activityEpoch = '';
-      activityRevision = -1;
-      lastSummaryRefresh = 0;
-      expanded.clear();
-      selected.clear();
-      foldedMilestones.clear();
-      foldedSteps.clear();
-      foldedGroups.clear();
-      visibleDescriptions.clear();
-      expandedActivities.clear();
-      error = '';
-      onSummary(null);
+      if (isDocked()) {
+        // Stay in the layout: refresh/clear in place, never onClose the dock tab.
+        // Never switch underneath a busy editor; its draft must survive.
+        editorState?.persist();
+        if (editorState?.busy()) return;
+        resetContext(context.cwd || '', true);
+        opened = dock.visible;
+        panel.hidden = !dock.visible;
+        updatePresentation();
+        if (dock.visible) render();
+      } else {
+        editorState?.persist();
+        if (opened) hide();
+        if (editorState?.busy()) return;
+        resetContext(context.cwd || '', true);
+      }
     }
-    if (!opened) {
+    if (isDocked() ? !dock.visible : !opened) {
       void refresh();
       return;
     }
@@ -1746,14 +1835,83 @@ export function createRoadmap({
   onLanguageChange(() => {
     if (opened) render();
   });
+  // Narrow docking API. The parent controller reparents the SAME panel node
+  // into its dock root and owns all fixed sizing via its own CSS.
+  // - setDocked({ visible, onOpen, onClose }): enter/update dock mode. Idempotent:
+  //   repeated calls with the same visibility never reset doc/selections/drafts
+  //   and never steal focus. A visibility flip only syncs hidden/opened, aborts
+  //   stale polls via generation++, then renders/refreshes when becoming visible.
+  // - setDocked(null): exit dock mode. Quietly hides the panel, clears page-level
+  //   body classes, moves the panel back to body, restores classic presentation.
+  //   Never calls onClose, never focuses, never closes the editor dialog and never
+  //   resets cwd/doc, so an ongoing editor draft always survives docking changes.
+  // Behavior note: a docked X/Escape close intentionally leaves an open editor
+  // dialog alone (preserving the draft beats discarding it); the editor is a
+  // body-level dialog shared with classic mode and stays usable after the dock
+  // tab is removed.
+  function setDocked(optionsOrNull) {
+    if (optionsOrNull == null) {
+      if (!dock) {
+        updatePresentation();
+        return;
+      }
+      dock = null;
+      opener = null;
+      opened = false;
+      enlarged = false;
+      generation++;
+      panel.hidden = true;
+      if (editor?.isConnected && panel.parentElement !== document.body)
+        document.body.insertBefore(panel, editor);
+      else if (panel.parentElement !== document.body) document.body.append(panel);
+      document.body.classList.remove('roadmap-open');
+      document.body.classList.remove('roadmap-expanded');
+      updatePresentation();
+      return;
+    }
+    const nextVisible = !!optionsOrNull.visible;
+    const nextOnOpen = typeof optionsOrNull.onOpen === 'function' ? optionsOrNull.onOpen : null;
+    const nextOnClose = typeof optionsOrNull.onClose === 'function' ? optionsOrNull.onClose : null;
+    if (dock && dock.visible === nextVisible) {
+      // Same visibility (parent syncs on every layout change, often with fresh
+      // callback identities): only refresh callback refs + presentation. No state
+      // reset, no render storm, no focus steal.
+      dock.onOpen = nextOnOpen;
+      dock.onClose = nextOnClose;
+      opener = null;
+      panel.hidden = !dock.visible;
+      updatePresentation();
+      return;
+    }
+    const entering = !dock;
+    const flipping = !!dock && dock.visible !== nextVisible;
+    dock = { visible: nextVisible, onOpen: nextOnOpen, onClose: nextOnClose };
+    opener = null;
+    if (entering) {
+      enlarged = false;
+      document.body.classList.remove('roadmap-open');
+      document.body.classList.remove('roadmap-expanded');
+    }
+    if (flipping) generation++;
+    opened = nextVisible;
+    panel.hidden = !nextVisible;
+    updatePresentation();
+    if (nextVisible) {
+      render();
+      void refresh();
+    }
+  }
   return {
     open: show,
     close: hide,
     update,
+    setDocked,
     destroy: () => {
       clearInterval(timer);
+      dock = null;
       opened = false;
       document.body.classList.remove('roadmap-open');
+      document.body.classList.remove('roadmap-expanded');
       updatePresentation();
       panel.remove();
       editor.remove();

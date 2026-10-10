@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="/public/providers.css" />
     <link rel="stylesheet" href="/public/commands.css" />
     <link rel="stylesheet" href="/public/inspector.css" />
+    <link rel="stylesheet" href="/public/docking.css" />
     <link rel="stylesheet" href="/public/session-wheel.css" />
     <link rel="stylesheet" href="/public/settings.css" />
     <link rel="stylesheet" href="/public/sync-settings.css" />
@@ -201,6 +202,19 @@
               <span data-icon="map" aria-hidden="true"></span><span class="roadmap-label">Roadmap</span
               ><span id="roadmap-progress" class="roadmap-progress" hidden></span>
             </button>
+            <button
+              id="open-docking"
+              class="icon-button"
+              type="button"
+              aria-label="Agencement"
+              title="Agencement"
+              data-i18n-aria-label="docking.title"
+              data-i18n-title="docking.title"
+              aria-haspopup="dialog"
+              aria-controls="docking-settings"
+              aria-expanded="false"
+              data-icon="layout"
+            ></button>
             <button
               id="session-menu-button"
               class="icon-button"
@@ -1757,10 +1771,7 @@
                   </button>
                 </div>
                 <div class="sync-device-block">
-                  <span
-                    class="project-color-label"
-                    id="sync-device-color-label"
-                    data-i18n="sync.device_color"
+                  <span class="project-color-label" id="sync-device-color-label" data-i18n="sync.device_color"
                     >Couleur de cet appareil</span
                   >
                   <div
@@ -1862,12 +1873,7 @@
                 <div id="sync-devices-wrap">
                   <h5 data-i18n="sync.devices_title">Appareils</h5>
                   <div id="sync-devices-list"></div>
-                  <p
-                    id="sync-devices-empty"
-                    class="settings-footnote"
-                    data-i18n="sync.devices_empty"
-                    hidden
-                  >
+                  <p id="sync-devices-empty" class="settings-footnote" data-i18n="sync.devices_empty" hidden>
                     Aucun autre appareil vu pour le moment.
                   </p>
                 </div>

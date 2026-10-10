@@ -52,6 +52,14 @@ To reconnect to a stopped server, open **Studio preferences** from the tray icon
 
 A Windows shortcut can use the `--settings` argument to open application settings directly, including when the app is already running in the background.
 
+## Dockable workspace — 4.3 preview
+
+**In development, not released yet.** On wide screens (more than 1080 px), open **Layout** in the header and enable **Dockable workspace**. Drag the **Conversation**, **Roadmap** and **Inspector** tabs: to the center of a group to combine them, or to an edge to create a split. Drag the splitters to resize panels.
+
+The Layout dialog also lets you move a panel with the keyboard, reopen a closed panel and reset the layout. Arrow keys resize a focused splitter; Escape cancels an active move. The layout is saved in this browser profile, without storing or duplicating conversations. Disable the mode to restore the classic interface. Narrow windows and mobile devices use that interface automatically, without deleting the desktop layout.
+
+This first slice keeps Session, Agents and Files as tabs in a single Inspector. Native floating windows on multiple monitors and multiple conversation views are not available yet.
+
 ## Data and updates
 
 Data is stored in `%LOCALAPPDATA%\com.primeagent.studio`:

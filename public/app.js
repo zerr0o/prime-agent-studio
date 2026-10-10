@@ -41,6 +41,7 @@ import { createKnowledgeBrowser } from './knowledge.js';
 import { createProjectArchives } from './project-archives.js';
 import { createWorktreesUI } from './worktrees.js';
 import { createRoadmap } from './roadmap.js';
+import { createDocking } from './docking.js';
 import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
 import { createQuestions } from './questions.js';
@@ -58,10 +59,7 @@ import {
   isNewComponentsBridgeAvailable,
   openDesktopComponents,
 } from './desktop-components-action.js';
-import {
-  needsComponentsUpdate,
-  readComponentsStatus,
-} from './desktop-components.js';
+import { needsComponentsUpdate, readComponentsStatus } from './desktop-components.js';
 let questionsUI;
 let imageComposer;
 let projectSorting;
@@ -72,6 +70,7 @@ let liveMessagesUI;
 let commandsUI;
 let inspectorUI;
 let roadmapUI;
+let dockingUI;
 let archivesUI;
 let worktreesUI;
 let computerUseUI;
@@ -98,6 +97,7 @@ const icons = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   grip: 'M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01',
   panel: 'M3 4h18v16H3V4Zm12 0v16',
+  layout: 'M3 4h18v16H3V4Zm11 0v16m0-8h7',
   map: 'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15',
   compass: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM16 8l-2 6-6 2 2-6 6-2Z',
   code: 'm8 6-6 6 6 6m8-12 6 6-6 6M14 4l-4 16',
@@ -419,14 +419,12 @@ function renderConfigurationWarning() {
   bindText($('configuration-warning-text'), () => tr(`configuration.${key}`));
   // Missing provider keeps its direct target (provider config). Engine
   // components use the separate app-settings target below.
-  $('configuration-provider-action').hidden =
-    !providerMissing || !state.providersAvailable || state.readOnly;
+  $('configuration-provider-action').hidden = !providerMissing || !state.providersAvailable || state.readOnly;
   $('configuration-model-action').hidden = !modelMissing || state.readOnly;
   // Desktop-only shortcut to the app component settings. Browser/mobile stays
   // hidden: no broken invoke. Opening never auto-installs.
   const componentsAction = $('configuration-components-action');
-  if (componentsAction)
-    componentsAction.hidden = state.readOnly || !isDesktopComponentsAvailable();
+  if (componentsAction) componentsAction.hidden = state.readOnly || !isDesktopComponentsAvailable();
 }
 $('configuration-provider-action').onclick = () => $('open-provider-settings').click();
 $('configuration-model-action').onclick = () => $('model-picker-button').click();
@@ -784,10 +782,7 @@ function renderEngineComponentsAction() {
   // explanatory with no broken invoke. Opening never auto-installs.
   const engineMissing = state.version?.available === false;
   action.hidden =
-    $('global-banner').hidden ||
-    !engineMissing ||
-    state.readOnly ||
-    !isDesktopComponentsAvailable();
+    $('global-banner').hidden || !engineMissing || state.readOnly || !isDesktopComponentsAvailable();
 }
 async function api(path, { method = 'GET', body, signal } = {}) {
   const pushWrite = path === '/api/push/subscriptions' || path === '/api/push/focus';
@@ -851,7 +846,9 @@ function applyPreferences() {
       ? tr('ui.entree_pour_envoyer_maj_entree_pour_un_saut_de_ligne')
       : tr('ui.ctrl_entree_pour_envoyer'),
   );
-  if (innerWidth > 1080) {
+  if (dockingUI?.active) {
+    $('toggle-details').setAttribute('aria-pressed', String(dockingUI.visiblePanels().includes('inspector')));
+  } else if (innerWidth > 1080) {
     $('details-panel').hidden = !prefs.details;
     $('toggle-details').setAttribute('aria-pressed', String(prefs.details));
   } else {
@@ -1422,8 +1419,7 @@ function renderSessionGit(git, head) {
     ),
   );
   // Offer alignment only when this PC differs and nothing runs in the project.
-  $('detail-git-align-row').hidden =
-    same || !git.commit || !head || state.readOnly || isRunning(activeRun());
+  $('detail-git-align-row').hidden = same || !git.commit || !head || state.readOnly || isRunning(activeRun());
   bindAttribute(dd, 'title', () =>
     [git.repo, git.commit, git.at ? tr('session.git_recorded', { value1: dateLabel(git.at) }) : '']
       .filter(Boolean)
@@ -1926,6 +1922,7 @@ function atConversationBottom() {
   return s.scrollHeight - s.scrollTop - s.clientHeight < 3;
 }
 function markVisibleSessionRead() {
+  if (!conversationVisible()) return;
   if (
     document.hidden ||
     state.loading ||
@@ -1955,10 +1952,24 @@ async function syncSessionActivity() {
   renderSessions();
   renderProjectOverview();
 }
+function conversationVisible() {
+  return !dockingUI?.active || dockingUI.visiblePanels().includes('conversation');
+}
+function resizeDockedConversation() {
+  if (!conversationVisible()) return;
+  resizeComposer();
+  if (!followConversation) return;
+  cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = requestAnimationFrame(() => {
+    bottomScrollFrame = 0;
+    if (followConversation && conversationVisible()) scrollBottom();
+  });
+}
 function scrollBottom(smooth = false) {
   cancelAnimationFrame(bottomScrollFrame);
   bottomScrollFrame = 0;
   followConversation = true;
+  if (!conversationVisible()) return;
   $('conversation-scroll').scrollTo({
     top: $('conversation-scroll').scrollHeight,
     behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant',
@@ -3115,8 +3126,7 @@ function openProjectMenu(cwd, anchor) {
     p.sync === false ? tr('projects.sync_enable') : tr('projects.sync_disable'),
   );
   const linkItem = $('project-menu').querySelector('[data-project-action="link"]');
-  if (linkItem)
-    linkItem.hidden = state.readOnly || p.sync === false || !getSyncSnapshot()?.configured;
+  if (linkItem) linkItem.hidden = state.readOnly || p.sync === false || !getSyncSnapshot()?.configured;
   $('project-menu').querySelector('[data-project-action="open"]').disabled = p.exists === false;
   const terminalButton = $('project-menu').querySelector('[data-project-action="terminal"]');
   if (terminalButton) {
@@ -3524,6 +3534,31 @@ roadmapUI = createRoadmap({
     if (result.linkWarning) toast(() => tr('roadmap.linkWarning'), true);
   },
 });
+dockingUI = createDocking({
+  panels: {
+    conversation: document.querySelector('.conversation-column'),
+    roadmap: $('roadmap-panel'),
+    inspector: $('details-panel'),
+  },
+  read: readStorage,
+  write: writeStorage,
+  toast,
+  onChange: ({ active, visiblePanels }) => {
+    roadmapUI.setDocked(
+      active
+        ? {
+            visible: visiblePanels.includes('roadmap'),
+            onOpen: () => dockingUI.openPanel('roadmap'),
+            onClose: () => dockingUI.closePanel('roadmap'),
+          }
+        : null,
+    );
+    applyPreferences();
+    if (!active || visiblePanels.includes('conversation')) resizeDockedConversation();
+  },
+  onResize: resizeDockedConversation,
+});
+dockingUI.updateViewport();
 for (const id of ['open-roadmap', 'project-roadmap', 'detail-project-roadmap'])
   $(id).onclick = (event) => roadmapUI.open(event.currentTarget);
 archivesUI = createProjectArchives({
@@ -3645,7 +3680,8 @@ commandsUI = createCommands({
         break;
       case 'session':
         inspectorUI.setTab('session');
-        if (innerWidth <= 1080) $('details-panel').classList.add('mobile-open');
+        if (dockingUI?.active) dockingUI.openPanel('inspector');
+        else if (innerWidth <= 1080) $('details-panel').classList.add('mobile-open');
         else {
           prefs.details = true;
           savePreferences({ details: true });
@@ -3824,6 +3860,11 @@ $('custom-model-list').onclick = (event) => {
 $('toggle-sidebar').onclick = openSidebar;
 $('mobile-backdrop').onclick = closeSidebar;
 $('toggle-details').onclick = () => {
+  if (dockingUI?.active) {
+    if (dockingUI.visiblePanels().includes('inspector')) dockingUI.closePanel('inspector');
+    else dockingUI.openPanel('inspector');
+    return;
+  }
   if (innerWidth <= 1080) $('details-panel').classList.toggle('mobile-open');
   else prefs.details = !prefs.details;
   savePreferences({ details: prefs.details });
@@ -3831,6 +3872,7 @@ $('toggle-details').onclick = () => {
 };
 $('scroll-bottom').onclick = () => scrollBottom(true);
 $('conversation-scroll').onscroll = () => {
+  if (!conversationVisible()) return;
   const top = $('conversation-scroll').scrollTop;
   // Any meaningful upward move detaches, even inside the generous nearBottom() band.
   // Only the actual bottom reattaches. Downward moves that stop short keep the current
@@ -4028,6 +4070,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('resize', () => {
+  dockingUI?.updateViewport();
   applyPreferences();
   positionMenus();
   resizeComposer();
