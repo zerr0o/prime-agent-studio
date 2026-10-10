@@ -725,3 +725,206 @@
     flex: 1 1 160px;
   }
 }
+
+/* Generic API preferences: compact cards, token rows and one-time secret. */
+.public-api-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 16px 0;
+  background: var(--surface);
+}
+.public-api-heading {
+  font-size: 13px;
+  font-weight: 550;
+  margin: 22px 0 10px;
+}
+.public-api-card .public-api-heading {
+  margin: 0 0 10px;
+}
+.public-api-machine {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.public-api-machine code {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.public-api-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.public-api-endpoint:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.public-api-kind {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 64px;
+}
+.public-api-endpoint code {
+  flex: 1;
+  min-width: 0;
+}
+.public-api-endpoint .secondary-button {
+  font-size: 10px;
+  min-height: 32px;
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+.public-api-warnings {
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+  margin: 16px 0;
+}
+.public-api-warnings p {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.public-api-warnings p:last-child {
+  margin-bottom: 0;
+}
+.public-api-token {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 13px 15px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+.public-api-token-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.public-api-token-head strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.public-api-expiry {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.public-api-token .settings-footnote {
+  margin: 6px 0 0;
+}
+.public-api-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.public-api-scopes li {
+  font-size: 10px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 9px;
+  color: var(--muted);
+}
+.public-api-projects-line {
+  overflow-wrap: anywhere;
+}
+.public-api-revoke {
+  margin-top: 10px;
+  font-size: 10px;
+  min-height: 32px;
+}
+.public-api-field {
+  border: 0;
+  margin: 0 0 16px;
+  padding: 0;
+}
+.public-api-field > label,
+.public-api-field > legend {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+#public-api-create-form input[type='text'],
+#public-api-create-form input[type='date'] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 36px;
+  font: inherit;
+  font-size: 11px;
+}
+.public-api-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.public-api-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.public-api-options {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.public-api-secret {
+  padding: 17px;
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 9px;
+  margin: 18px 0;
+}
+.public-api-secret strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.public-api-secret p {
+  margin: 6px 0 12px;
+  font-size: 11px;
+}
+.public-api-secret code {
+  display: block;
+  margin-bottom: 12px;
+}
+.public-api-secret .public-api-credential {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+@media (max-width: 700px) {
+  .public-api-endpoint {
+    flex-wrap: wrap;
+  }
+  .public-api-token-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .public-api-expiry {
+    white-space: normal;
+  }
+}

@@ -307,6 +307,7 @@ In Studio, open **Preferences → Updates → Check for updates**: this check is
 | [Agents and files](docs/en/inspector.md)              | Subagents, usage, Git changes, previews and document opening.            |
 | [Commands and skills](docs/en/commands.md)            | Native commands, shortcuts, skills and project prompts.                  |
 | [MCP connections](docs/en/mcp.md)                     | Servers, OAuth, allowed tools and connection diagnostics.                |
+| [Public API](docs/en/api.md)                          | Generic v1 contract: local tokens, runs, roadmaps, and linked files.       |
 | [Languages and translations](docs/en/translations.md) | Interface translations and two-language documentation upkeep.            |
 
 To verify the project:

@@ -34,8 +34,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "7b4fcdf6c2c9c63fb703ca149b9683c14da83efd63523091fd72ce5cd247ff6d",
-        "en": "0ff40a770ab524f8fe279faf69c8a4ab3060bcffcbdcb24d9ec7633a6e541c3c"
+        "fr": "ca7ce281047f3082c5f6ce6910150144d61d538d21db8153afc028a5e72cc20a",
+        "en": "95db20452c08d6c140c75865be392a247256894e6321770033619fddeb8e73ce"
       }
     },
     {
@@ -144,6 +144,15 @@
       "reviewed": {
         "fr": "e851e9c4a574ba8734c15e12c911a1289ada76504e48edbb31eb59a4b179f67e",
         "en": "178bd2ba11f77a5d8e772bec9c0bfaf7f57d0de269ef879aac5d5da3aaac24de"
+      }
+    },
+    {
+      "id": "api",
+      "fr": "docs/api.md",
+      "en": "docs/en/api.md",
+      "reviewed": {
+        "fr": "2a0cc4cbaf6abead13948d8d5f70ca1651c19b93845822b7580165caa42a650c",
+        "en": "5023c541208fbfa759caa19a9ac370ee89b6c4d205c1d538eacff025b24d46af"
       }
     }
   ]

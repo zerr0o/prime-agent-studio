@@ -58,6 +58,37 @@ test('Roadmap reads do not create storage; initialization is idempotent and emit
   assert.equal(changes[1].value.revision, 2);
 });
 
+test('revoked admission cannot commit and releases the roadmap transaction lock', async (t) => {
+  const { cwd, service, change, changes } = await fixture(t);
+  await change('init');
+  const denied = Object.assign(new Error('Revoked'), { status: 401 });
+  let checks = 0;
+  await assert.rejects(
+    service.mutate(
+      cwd,
+      {
+        action: 'vision',
+        expectedRevision: 1,
+        text: 'Must not commit',
+      },
+      { by: 'user' },
+      {
+        authorize: async () => {
+          checks++;
+          throw denied;
+        },
+      },
+    ),
+    { status: 401 },
+  );
+  assert.equal(checks, 1);
+  const unchanged = await service.read(cwd);
+  assert.equal(unchanged.revision, 1);
+  assert.equal(unchanged.overview.vision, '');
+  assert.equal(changes.length, 1);
+  assert.equal((await change('vision', { text: 'Authorized' })).revision, 2);
+});
+
 test('two service instances refuse stale writes and preserve the winning transaction', async (t) => {
   const { cwd, file, service, second, change } = await fixture(t);
   await change('init');

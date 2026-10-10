@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#1b1c1e" />
+    <title data-i18n="api_docs.title">Documentation interactive de l’API</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/prime-agent.svg" />
+    <script src="/public/theme.js"></script>
+    <link rel="stylesheet" href="/public/api-docs.css" />
+    <script type="module" src="/public/api-docs.js"></script>
+  </head>
+  <body>
+    <header class="docs-head">
+      <div class="docs-title">
+        <h1 data-i18n="api_docs.title">Documentation interactive de l’API</h1>
+        <p data-i18n="api_docs.intro">
+          Page générique issue du contrat OpenAPI : un test par route. Les actions sont réelles.
+        </p>
+      </div>
+      <p class="docs-links">
+        <a href="/" data-i18n="api_docs.studio">Retour à Studio</a>
+        <a href="/openapi-v1.json" target="_blank" rel="noopener noreferrer" data-i18n="api_docs.contract"
+          >OpenAPI (JSON)</a
+        >
+      </p>
+      <div class="docs-controls">
+        <label class="docs-token" for="api-docs-token">
+          <span data-i18n="api_docs.token">Jeton Studio</span>
+          <input
+            id="api-docs-token"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            data-i18n-placeholder="api_docs.token_ph"
+            placeholder="Collez le jeton (mémoire seule)"
+          />
+        </label>
+        <button id="api-docs-clear-token" type="button" data-i18n="api_docs.clear">Effacer</button>
+        <input
+          id="api-docs-search"
+          type="search"
+          data-i18n-placeholder="api_docs.search_ph"
+          data-i18n-aria-label="api_docs.search_ph"
+          placeholder="Rechercher une route…"
+          aria-label="Rechercher une route"
+        />
+        <select data-language-select aria-label="Language"></select>
+      </div>
+    </header>
+    <div class="docs-layout">
+      <nav class="docs-nav" data-i18n-aria-label="api_docs.nav" aria-label="Routes">
+        <h2 data-i18n="api_docs.nav">Routes</h2>
+        <ul id="api-docs-nav"></ul>
+      </nav>
+      <main id="api-docs-list"></main>
+    </div>
+    <p id="api-docs-empty" data-i18n="api_docs.empty" hidden>Aucune route.</p>
+    <p id="api-docs-error" data-i18n="api_docs.spec_error" hidden role="alert">
+      Contrat OpenAPI introuvable.
+    </p>
+  </body>
+</html>

@@ -307,6 +307,7 @@ Dans le Studio, ouvrez **Préférences → Mise à jour → Vérifier les mises 
 | [Agents et fichiers](docs/inspector.md)           | Sous-agents, consommation, changements Git, aperçus et ouverture des documents.     |
 | [Commandes et skills](docs/commands.md)           | Commandes natives, raccourcis, skills et prompts du projet.                         |
 | [Connexions MCP](docs/mcp.md)                     | Serveurs, OAuth, outils autorisés et diagnostic des connexions.                     |
+| [API publique](docs/api.md)                        | Contrat v1 générique : jetons locaux, runs, roadmaps et fichiers liés.                |
 | [Langues et traductions](docs/translations.md)    | Traductions de l’interface et maintien des deux langues de documentation.           |
 
 Pour vérifier le projet :

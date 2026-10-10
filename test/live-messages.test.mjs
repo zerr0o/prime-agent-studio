@@ -44,6 +44,37 @@ test('live controls match an active native session and exact project before reac
   assert.equal((await f.service.getSnapshot(sessionId, cwd)).available, false);
 });
 
+test('admission is rechecked after asynchronous validation before a live send', async () => {
+  const f = fixture();
+  let validated, release;
+  const reached = new Promise((resolvePromise) => {
+    validated = resolvePromise;
+  });
+  const gate = new Promise((resolvePromise) => {
+    release = resolvePromise;
+  });
+  let allowed = true;
+  const service = createLiveMessages({
+    getRuns: async () => [f.run],
+    getClient: async () => f.client,
+    validateMessage: async () => {
+      validated();
+      await gate;
+    },
+  });
+  const sending = service.send(sessionId, body(), {
+    authorize: async () => {
+      if (!allowed) throw Object.assign(new Error('Revoked'), { status: 401 });
+    },
+  });
+  const rejected = assert.rejects(sending, { status: 401 });
+  await reached;
+  allowed = false;
+  release();
+  await rejected;
+  assert.equal(f.calls.length, 0);
+});
+
 test('queue replacements preserve the native command action kind', async () => {
   const f = fixture();
   for (const [expectedText, text] of [

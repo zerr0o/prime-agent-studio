@@ -13,6 +13,9 @@ import { createWorktreeRoutes } from './lib/worktree-routes.mjs';
 import { createAgentRuntime } from './lib/agent.mjs';
 import { createRemoteNetwork } from './lib/remote-network.mjs';
 import { createRemoteAccess } from './lib/remote-access.mjs';
+import { createPublicApiAccess } from './lib/public-api-access.mjs';
+import { generateOpenApi } from './lib/public-api-contract.mjs';
+import { createPublicApi, isPublicApiPath, isPublicApiAdminPath, publicApiError } from './lib/public-api.mjs';
 import { createRemoteUpdates } from './lib/remote-updates.mjs';
 import { tailscaleSetupUrl } from './lib/tailscale-https.mjs';
 import { createModelConfigStore } from './lib/model-config.mjs';
@@ -60,6 +63,7 @@ import { promisify } from 'node:util';
 import { forgetGitHead } from './lib/git-head.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const OPENAPI_DOCUMENT = JSON.stringify(generateOpenApi(), null, 2) + '\n';
 const VERSION = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8')).version;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -168,6 +172,7 @@ export function createApp(options = {}) {
   const worktreeRoutesPlaceholder = { current: null };
   const fileStore = createFileStore(join(dataDir, 'attachments'));
   const remoteAccess = createRemoteAccess({ dataDir });
+  const publicApiAccess = options.publicApiAccess || createPublicApiAccess({ dataDir });
   const remoteUpdates = createRemoteUpdates({
     dataDir,
     installedVersion: VERSION,
@@ -175,12 +180,18 @@ export function createApp(options = {}) {
   });
   const remoteNetwork = createRemoteNetwork({
     access: remoteAccess,
+    publicApiAccess,
     upstreamPort: () => server.address()?.port,
     ...options.networkOptions,
   });
   const subagentDefaults = createSubagentDefaultsStore({ dataDir });
   const runs = new Map(),
     sessionLocks = new Set();
+  const eventProjections = new WeakMap();
+  const streamWire = (res, item, wire) =>
+    eventProjections.has(res)
+      ? `id: ${item.seq}\ndata: ${JSON.stringify(eventProjections.get(res)(item))}\n\n`
+      : wire;
   const desktopNotifications = createDesktopNotifications();
   const pushService = options.pushService || createPushService({ dataDir });
   const studioPreferences = async () => {
@@ -758,6 +769,7 @@ export function createApp(options = {}) {
       if (run.sessionId && !closing)
         setTimeout(() => void conversationSync.checkSession(run.sessionId).catch(() => {}), 1500).unref();
     }
+    publicApi.noteEvent(run, event);
     const item = { ...event, seq: ++run.seq };
     const wire = `id: ${item.seq}\ndata: ${JSON.stringify(item)}\n\n`;
     run.events.push({ item, wire });
@@ -771,14 +783,15 @@ export function createApp(options = {}) {
       if (client.writableLength > 16 * 1024 * 1024) {
         client.destroy();
         run.clients.delete(client);
-      } else client.write(wire);
+      } else client.write(streamWire(client, item, wire));
     }
     if (run.finished) {
       for (const client of run.clients) client.end();
       run.clients.clear();
     }
   }
-  async function startRun(body) {
+  async function startRun(body, { authorize, apiRequestId } = {}) {
+    await authorize?.();
     // Admission revision for the Computer Use opt-in: slow validation
     // follows, and a stop landing meanwhile must win. A stale grant is
     // dropped while the requested run still starts; unrelated runs are
@@ -1003,6 +1016,7 @@ export function createApp(options = {}) {
       run.projectCwd = worktreeAuth.projectCwd;
       run._pendingWorktree = { worktreeId: worktreeAuth.entry.id, projectCwd: worktreeAuth.projectCwd };
     }
+    if (apiRequestId) run.apiRequestId = apiRequestId;
     runs.set(run.id, run);
     try {
       const computerImageCapable = modelSupportsImages(selectedModel, catalog);
@@ -1035,6 +1049,7 @@ export function createApp(options = {}) {
       run.prompt = appendFileMessage(run.prompt, await fileStore.save(files));
       if (pastudioGated && existing?.id && typeof body.model === 'string' && body.model)
         await store.setConversationSettings(existing.id, { model: body.model });
+      await authorize?.();
       run.handle = await runtime.start({
         cwd,
         message: run.prompt,
@@ -1090,7 +1105,26 @@ export function createApp(options = {}) {
       startRun,
     });
   worktreeRoutesPlaceholder.current = worktreeRoutes;
-  function subscribe(req, res, run, url) {
+  async function stopRun(run) {
+    if (!run.finished) {
+      run.status = 'stopping';
+      roadmapBridge.revokeOwner(run.id);
+      await computerBridge.revokeOwner(run.id);
+      await run.handle?.cancel();
+    }
+    return { stopped: true, ...withComputerFlag(run) };
+  }
+  async function respondRun(run, body) {
+    if (run.finished || run.status !== 'running' || !run.handle?.respond)
+      throw new HttpError(409, tr('questions.closed'));
+    try {
+      return await run.handle.respond(body.id, body.response);
+    } catch (error) {
+      throw new HttpError(409, error.message);
+    }
+  }
+  function subscribe(req, res, run, url, projectEvent) {
+    if (projectEvent) eventProjections.set(res, projectEvent);
     let after = Number(req.headers['last-event-id'] || url.searchParams.get('after') || 0);
     if (!Number.isSafeInteger(after) || after < 0) after = 0;
     res.writeHead(200, {
@@ -1100,9 +1134,12 @@ export function createApp(options = {}) {
       'X-Accel-Buffering': 'no',
     });
     res.write(': connected\n\n');
-    if (run.events[0]?.item.seq > after + 1)
-      res.write(`data: ${JSON.stringify({ kind: 'replay_truncated', sessionId: run.sessionId })}\n\n`);
-    for (const event of run.events) if (event.item.seq > after) res.write(event.wire);
+    if (run.events[0]?.item.seq > after + 1) {
+      const marker = { kind: 'replay_truncated', sessionId: run.sessionId };
+      res.write(`data: ${JSON.stringify(projectEvent ? projectEvent(marker) : marker)}\n\n`);
+    }
+    for (const event of run.events)
+      if (event.item.seq > after) res.write(streamWire(res, event.item, event.wire));
     if (run.finished) {
       res.end();
       return;
@@ -1120,6 +1157,33 @@ export function createApp(options = {}) {
       if (run.finished && Date.now() - Date.parse(run.endedAt) > 3600000) runs.delete(id);
   }, 60000);
   cleanup.unref();
+  const publicApi = createPublicApi({
+    access: publicApiAccess,
+    store,
+    dataDir,
+    agentHome,
+    version: VERSION,
+    models,
+    runs,
+    startRun,
+    stopRun,
+    respond: respondRun,
+    subscribe,
+    roadmapRoutes,
+    liveMessages,
+    readBody,
+    onRoadmapRead: () => syncSoon(0, 60000),
+    getEndpoints: async () => {
+      const network = await remoteNetwork.get();
+      const port = server.address()?.port;
+      return [
+        ...(port ? [{ kind: 'local', url: `http://127.0.0.1:${port}` }] : []),
+        ...network.channels
+          .filter((channel) => channel.url && ['tailscale', 'https'].includes(channel.kind))
+          .map(({ kind, url }) => ({ kind, url })),
+      ];
+    },
+  });
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -1139,6 +1203,18 @@ export function createApp(options = {}) {
       const url = new URL(req.url, `http://${host}`),
         path = url.pathname,
         method = req.method;
+      if (
+        req.headers.authorization &&
+        /^\s*Bearer(?:\s|$)/i.test(req.headers.authorization) &&
+        !isPublicApiPath(path)
+      ) {
+        const error = Object.assign(new HttpError(401, 'API tokens are accepted only on /api/v1.'), {
+          code: 'api_token_not_accepted',
+        });
+        return publicApiError(res, error);
+      }
+      if (isPublicApiPath(path)) return await publicApi.handle(req, res, url);
+      if (isPublicApiAdminPath(path)) return await publicApi.handleAdmin(req, res, url);
       if (method === 'GET' && path === '/api/health')
         return json(res, 200, {
           service: 'prime-agent-gui',
@@ -1905,30 +1981,26 @@ export function createApp(options = {}) {
         const run = runs.get(runRoute[1]);
         if (!run) throw new HttpError(404, tr('server.execution_introuvable_rechargez_son_historique'));
         if (method === 'POST' && runRoute[2] === 'interactions') {
-          if (run.finished || run.status !== 'running' || !run.handle?.respond)
-            throw new HttpError(409, tr('questions.closed'));
-          const body = await readBody(req);
-          try {
-            return json(res, 200, await run.handle.respond(body.id, body.response));
-          } catch (error) {
-            throw new HttpError(409, error.message);
-          }
+          return json(res, 200, await respondRun(run, await readBody(req)));
         }
         if (method === 'GET' && runRoute[2] === 'events') return subscribe(req, res, run, url);
         if (method === 'POST' && runRoute[2] === 'stop') {
-          if (!run.finished) {
-            run.status = 'stopping';
-            roadmapBridge.revokeOwner(run.id);
-            await computerBridge.revokeOwner(run.id);
-            await run.handle?.cancel();
-          }
-          return json(res, 200, { stopped: true, ...withComputerFlag(run) });
+          return json(res, 200, await stopRun(run));
         }
       }
       if (method === 'GET' || method === 'HEAD') {
         let file;
         if (path === '/' || path === '/index.html') file = join(ROOT, 'index.html');
-        else if (path === '/vendor/marked.js')
+        else if (path === '/api-docs' || path === '/api-docs/') file = join(ROOT, 'public', 'api-docs.html');
+        else if (path === '/openapi-v1.json') {
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Length': Buffer.byteLength(OPENAPI_DOCUMENT),
+            'Cache-Control': 'no-cache',
+          });
+          res.end(method === 'HEAD' ? undefined : OPENAPI_DOCUMENT);
+          return;
+        } else if (path === '/vendor/marked.js')
           file = join(ROOT, 'node_modules', 'marked', 'lib', 'marked.esm.js');
         else if (path === '/vendor/purify.js')
           file = join(ROOT, 'node_modules', 'dompurify', 'dist', 'purify.es.mjs');
@@ -1981,6 +2053,7 @@ export function createApp(options = {}) {
       }
       throw new HttpError(404, tr('server.route_introuvable'));
     } catch (error) {
+      if (/^\/api\/(?:v1|public-api)(?:\/|\?|$)/.test(req.url)) return publicApiError(res, error);
       if (res.headersSent) {
         res.end();
         return;
@@ -2026,6 +2099,7 @@ export function createApp(options = {}) {
   server.headersTimeout = 15000;
   async function close() {
     remoteNetwork.close();
+    await publicApi.close();
     directoryPicker.close?.();
     mcp.close?.();
     providers.close?.();
@@ -2056,6 +2130,8 @@ export function createApp(options = {}) {
     engineSettings,
     remoteAccess,
     remoteNetwork,
+    publicApiAccess,
+    publicApi,
     roadmap,
     roadmapBridge,
     computer,
