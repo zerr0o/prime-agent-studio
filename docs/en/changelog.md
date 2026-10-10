@@ -4,6 +4,15 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.2.1-beta.2
+
+- **Public API v1 for external integrations**: project-scoped Bearer tokens, projects and conversations, run control, resumable SSE, Roadmap reads and writes, and linked file downloads. The API is disabled by default and managed locally in **Preferences → API**.
+- **Interactive OpenAPI documentation**: open `/api-docs` from Preferences for a manual test of each of the 18 operations, with JSON, cURL, status, headers and response. Tokens stay in page memory; POST tests require confirmation; stream and file previews are bounded and cancellable.
+- **Scoped access and safe retries**: separate run, Roadmap and file permissions, token expiry and revocation, one-hour in-memory request deduplication, revision conflicts, and permission rechecks before delayed actions.
+- **File streaming and resume**: HEAD, byte ranges and file validators, with per-reference local provenance checks to avoid substituting files from another PC.
+- **Remote boundaries preserved**: API tokens do not unlock internal routes or remote token management. Remote API calls require Tailscale or HTTPS; plain LAN HTTP and cross-origin browser access are not enabled.
+- **Documentation and validation**: FR/EN guides, a generated OpenAPI contract, and browser checks for all operations. Run access can execute code and incur provider costs; linked files may be outside the project folder. Disabling the API does not stop agents already running.
+
 ## 4.2.1-beta.1
 
 Maintenance beta based on 4.2.0. No new user-facing feature or API change.

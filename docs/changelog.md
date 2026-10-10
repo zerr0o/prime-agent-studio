@@ -4,6 +4,15 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.2.1-beta.2
+
+- **API publique v1 pour les intégrations externes** : jetons Bearer limités aux projets choisis, projets et conversations, contrôle des runs, SSE avec reprise, lecture et écriture Roadmap, téléchargement des fichiers liés. L’API est désactivée par défaut et se gère localement dans **Préférences → API**.
+- **Documentation OpenAPI interactive** : ouvrir `/api-docs` depuis les Préférences pour tester manuellement chacune des 18 opérations, avec JSON, cURL, statut, en-têtes et réponse. Les jetons restent en mémoire dans la page ; les tests POST demandent une confirmation ; les aperçus de flux et fichiers sont limités et annulables.
+- **Droits limités et reprises sûres** : permissions distinctes pour les runs, roadmaps et fichiers, expiration et révocation des jetons, déduplication des requêtes en mémoire pendant une heure, conflits de révision et nouvelle vérification des droits avant les actions différées.
+- **Transfert et reprise des fichiers** : HEAD, plages d’octets et validateurs, avec contrôle de provenance locale par référence pour éviter de substituer un fichier venant d’un autre PC.
+- **Limites distantes conservées** : les jetons API n’ouvrent ni les routes internes ni la gestion distante des jetons. Les appels distants exigent Tailscale ou HTTPS ; le LAN HTTP non chiffré et les navigateurs d’une autre origine ne sont pas ouverts.
+- **Documentation et validation** : guides FR/EN, contrat OpenAPI généré et contrôles navigateur pour toutes les opérations. L’exécution peut lancer du code et engendrer des coûts fournisseur ; les fichiers liés peuvent être hors du projet. Désactiver l’API n’arrête pas les agents déjà en cours.
+
 ## 4.2.1-beta.1
 
 Bêta de maintenance basée sur la 4.2.0. Aucune nouvelle fonctionnalité visible ni modification de l’API.
