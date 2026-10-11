@@ -4,6 +4,13 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.3.0-beta.3
+
+- **Streaming multi-conversations plus fluide** : les mises à jour sont regroupées au lieu de recalculer immédiatement chaque événement en arrière-plan, et les panneaux masqués ne sont plus redessinés. Les aperçus de dépôt ne sont actualisés que si nécessaire et les aperçus en attente sont annulés à la fin du geste.
+- **Conversations restaurées** : tous les panneaux sauvegardés visibles chargent leur historique sans nécessiter de clic, sans changer la conversation active ni ses brouillons.
+- **Chargement de la Roadmap** : les requêtes invalidées sont remplacées sans attendre le prochain rafraîchissement périodique, avec un délai maximal et les protections contre les réponses périmées conservées.
+- **Indicateur unique** : suppression du libellé de travail en double au-dessus des composers indépendants, sans retirer les indications de chargement ou d’indisponibilité.
+
 ## 4.3.0-beta.2
 
 - **Historique des conversations rétabli** : corrige une régression introduite dans 4.3.0-beta.1 qui pouvait laisser la conversation vide lorsqu’elle contenait des appels d’outils. Les messages étaient chargés, mais leur affichage s’arrêtait avec `Assignment to constant variable.`

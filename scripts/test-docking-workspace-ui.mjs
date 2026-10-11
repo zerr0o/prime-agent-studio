@@ -1983,11 +1983,10 @@ try {
     }
     await page.mouse.move(targetX, targetY);
     await page.mouse.move(targetX, targetY);
-    if (!markerSeen)
-      markerSeen = await page
-        .locator(DOCK.insertion)
-        .isVisible()
-        .catch(() => false);
+    // Preview updates are coalesced per frame. Observe the rendered marker
+    // before releasing; a synchronous isVisible() can run before that frame.
+    await expect(page.locator(DOCK.insertion)).toBeVisible({ timeout: 1000 });
+    markerSeen = true;
     await page.mouse.up();
     await expect(page.locator(DOCK.insertion)).toBeHidden({ timeout: 10000 });
     return { markerSeen, zoneHidden };
@@ -3325,11 +3324,31 @@ try {
       false,
       'Delayed A response must never paint view B',
     );
-    const runlineA = await page.evaluate((id) => {
+    const runStateA = await page.evaluate((id) => {
       const shell = document.querySelector(`.cvw-shell[data-view="${id}"]`);
-      return shell?.querySelector('.cvw-runline')?.hidden === false;
+      const status = shell?.querySelector('[data-cvw="run-status"]');
+      const visible = (node) => !!node && !node.hidden && node.getClientRects().length > 0;
+      return {
+        composerVisible: visible(status),
+        hasLabel: !!status?.textContent.trim(),
+        legacyHidden: shell?.querySelector('.cvw-runline')?.hidden === true,
+        visibleCount: [...(shell?.querySelectorAll('.cvw-runline, [data-cvw="run-status"]') || [])].filter(
+          visible,
+        ).length,
+      };
     }, concA);
-    assert.equal(runlineA, true, 'Background view A shows its live run state while B is focused');
+    assert.equal(
+      runStateA.composerVisible,
+      true,
+      'Background view A shows its live run state while B is focused',
+    );
+    assert.equal(runStateA.hasLabel, true, 'The live status must include a readable label');
+    assert.equal(runStateA.legacyHidden, true, 'The old duplicate runline stays hidden');
+    assert.equal(
+      runStateA.visibleCount,
+      1,
+      'Exactly one working indicator is visible in the background pane',
+    );
     controlB.stream('Réponse différée exclusive pour la vue B.');
     await expect
       .poll(() => viewMessagesText(page, concB), { timeout: 10000 })
@@ -3340,7 +3359,9 @@ try {
       false,
       'Delayed B response must never paint view A',
     );
-    step('Concurrent held runs stream into their own views only; background runline stays live.');
+    step(
+      'Concurrent held runs stream into their own views only; exactly one background run status stays live.',
+    );
     // Session event for A while B is focused: inspector + B messages must not move.
     const inspectorBefore = await page.locator('#detail-session-id').textContent();
     const bMessagesBefore = await viewMessagesText(page, concB);

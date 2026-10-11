@@ -4,6 +4,13 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.3.0-beta.3
+
+- **Smoother multi-conversation streaming**: coalesces live transcript updates instead of rendering immediately for every background event, and avoids painting hidden conversation panes. Dock drop previews only update when needed and pending previews are cancelled on drop or cancel.
+- **Restored conversations**: all visible saved conversation panes load their history without requiring a focus click; background loading preserves the active conversation and drafts.
+- **Roadmap loading**: invalidated requests are replaced without waiting for the polling tick, with bounded requests and stale-response guards preserved.
+- **Single run indicator**: removes the duplicated working label above independent conversation composers while keeping loading and unavailable notices.
+
 ## 4.3.0-beta.2
 
 - **Conversation history restored**: fixes a regression introduced in 4.3.0-beta.1 that could leave the transcript blank when a conversation contained tool calls. The messages were loaded, but rendering stopped with `Assignment to constant variable.`

@@ -93,6 +93,18 @@ export function createRoadmap({
     appliedSequence = 0,
     activityEpoch = '',
     activityRevision = -1;
+  // One bounded queued retry while a GET is in flight; stale requests are
+  // cancelled through the api signal and hung ones abort after a timeout.
+  let roadmapController = null,
+    queuedRefresh = false;
+  const REFRESH_TIMEOUT_MS = 8000;
+  function abortInflightRefresh() {
+    if (roadmapController) {
+      try {
+        roadmapController.abort();
+      } catch {}
+    }
+  }
   let opener,
     error = '',
     drag = null,
@@ -147,27 +159,55 @@ export function createRoadmap({
     if (changed && !pending) render();
   }
   async function refresh() {
-    if (!cwd || getContext().online === false || refreshPending || pending || document.hidden) return;
+    if (!cwd || getContext().online === false || pending || document.hidden) return;
+    if (refreshPending) {
+      // A GET is in flight: queue one bounded retry instead of dropping the
+      // refresh until the next poll. The in-flight request was (or will be)
+      // aborted on generation bumps; its settle flushes this single retry.
+      if (!opened && Date.now() - lastSummaryRefresh < 10000) return;
+      queuedRefresh = true;
+      return;
+    }
     if (!opened && Date.now() - lastSummaryRefresh < 10000) return;
     lastSummaryRefresh = Date.now();
     const version = generation,
       sequence = ++requestSequence;
+    const controller = new AbortController();
+    roadmapController = controller;
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      try {
+        controller.abort();
+      } catch {}
+    }, REFRESH_TIMEOUT_MS);
     refreshPending = true;
     try {
-      const next = await api(`/api/roadmap?${query(cwd)}`);
+      const next = await api(`/api/roadmap?${query(cwd)}`, { signal: controller.signal });
       if (version !== generation) return;
       error = '';
       accept(next, sequence);
       renderStatus();
       return true;
     } catch (e) {
+      const aborted = timedOut || controller.signal.aborted || e?.name === 'AbortError';
+      // Stale cancellation (visibility flip / project change): silent, the
+      // queued retry refetches. Current-generation aborts (destroy): silent.
+      if (aborted && version !== generation) return;
+      if (aborted && !timedOut) return;
       if (version === generation) {
-        error = failureMessage(e);
+        error = timedOut ? failureMessage(new Error('Load failed')) : failureMessage(e);
         onSummary(null);
         renderStatus();
       }
     } finally {
+      clearTimeout(timeout);
+      if (roadmapController === controller) roadmapController = null;
       refreshPending = false;
+      if (queuedRefresh) {
+        queuedRefresh = false;
+        void refresh();
+      }
     }
   }
   async function mutate(action, params = {}, revision = doc?.revision) {
@@ -1620,6 +1660,7 @@ export function createRoadmap({
     cwd = nextCwd;
     doc = null;
     generation++;
+    abortInflightRefresh();
     expanded.clear();
     selected.clear();
     foldedMilestones.clear();
@@ -1698,6 +1739,7 @@ export function createRoadmap({
         dock.visible = false;
         opened = false;
         generation++;
+        abortInflightRefresh();
         panel.hidden = true;
         updatePresentation();
       }
@@ -1708,6 +1750,7 @@ export function createRoadmap({
     opened = false;
     panel.hidden = true;
     generation++;
+    abortInflightRefresh();
     document.body.classList.remove('roadmap-open');
     enlarged = false;
     updatePresentation();
@@ -1860,6 +1903,7 @@ export function createRoadmap({
       opened = false;
       enlarged = false;
       generation++;
+      abortInflightRefresh();
       panel.hidden = true;
       if (editor?.isConnected && panel.parentElement !== document.body)
         document.body.insertBefore(panel, editor);
@@ -1892,7 +1936,10 @@ export function createRoadmap({
       document.body.classList.remove('roadmap-open');
       document.body.classList.remove('roadmap-expanded');
     }
-    if (flipping) generation++;
+    if (flipping) {
+      generation++;
+      abortInflightRefresh();
+    }
     opened = nextVisible;
     panel.hidden = !nextVisible;
     updatePresentation();
@@ -1908,6 +1955,8 @@ export function createRoadmap({
     setDocked,
     destroy: () => {
       clearInterval(timer);
+      queuedRefresh = false;
+      abortInflightRefresh();
       dock = null;
       opened = false;
       document.body.classList.remove('roadmap-open');

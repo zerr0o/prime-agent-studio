@@ -2359,7 +2359,7 @@ function renderMessages(forceScroll = false) {
 // below the transcript always shows the focused run.
 function renderHostPrimary(forceScroll = false, primary = null) {
   const view = primary || (convViews ? convViews.byId(PRIMARY_VIEW_ID) : null);
-  if (!view) return;
+  if (!view || (dockingUI?.active && !dockingUI.visiblePanels().includes(PRIMARY_VIEW_ID))) return;
   cancelAnimationFrame(bottomScrollFrame);
   bottomScrollFrame = 0;
   if (forceScroll) followConversation = true;
@@ -2873,9 +2873,9 @@ function restoreGenerationForView(view) {
   renderConfigurationWarning();
 }
 
-// Post-focus settle: generation controls follow the view; stale or unloaded
-// session views reload (focused views only — backgrounds never fetch). Pass
-// deferLoad when the caller awaits the load itself (single history/sync fetch).
+// Focused navigation restores controls and reloads stale session data. Visible
+// background panes hydrate separately without changing the global selection.
+// deferLoad lets the caller own the single history/sync fetch.
 function afterViewFocused(opts = {}) {
   const view = convViews?.focused();
   if (!view) return;
@@ -2883,10 +2883,27 @@ function afterViewFocused(opts = {}) {
   if (
     !opts.deferLoad &&
     view.sessionId &&
-    (view.dirty || (!view.history.length && !view.loading && !view.viewRunId))
+    !view.loading &&
+    (view.dirty || (!view.historyMeta && !view.history.length && !view.viewRunId))
   ) {
     view.dirty = false;
     void loadSessionIntoView(view);
+  }
+}
+
+function hydrateVisibleSessionViews() {
+  if (!state.initialized || !dockingUI?.active || !convViews) return;
+  for (const id of dockingUI.visiblePanels()) {
+    const view = convViews.byId(id);
+    if (
+      view?.sessionId &&
+      !view.loading &&
+      !view.unavailable &&
+      (view.dirty || (!view.historyMeta && !view.history.length))
+    ) {
+      view.dirty = false;
+      void loadSessionIntoView(view);
+    }
   }
 }
 
@@ -2962,6 +2979,8 @@ async function loadSessionIntoView(view) {
     restoreDraft();
     renderNavigation();
     renderMessages(true);
+  } else if (originId === PRIMARY_VIEW_ID && dockingUI?.active) {
+    renderHostPrimary();
   } else {
     convViews.refreshView(originId);
   }
@@ -2998,6 +3017,7 @@ async function loadSessionIntoView(view) {
     if (running) {
       current.viewRunId = running.id;
       if (!running.initialized) initializeRun(running, current.history);
+      else running.base = historyBeforeRun(current.history, running);
       subscribe(running);
     }
     current.loading = false;
@@ -3014,6 +3034,8 @@ async function loadSessionIntoView(view) {
       renderNavigation();
       renderMessages(true);
       saveSelection();
+    } else if (originId === PRIMARY_VIEW_ID && dockingUI?.active) {
+      renderHostPrimary();
     } else {
       convViews.refreshView(originId);
     }
@@ -3028,6 +3050,8 @@ async function loadSessionIntoView(view) {
       renderMessages();
       banner(translateKnown(e.message), true);
       toast(translateKnown(e.message), true);
+    } else if (originId === PRIMARY_VIEW_ID && dockingUI?.active) {
+      renderHostPrimary();
     } else {
       convViews.refreshView(originId);
     }
@@ -3305,11 +3329,7 @@ function applyRunEvent(run, e) {
       break;
   }
   if (convViews?.composerLive?.()) {
-    const owner = convViews.byRun(run.id) || (run.sessionId ? convViews.bySession(run.sessionId) : null);
-    if (owner && !convViews.isFocused(owner.id)) {
-      if (owner.id === PRIMARY_VIEW_ID) renderHostPrimary();
-      else convViews.renderViewNow(owner.id);
-    }
+    // Coalesce live deltas per frame; never repaint the full history in the SSE callback.
     convViews.notifyRunEvent(run, e.kind);
     scheduleMessages();
   } else if (convViews) {
@@ -3686,6 +3706,7 @@ function adoptVisibleRuns() {
       convViews.refreshView(view.id);
     }
   }
+  hydrateVisibleSessionViews();
 }
 function modelConfigNumber(value) {
   return new Intl.NumberFormat('fr-FR').format(value || 0);
@@ -4808,6 +4829,10 @@ dockingUI = createDocking({
     // classic home stays hidden until undock restores it via prefs.details.
     if (active && hasInspectorSplit()) $('details-panel').hidden = true;
     applyPreferences();
+    if (active && state.initialized) {
+      hydrateVisibleSessionViews();
+      if (visiblePanels.includes(PRIMARY_VIEW_ID)) renderHostPrimary();
+    }
     if (!active || conversationVisible()) resizeDockedConversation();
   },
   onResize: resizeDockedConversation,

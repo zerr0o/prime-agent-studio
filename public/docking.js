@@ -114,6 +114,12 @@ export function createDocking({
   let active = false;
   let dragged = null;
   let resizing = null;
+  // Drop-preview fast path (beta.3): dragover only records the latest point;
+  // one rAF does the measuring + DOM placement, skipped when target unchanged.
+  let previewKey = null;
+  let previewGroup = null;
+  let pendingPreview = null;
+  let previewRaf = 0;
   const viewport = matchMedia('(min-width: 1081px)');
   const workspace = document.querySelector('.workspace-body');
   const opener = document.getElementById('open-docking');
@@ -838,14 +844,19 @@ export function createDocking({
       if (!dragged) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
-      showDropPreview(group, dropTarget(event, group, dragged));
+      // Coalesce to the latest point: measuring + DOM work run once per frame.
+      schedulePreview(group, event.clientX, event.clientY, dragged);
     };
     group.ondragleave = (event) => {
-      if (!group.contains(event.relatedTarget)) hideDropPreview();
+      if (group.contains(event.relatedTarget)) return;
+      if (pendingPreview?.group === group) cancelPendingPreview();
+      if (previewGroup === group) hideDropPreview();
     };
     group.ondrop = (event) => {
       if (!dragged) return;
       event.preventDefault();
+      // The commit derives from this event, never from a queued rAF point.
+      cancelPendingPreview();
       const id = dragged;
       const target = dropTarget(event, group, id);
       commit(movePanel(layout, { panel: id, targetGroupId: model.id, ...target }), id);
@@ -889,12 +900,24 @@ export function createDocking({
               : 'bottom';
     return { zone };
   }
+  function previewKeyOf(group, target) {
+    const tabX = Number.isFinite(target.tabX) ? Math.round(target.tabX) : '';
+    return `${group.dataset.dockGroup}|${target.zone}|${target.index ?? ''}|${tabX}`;
+  }
   function hideDropPreview() {
     preview.hidden = tabInsertion.hidden = true;
     preview.remove();
     tabInsertion.remove();
+    previewKey = null;
+    previewGroup = null;
   }
   function showDropPreview(group, target) {
+    const key = previewKeyOf(group, target);
+    if (key === previewKey && previewGroup === group) {
+      // Same target: the expected node is already placed with current text.
+      const node = Number.isFinite(target.tabX) ? tabInsertion : preview;
+      if (node.parentNode === group && node.isConnected && !node.hidden) return;
+    }
     hideDropPreview();
     if (Number.isFinite(target.tabX)) {
       tabInsertion.style.left = `${target.tabX}px`;
@@ -906,6 +929,28 @@ export function createDocking({
       preview.hidden = false;
       group.append(preview);
     }
+    previewKey = key;
+    previewGroup = group;
+  }
+  function cancelPendingPreview() {
+    if (previewRaf) cancelAnimationFrame(previewRaf);
+    previewRaf = 0;
+    pendingPreview = null;
+  }
+  function schedulePreview(group, clientX, clientY, sourceId) {
+    pendingPreview = { group, clientX, clientY, sourceId };
+    if (!previewRaf) previewRaf = requestAnimationFrame(runPendingPreview);
+  }
+  function runPendingPreview() {
+    previewRaf = 0;
+    const pending = pendingPreview;
+    pendingPreview = null;
+    if (!pending || dragged !== pending.sourceId) return;
+    if (!pending.group.isConnected || !host.contains(pending.group)) return;
+    showDropPreview(
+      pending.group,
+      dropTarget({ clientX: pending.clientX, clientY: pending.clientY }, pending.group, pending.sourceId),
+    );
   }
   function groupAtPoint({ clientX, clientY }) {
     if (!active || document.querySelector('dialog:modal')) return null;
@@ -918,7 +963,12 @@ export function createDocking({
       clearDrag();
       return false;
     }
-    host.classList.add('is-dragging');
+    // Pointer path stays synchronous (the caller needs an immediate boolean);
+    // same-target DOM churn is still skipped inside showDropPreview.
+    cancelPendingPreview();
+    // classList.add re-serializes the attribute (and fires observers) even
+    // when the token is already present, so guard it on repeats of one gesture.
+    if (!host.classList.contains('is-dragging')) host.classList.add('is-dragging');
     showDropPreview(group, dropTarget(point, group));
     return true;
   }
@@ -946,6 +996,7 @@ export function createDocking({
   }
   function clearDrag() {
     dragged = null;
+    cancelPendingPreview();
     hideDropPreview();
     host.classList.remove('is-dragging');
   }

@@ -302,15 +302,15 @@ export function createConversationViews(deps) {
     shell.root.setAttribute('aria-label', titleOf(view.id) || view.id);
     const run = view.viewRunId ? getRun(view.viewRunId) : null;
     const live = run && (isRunActive(run) || run.status === 'stopping');
-    if (live) {
-      shell.runline.hidden = false;
-      shell.runline.textContent = tr('conversation_view.agent_working');
-    } else if (view.loading) {
+    if (view.loading) {
       shell.runline.hidden = false;
       shell.runline.textContent = tr('conversation_view.loading_session');
     } else if (view.unavailable) {
       shell.runline.hidden = false;
       shell.runline.textContent = tr('conversation_view.unavailable');
+    } else if (live && !view.composerNodes) {
+      shell.runline.hidden = false;
+      shell.runline.textContent = tr('conversation_view.agent_working');
     } else shell.runline.hidden = true;
   }
 
@@ -348,7 +348,7 @@ export function createConversationViews(deps) {
 
   function renderBg(view, force = false) {
     if (!view.shell || !view.shell.messages.isConnected) return;
-    if (view.id === PRIMARY_VIEW_ID && dockedActive) return;
+    if (dockedActive && (view.id === PRIMARY_VIEW_ID || !visibleIds.includes(view.id))) return;
     if (force) view.follow = true;
     // Visible-pane chrome sync (model options, control triples, unit updates).
     // Classic-parked shells never reach here with paintable visibility.
@@ -378,7 +378,7 @@ export function createConversationViews(deps) {
   }
 
   function scheduleBg(view) {
-    if (view.scheduled || !dockedActive) return;
+    if (view.scheduled || !dockedActive || !visibleIds.includes(view.id)) return;
     view.scheduled = true;
     requestAnimationFrame(() => {
       view.scheduled = false;
@@ -608,7 +608,7 @@ export function createConversationViews(deps) {
   }
   function renderViewNow(id, force = false) {
     const view = views.get(id);
-    if (!view || !view.shell) return;
+    if (!view || !view.shell || (dockedActive && !visibleIds.includes(id))) return;
     renderBg(view, force);
     const scroller = view.shell.scroller;
     if (!scroller) return;
