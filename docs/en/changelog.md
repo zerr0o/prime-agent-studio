@@ -4,6 +4,12 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.3.0-beta.2
+
+- **Conversation history restored**: fixes a regression introduced in 4.3.0-beta.1 that could leave the transcript blank when a conversation contained tool calls. The messages were loaded, but rendering stopped with `Assignment to constant variable.`
+- **Opening conversations from other projects**: the same fix applies when adding or dragging a conversation into the dockable workspace. No history migration or reset is required.
+- **Regression coverage**: historical native tool calls and results are now exercised in classic, primary and additional conversation views, including same-project and cross-project openings.
+
 ## 4.3.0-beta.1
 
 - **Dockable workspace**: enable it from **Layout** on desktop screens wider than 1080 px. Split, group, reorder and resize real panels without gaps. Classic and mobile layouts remain available.

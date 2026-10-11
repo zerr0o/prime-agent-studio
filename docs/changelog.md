@@ -4,6 +4,12 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.3.0-beta.2
+
+- **Historique des conversations rétabli** : corrige une régression introduite dans 4.3.0-beta.1 qui pouvait laisser la conversation vide lorsqu’elle contenait des appels d’outils. Les messages étaient chargés, mais leur affichage s’arrêtait avec `Assignment to constant variable.`
+- **Ouverture depuis un autre projet** : le même correctif s’applique à l’ajout ou au glisser-déposer d’une conversation dans l’espace modulable. Aucune migration ni réinitialisation de l’historique n’est nécessaire.
+- **Couverture de régression** : les appels d’outils natifs historiques et leurs résultats sont désormais testés en mode classique, dans le panneau principal et dans les vues supplémentaires, y compris entre projets.
+
 ## 4.3.0-beta.1
 
 - **Espace modulable** : activez-le depuis **Agencement** sur les écrans desktop de plus de 1080 px. Séparez, regroupez, réordonnez et redimensionnez les vrais panneaux sans gouttière. Les dispositions classique et mobile restent disponibles.

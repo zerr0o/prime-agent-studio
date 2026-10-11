@@ -1881,7 +1881,6 @@ function renderTool(t, messageId, cwd) {
   // Owning-view scoping anchor (observable in DOM, no visual change): tool
   // blocks always carry their view's project, never ambient focus.
   if (viewCwd) d.dataset.cwd = viewCwd;
-  summary = el('summary');
   const status =
     t.status === 'running'
       ? tr('ui.en_cours')

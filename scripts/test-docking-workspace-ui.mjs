@@ -215,6 +215,21 @@ async function seedSession(file, id, projectCwd, title, paragraphs) {
     parentId = record.id;
   };
   link({ type: 'message', id: `${id}-u0`, message: { role: 'user', content: title } });
+  // Historical native tool records must reach the real renderer, not just
+  // text-only turns. These are fixture records; no tool or model is executed.
+  const toolCallId = `${id}-history-tool`;
+  link(
+    entry(`${id}-tool-call`, null, 'assistant', [
+      { type: 'toolCall', id: toolCallId, name: 'ipython', arguments: { code: 'print(2)' } },
+    ]),
+  );
+  link(
+    entry(`${id}-tool-result`, null, 'toolResult', `historical-tool-result:${id}`, {
+      toolCallId,
+      toolName: 'ipython',
+      isError: false,
+    }),
+  );
   paragraphs.forEach((text, index) => {
     link(entry(`${id}-a${index}`, null, 'assistant', text));
     link(entry(`${id}-u${index + 1}`, null, 'user', `Suite ${index + 1} : que faut-il vérifier ensuite ?`));
@@ -833,6 +848,18 @@ async function viewMessagesText(page, viewId) {
     return shell?.querySelector('.cvw-messages')?.textContent || '';
   }, viewId);
 }
+async function expectHistoricalTool(page, viewId, sessionId) {
+  const messages =
+    viewId === 'conversation'
+      ? page.locator('#messages')
+      : page.locator(`.cvw-shell[data-view="${viewId}"] .cvw-messages`);
+  const tool = messages.locator('.tool-block').filter({ hasText: `historical-tool-result:${sessionId}` });
+  await expect(messages).toBeVisible();
+  await expect(tool).toHaveCount(1);
+  await expect(tool.locator('.tool-name')).toHaveText('ipython');
+  await expect(tool.locator('.tool-content')).toContainText(`historical-tool-result:${sessionId}`);
+}
+
 async function focusConvTab(page, viewId) {
   // Real UI path: click the dock tab, then require the tab to report
   // aria-selected (bounded, no arbitrary sleep).
@@ -975,6 +1002,8 @@ try {
     await page.locator(`button[data-dock-tab="${m2fDyn}"]`).click();
     await page.locator('button[data-dock-tab="conversation"]').click();
     assert.deepEqual(await m2fMarker(), ['conversation'], 'Fast path focuses primary with a unique marker');
+    await expectHistoricalTool(page, 'conversation', 'ws-alpha');
+    await expectHistoricalTool(page, m2fDyn, 'ws-beta');
     if (!M2_ENFORCE) {
       try {
         await expect
@@ -1187,6 +1216,8 @@ try {
   await page.locator('#inspector-tab-session').click();
   await expect(page.locator('#detail-session-id')).toContainText('ws-alpha');
   step('Classic baseline: Atelier session ws-alpha renders with inspector session id.');
+  await expectHistoricalTool(page, 'conversation', 'ws-alpha');
+  step('Historical native tool call/result renders in classic mode without hiding the transcript.');
   await page.locator('#project-list .project-row').filter({ hasText: 'Vtrott' }).click();
   await page.locator('#session-list .session-select').filter({ hasText: 'migration du volant' }).click();
   await expect(page.locator('#messages')).toContainText('Planifier la migration');
@@ -2685,6 +2716,9 @@ try {
     await focusConvTab(page, viewA);
     await assertHostMount(page, 'm2a');
     await assertPaneGeometry(page, [viewA, viewB], 'm2a');
+    await expectHistoricalTool(page, viewA, 'ws-alpha');
+    await expectHistoricalTool(page, viewB, 'ws-beta');
+    step('Primary and dynamic panes both render their own historical tool calls/results.');
     // Old edit-here affordance absent: entire header container, button, text.
     for (const id of [viewA, viewB]) {
       assert.equal(await paneOf(id).locator('.cvw-bar').count(), 0, `Old header bar absent in ${id}`);
