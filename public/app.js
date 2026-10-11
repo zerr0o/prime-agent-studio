@@ -19,7 +19,7 @@ import { createImageComposer, renderImages } from './images.js';
 import { createMcpSettings } from './mcp.js';
 import { createProviderSettings } from './providers.js';
 import { createCommands } from './commands.js';
-import { composerText, setComposerText, composerCommand } from './composer.js';
+import { composerText, setComposerText, composerCommand, createComposer } from './composer.js';
 import { createInspector } from './inspector.js';
 import { fileLinkRenderer, bindFileLinks } from './file-links.js';
 import { createSessionActivity } from './session-activity.js';
@@ -42,6 +42,8 @@ import { createProjectArchives } from './project-archives.js';
 import { createWorktreesUI } from './worktrees.js';
 import { createRoadmap } from './roadmap.js';
 import { createDocking } from './docking.js';
+import { createConversationViews, PRIMARY_VIEW_ID, originSessionId } from './conversation-views.js';
+import { createConversationPicker } from './conversation-picker.js';
 import { bindInlineImages } from './inline-images.js';
 import { createPasskeySettings } from './passkeys.js';
 import { createQuestions } from './questions.js';
@@ -71,6 +73,83 @@ let commandsUI;
 let inspectorUI;
 let roadmapUI;
 let dockingUI;
+let convViews = null;
+let settingsDockApi = null;
+let lastPrefsProject = null;
+let conversationPicker = null;
+const getDocking = () => dockingUI;
+// Split inspector tabs when the inspector owner API has landed; legacy single
+// #details-panel mapping otherwise. Evaluated per use (either order safe).
+const hasInspectorSplit = () => typeof inspectorUI?.roots === 'function';
+// Shared entry for picker + sidebar drop: resolves a session/project to a view
+// panel id. Returns an existing view that already owns the session, or creates
+// a NEW inactive view (never rebinds the focused one). No model/run/history
+// fetch until activation. Null on invalid payload or caps, with a toast.
+function openConversationView({ projectCwd, sessionId = null, viewId = null } = {}) {
+  if (!convViews) return null;
+  if (viewId && convViews.byId(viewId)) return viewId;
+  const owner =
+    projectCwd && state.projects.some((proj) => samePath(proj.cwd, projectCwd)) ? projectCwd : null;
+  if (sessionId) {
+    const known = allSessions().find((s) => s.id === sessionId);
+    if (!known) {
+      toast(() => tr('server.session_introuvable'), true);
+      return null;
+    }
+    const existing = convViews.bySession(sessionId);
+    if (existing) return existing.id;
+    const sessOwner =
+      owner ||
+      state.projects.find((proj) => (proj.sessions || []).some((s) => s.id === sessionId))?.cwd ||
+      known.cwd ||
+      state.projectCwd;
+    if (!sessOwner || !state.projects.some((proj) => samePath(proj.cwd, sessOwner))) {
+      toast(() => tr('server.projet_invalide'), true);
+      return null;
+    }
+    const view = convViews.createView({
+      kind: 'session',
+      sessionId,
+      projectCwd: sessOwner,
+      execCwd: known.cwd || sessOwner,
+    });
+    return view?.id || null;
+  }
+  if (state.readOnly) return null;
+  const proj = owner || state.projectCwd;
+  if (!proj) {
+    toast(() => tr('conversation.missing_project'), true);
+    return null;
+  }
+  const view = convViews.createView({
+    kind: 'new',
+    sessionId: null,
+    projectCwd: proj,
+    execCwd: proj,
+  });
+  return view?.id || null;
+}
+// Picker failures throw to the caller's explicit error toast below — never a
+// silent null that could mask a broken chooser, and never a fallback blank
+// view in a default project. User-cancelled close resolves null (silent).
+async function runConversationPicker() {
+  if (!conversationPicker) {
+    conversationPicker = createConversationPicker({
+      getProjects: () => state.projects,
+      getViews: () =>
+        [...convViews.views.values()].map((view) => ({
+          id: view.id,
+          projectCwd: view.projectCwd,
+          sessionId: view.sessionId,
+          title: convViews.titleOf(view.id),
+          kind: view.kind,
+        })),
+      getCurrentProject: () => state.projectCwd,
+      isReadOnly: () => state.readOnly,
+    });
+  }
+  return conversationPicker.open();
+}
 let archivesUI;
 let worktreesUI;
 let computerUseUI;
@@ -155,7 +234,10 @@ function readStorage(key, fallback) {
 function writeStorage(key, value) {
   try {
     localStorage.setItem(`prime-studio.${key}`, JSON.stringify(value));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 function storedPreferences() {
   const stored = readStorage('preferences', {});
@@ -279,7 +361,13 @@ function modelDisplayName(id) {
   );
 }
 const generationPending = new Map();
-const generationDrafts = new Map();
+// Per-view new-chat generation triples live on the conversation view
+// (`view.gen`, sidecar-persisted). Focused-view accessors below.
+function focusedNewGen() {
+  const view = convViews?.focused();
+  if (!view || view.sessionId || view.viewRunId) return null;
+  return view.gen || null;
+}
 const generationConfirmed = new Map();
 let selectedGeneration = {};
 function applyStudioPreferences(preferences) {
@@ -307,7 +395,7 @@ function restoreGenerationSettings(history = session(), run = activeRun()) {
     rememberGenerationSettings(state.sessionId, history?.generationSettings, history?.generationRevision)
       ?.settings || {};
   const pending = generationPending.get(state.sessionId);
-  const draft = generationDrafts.get(normalizedPath(state.projectCwd));
+  const draft = convViews ? focusedNewGen() : null;
   const settings =
     state.sessionId || run
       ? {
@@ -317,31 +405,69 @@ function restoreGenerationSettings(history = session(), run = activeRun()) {
         }
       : { ...defaults, ...draft };
   selectedGeneration = { ...settings, ...pending?.settings };
-  setSelectedModel(selectedGeneration.model, false);
-  $('thinking-select').value = selectedGeneration.thinking;
-  $('allow-questions').checked = !!selectedGeneration.allowQuestions;
+  const live = convViews?.composerLive?.();
+  const focused = live ? convViews.focused() : null;
+  if (live && focused && focused.id !== PRIMARY_VIEW_ID && focused.units?.nodes) {
+    // Dynamic origin owns its nodes; the host column keeps primary truth.
+    writeTripleToNodes(focused.units.nodes, selectedGeneration);
+    writeTripleToNodes(hostComposerNodes(), tripleForView(convViews.byId(PRIMARY_VIEW_ID)));
+  } else {
+    setSelectedModel(selectedGeneration.model, false);
+    $('thinking-select').value = selectedGeneration.thinking;
+    $('allow-questions').checked = !!selectedGeneration.allowQuestions;
+  }
 }
-async function saveGenerationSettings(patch) {
-  const id = state.sessionId,
-    cwd = state.projectCwd,
-    previous = { ...selectedGeneration };
-  if (state.readOnly || state.loading || state.sending || generationPending.has(id)) {
+// Single origin-aware save path (no shadow state). The origin view AND its
+// binding (token) are captured synchronously at invocation; completions
+// persist/paint ONLY that binding — never convViews.focused(), never the
+// host column. A rebind mid-PATCH (same view, new session) fails the token
+// check and repaints nothing. Callers pass explicit views: dynamic controls
+// pass their view, primary controls pass the primary view, /effort passes
+// nothing (focused view intended).
+async function saveGenerationSettings(patch, view = null) {
+  const origin = view || convViews?.focused() || null;
+  const originToken = origin?.token;
+  const id = originSessionId(origin, state.sessionId);
+  const cwd = origin?.projectCwd || state.projectCwd;
+  const previous = origin ? { ...tripleForView(origin) } : { ...selectedGeneration };
+  if (
+    state.readOnly ||
+    (origin ? !!origin.loading : state.loading) ||
+    state.sending ||
+    generationPending.has(id)
+  ) {
     restoreGenerationSettings();
     return;
   }
-  const run = activeRun();
+  const run = origin ? runForView(origin) : activeRun();
   if (isRunning(run) && ('model' in patch || 'allowQuestions' in patch || !id || run.status !== 'running')) {
     restoreGenerationSettings();
     return;
   }
-  selectedGeneration = { ...selectedGeneration, ...patch };
+  // Binding guard: the view must still hold the captured binding. Session and
+  // server writes below are id-keyed (safe anyway); DOM/global writes require it.
+  const bindingOk = () => {
+    if (!convViews || !origin) return true;
+    const current = convViews.byId(origin.id);
+    return !!current && current.token === originToken;
+  };
+  const originNodes = () => {
+    if (!convViews || !origin) return hostComposerNodes();
+    const current = convViews.byId(origin.id);
+    if (!current || current.token !== originToken) return null;
+    return current.units?.nodes || hostComposerNodes();
+  };
+  if (convViews && origin && convViews.isFocused(origin.id)) selectedGeneration = { ...previous, ...patch };
   if (!id) {
-    generationDrafts.set(normalizedPath(cwd), { ...generationDrafts.get(normalizedPath(cwd)), ...patch });
+    if (origin && bindingOk() && !origin.sessionId) {
+      origin.gen = { model: '', thinking: '', allowQuestions: true, ...origin.gen, ...patch };
+      if (convViews) convViews.persist();
+    }
     return;
   }
-  const entry = { settings: { ...selectedGeneration } };
+  const entry = { settings: { ...previous, ...patch } };
   generationPending.set(id, entry);
-  updateComposer();
+  updateComposer(origin || undefined);
   try {
     const result = await api('/api/conversation-settings', {
       method: 'PATCH',
@@ -356,51 +482,46 @@ async function saveGenerationSettings(patch) {
       }
     }
     if (result.appliedToRun && run) run.thinking = confirmed.settings.thinking;
-    if (state.sessionId === id) {
+    if (!bindingOk()) return;
+    if (convViews && origin && convViews.isFocused(origin.id)) {
       selectedGeneration = { ...previous, ...confirmed.settings };
-      setSelectedModel(selectedGeneration.model);
-      $('thinking-select').value = selectedGeneration.thinking;
-      if (result.appliedToRun) toast(() => tr('conversation.thinkingApplied'));
     }
+    writeTripleToNodes(originNodes(), { ...previous, ...confirmed.settings });
+    if (result.appliedToRun) toast(() => tr('conversation.thinkingApplied'));
   } catch (error) {
-    if (state.sessionId === id) {
-      selectedGeneration = previous;
-      setSelectedModel(previous.model);
-      $('thinking-select').value = previous.thinking;
-      toast(translateKnown(error.message), true);
-    }
+    if (!bindingOk()) return;
+    if (convViews && origin && convViews.isFocused(origin.id)) selectedGeneration = { ...previous };
+    writeTripleToNodes(originNodes(), previous);
+    toast(translateKnown(error.message), true);
   } finally {
     generationPending.delete(id);
-    if (state.sessionId === id) restoreGenerationSettings();
-    updateComposer();
+    restoreGenerationSettings();
+    updateComposer(origin || undefined);
   }
 }
-function setSelectedModel(value, persist = false, render = true) {
-  const id = typeof value === 'string' ? value : '',
-    select = $('model-select');
-  if (id && ![...select.options].some((option) => option.value === id)) {
-    const option = el('option', '', () => id);
-    option.value = id;
-    select.append(option);
+function setSelectedModel(value, persist = false, render = true, view = null) {
+  const id = typeof value === 'string' ? value : '';
+  const target = view || convViews?.focused();
+  const live = convViews?.composerLive?.();
+  // Post-enable the host column is the primary panel: host writes are
+  // primary writes. A dynamic origin writes its own nodes instead.
+  const nodes =
+    live && target && target.id !== PRIMARY_VIEW_ID && target.units?.nodes
+      ? target.units.nodes
+      : hostComposerNodes();
+  // No primary fallback: a dynamic pane without its own hidden select simply
+  // skips option bookkeeping (its picker resolves through the triple).
+  const select = nodes.modelSelect;
+  if (select) {
+    if (id && ![...select.options].some((option) => option.value === id)) {
+      const option = el('option', '', () => id);
+      option.value = id;
+      select.append(option);
+    }
+    select.value = id;
   }
-  select.value = id;
-  const name = modelDisplayName(id),
-    button = $('model-picker-button'),
-    model = state.models.find((item) => item.id === id),
-    provider =
-      model?.provider ||
-      (id.includes('/')
-        ? id.slice(0, id.indexOf('/'))
-        : id
-          ? tr('ui.modele_personnalise')
-          : tr('ui.configuration_prime_agent'));
-  bindText($('model-picker-label'), () => name);
-  bindText($('model-picker-provider'), () => provider);
-  bindAttribute(button, 'title', () => (id ? `${name} · ${model?.id || id}` : name));
-  bindAttribute(button, 'aria-label', () =>
-    tr('ui.choisir_le_modele_selection_actuelle', { value1: id ? `${name}, ${model?.id || id}` : name }),
-  );
-  if (persist) void saveGenerationSettings({ model: id });
+  paintModelControl(nodes, id);
+  if (persist) void saveGenerationSettings({ model: id }, view || undefined);
   if (render && $('model-dialog').open) renderModelList();
   renderConfigurationWarning();
 }
@@ -633,7 +754,7 @@ function openModelDialog() {
   openModelPicker({
     button: $('model-picker-button'),
     value: $('model-select').value,
-    onSelect: (id) => setSelectedModel(id, true),
+    onSelect: (id) => setSelectedModel(id, true, true, convViews?.byId(PRIMARY_VIEW_ID) || undefined),
   });
 }
 function openModelPicker(target) {
@@ -847,7 +968,10 @@ function applyPreferences() {
       : tr('ui.ctrl_entree_pour_envoyer'),
   );
   if (dockingUI?.active) {
-    $('toggle-details').setAttribute('aria-pressed', String(dockingUI.visiblePanels().includes('inspector')));
+    const inspectorVisible = hasInspectorSplit()
+      ? ['session', 'agents', 'files'].some((id) => dockingUI.visiblePanels().includes(id))
+      : dockingUI.visiblePanels().includes('inspector');
+    $('toggle-details').setAttribute('aria-pressed', String(inspectorVisible));
   } else if (innerWidth > 1080) {
     $('details-panel').hidden = !prefs.details;
     $('toggle-details').setAttribute('aria-pressed', String(prefs.details));
@@ -864,6 +988,9 @@ function applyPreferences() {
   );
   bindAttribute($('toggle-details'), 'aria-label', () => $('toggle-details').title);
   inspectorUI?.update();
+  try {
+    dockingUI?.refreshTitles?.();
+  } catch {}
 }
 function applyAccessMode() {
   document.documentElement.dataset.readOnly = String(state.readOnly);
@@ -900,10 +1027,15 @@ function applyAccessMode() {
   }
 }
 function draftKey() {
+  if (convViews) return convViews.focusedDraftKey();
   return state.sessionId ? `session:${state.sessionId}` : `project:${normalizedPath(execCwdOf())}`;
 }
 function saveDraft() {
   if (state.readOnly) return;
+  if (convViews) {
+    convViews.saveFocusedDraft();
+    return;
+  }
   const drafts = readStorage('drafts', {}),
     key = draftKey();
   if (composerText()) drafts[key] = composerText();
@@ -918,6 +1050,11 @@ function acceptDraft(key, text) {
     delete drafts[key];
     writeStorage('drafts', drafts);
   }
+  if (convViews) {
+    convViews.acceptFocusedDraft(key, text);
+    resizeComposer();
+    return;
+  }
   if (draftKey() === key && composerText() === text) {
     setComposerText('');
     saveDraft();
@@ -925,6 +1062,11 @@ function acceptDraft(key, text) {
   }
 }
 function restoreDraft() {
+  if (convViews) {
+    convViews.restoreFocusedDraft();
+    resizeComposer();
+    return;
+  }
   setComposerText(state.readOnly ? '' : readStorage('drafts', {})[draftKey()] || '', {
     retainCommand: false,
   });
@@ -939,8 +1081,9 @@ function saveSelection() {
     projectOverview: state.projectOverview,
   });
 }
-function resizeComposer() {
-  const a = $('composer');
+function resizeComposer(textarea = null) {
+  const a = textarea || $('composer');
+  if (!a) return;
   const style = getComputedStyle(a);
   const minHeight = parseFloat(style.minHeight) || 40;
   const maxHeight = parseFloat(style.maxHeight) || 200;
@@ -954,61 +1097,92 @@ function resizeComposer() {
   }
   updateComposer();
 }
-function updateComposer() {
-  renderConfigurationWarning();
-  imageComposer?.update();
-  commandsUI?.update();
-  const running = isRunning(activeRun());
-  $('send-button').hidden = running;
-  $('stop-button').hidden = !running;
-  $('stop-button').disabled = state.readOnly || activeRun()?.status === 'stopping';
-  $('send-button').disabled =
+// Per-view composer refresh. Defaults to the focused view; explicit views
+// update background panes. Units missing (primary pre-enable, classic) falls
+// back to the host singletons, which mirror the focused view — identical.
+function updateComposer(view = null) {
+  const target = view || convViews?.focused();
+  const units = target?.units || null;
+  const N = units?.nodes || null;
+  const node = (hostId, role) => (N && N[role]) || document.getElementById(hostId);
+  const IMG = units?.images || imageComposer;
+  const CMD = units?.commands || commandsUI;
+  const LIVE = units?.live || liveMessagesUI;
+  const Q = units?.questions || questionsUI;
+  const textNow = units ? units.text.get() : composerText();
+  const cmdNow = units ? units.text.command() : composerCommand();
+  const viewSessionId = target?.sessionId ?? state.sessionId;
+  const run = target ? runForView(target) : activeRun();
+  const running = isRunning(run);
+  const isPrimaryTarget = !target || target.id === PRIMARY_VIEW_ID;
+  const viewLoading = target ? !!target.loading : state.loading;
+  const viewOverview = isPrimaryTarget ? state.projectOverview : false;
+  const sendButton = node('send-button', 'send');
+  const stopButton = node('stop-button', 'stop');
+  const modelSelect = node('model-select', 'modelSelect');
+  const modelButton = node('model-picker-button', 'modelBtn');
+  const allowQuestions = node('allow-questions', 'allowQ');
+  const thinkingSelect = node('thinking-select', 'thinking');
+  const runStatus = node('run-status', 'runStatus');
+  const runStatusLabel = node('run-status-label', 'runLabel');
+  const composerInput = node('composer', 'textarea');
+  if (!sendButton || !stopButton) return;
+  if (!view || convViews?.isFocused(target?.id)) renderConfigurationWarning();
+  IMG?.update();
+  CMD?.update();
+  sendButton.hidden = running;
+  stopButton.hidden = !running;
+  stopButton.disabled = state.readOnly || run?.status === 'stopping';
+  sendButton.disabled =
     state.readOnly ||
-    state.projectOverview ||
-    (!composerText().trim() && !imageComposer?.hasImages()) ||
-    imageComposer?.blocked() ||
+    viewOverview ||
+    (!textNow.trim() && !IMG?.hasImages()) ||
+    IMG?.blocked() ||
     !state.projectCwd ||
     state.sending ||
-    generationPending.has(state.sessionId) ||
-    state.loading ||
+    generationPending.has(viewSessionId) ||
+    viewLoading ||
     running ||
     !state.online ||
     state.version?.available === false ||
     project()?.exists === false;
   const settingsDisabled =
-    state.readOnly ||
-    !state.online ||
-    state.loading ||
-    state.sending ||
-    generationPending.has(state.sessionId);
-  $('model-select').disabled = settingsDisabled || running;
-  $('model-picker-button').disabled = settingsDisabled || running;
-  $('allow-questions').disabled = settingsDisabled || running;
-  questionsUI?.update();
-  $('thinking-select').disabled =
-    settingsDisabled || (running && (!state.sessionId || activeRun()?.status !== 'running'));
-  bindAttribute($('thinking-select'), 'title', () =>
-    running ? tr('conversation.thinkingNextCall') : tr('conversation.scope'),
-  );
-  $('run-status').hidden = !running;
-  bindText($('run-status-label'), () =>
-    activeRun()?.status === 'stopping'
-      ? tr('ui.arret_de_l_agent')
-      : activeRun()?.interactions?.some((item) => item.status === 'pending')
-        ? tr('questions.waiting')
-        : activeRun()?.statusLabel || tr('ui.l_agent_travaille'),
-  );
-  bindAttribute($('composer'), 'placeholder', () =>
-    composerCommand()
-      ? tr('ui.ajoutez_vos_consignes')
-      : state.projectCwd
-        ? running
-          ? tr('ui.preparez_votre_prochain_message')
-          : tr('ui.que_souhaitez_vous_construire')
-        : tr('ui.ajoutez_un_projet_pour_commencer'),
-  );
-  liveMessagesUI?.update();
-  computerUseUI?.update();
+    state.readOnly || !state.online || viewLoading || state.sending || generationPending.has(viewSessionId);
+  if (modelSelect) modelSelect.disabled = settingsDisabled || running;
+  if (modelButton) modelButton.disabled = settingsDisabled || running;
+  if (allowQuestions) allowQuestions.disabled = settingsDisabled || running;
+  Q?.update();
+  if (thinkingSelect) {
+    thinkingSelect.disabled = settingsDisabled || (running && (!viewSessionId || run?.status !== 'running'));
+    bindAttribute(thinkingSelect, 'title', () =>
+      running ? tr('conversation.thinkingNextCall') : tr('conversation.scope'),
+    );
+  }
+  if (runStatus) {
+    runStatus.hidden = !running;
+    if (runStatusLabel) {
+      bindText(runStatusLabel, () =>
+        run?.status === 'stopping'
+          ? tr('ui.arret_de_l_agent')
+          : run?.interactions?.some((item) => item.status === 'pending')
+            ? tr('questions.waiting')
+            : run?.statusLabel || tr('ui.l_agent_travaille'),
+      );
+    }
+  }
+  if (composerInput) {
+    bindAttribute(composerInput, 'placeholder', () =>
+      cmdNow
+        ? tr('ui.ajoutez_vos_consignes')
+        : state.projectCwd
+          ? running
+            ? tr('ui.preparez_votre_prochain_message')
+            : tr('ui.que_souhaitez_vous_construire')
+          : tr('ui.ajoutez_un_projet_pour_commencer'),
+    );
+  }
+  LIVE?.update();
+  if (!view || convViews?.isFocused(target?.id)) computerUseUI?.update();
 }
 function renderProjects() {
   sessionWheel?.renderActivity();
@@ -1207,6 +1381,9 @@ async function checkConversationSync(id, token) {
   const checkId = ++syncCheckGeneration;
   syncCheckingId = id;
   renderSyncHeader();
+  const clearCheck = () => {
+    if (checkId === syncCheckGeneration && syncCheckingId === id) syncCheckingId = null;
+  };
   try {
     const res = await api('/api/sync/session', { method: 'POST', body: { id } });
     if (token !== state.requestId || state.sessionId !== id || checkId !== syncCheckGeneration) return;
@@ -1225,10 +1402,28 @@ async function checkConversationSync(id, token) {
     if (res?.changed) {
       await refreshOverview();
       if (token !== state.requestId || state.sessionId !== id) return;
+      // A view that stopped being focused while the check ran must not paint
+      // globals: mark it dirty so it reloads on its next focus instead.
+      if (convViews) {
+        const origin = convViews.bySession(id);
+        if (origin && !convViews.isFocused(origin.id)) {
+          origin.dirty = true;
+          convViews.refreshView(origin.id);
+          void refreshSyncNow();
+          return;
+        }
+      }
       try {
         const h = await api(`/api/history?id=${encodeURIComponent(id)}`);
         if (token !== state.requestId || state.sessionId !== id) return;
         state.history = h.messages || [];
+        if (convViews) {
+          const view = convViews.bySession(id);
+          if (view) {
+            view.history = state.history;
+            if (h?.cwd) view.execCwd = h.cwd;
+          }
+        }
         if (h?.cwd) state.execCwd = h.cwd;
         renderNavigation();
         renderMessages();
@@ -1242,6 +1437,8 @@ async function checkConversationSync(id, token) {
       syncCheckingId = null;
       renderSyncHeader();
     }
+  } finally {
+    clearCheck();
   }
 }
 function renderSessions() {
@@ -1564,6 +1761,9 @@ function renderNavigation() {
   renderSessions();
   renderProjectOverview();
   renderDetails();
+  try {
+    dockingUI?.refreshTitles?.();
+  } catch {}
   archivesUI?.update();
   worktreesUI?.update();
   updateComposer();
@@ -1674,9 +1874,14 @@ function makeDetails(className, key, defaultOpen = false) {
   });
   return d;
 }
-function renderTool(t, messageId) {
+function renderTool(t, messageId, cwd) {
+  const viewCwd = typeof cwd === 'string' && cwd ? cwd : undefined;
   const d = makeDetails('tool-block', `tool:${t.id || messageId}`),
     summary = el('summary');
+  // Owning-view scoping anchor (observable in DOM, no visual change): tool
+  // blocks always carry their view's project, never ambient focus.
+  if (viewCwd) d.dataset.cwd = viewCwd;
+  summary = el('summary');
   const status =
     t.status === 'running'
       ? tr('ui.en_cours')
@@ -1728,10 +1933,11 @@ function renderTool(t, messageId) {
   return d;
 }
 const messageNodes = new Map();
-function renderMessage(m, index) {
+function renderMessage(m, index, nodes = messageNodes, cwd) {
+  const renderCwd = typeof cwd === 'string' && cwd ? cwd : undefined;
   const id = m.id || `history-${index}`,
     signature = JSON.stringify(m),
-    old = messageNodes.get(id);
+    old = nodes.get(id);
   if (old?.signature === signature) return old.node;
   const agent =
     m.agentMessage ||
@@ -1758,7 +1964,7 @@ function renderMessage(m, index) {
       el('span', 'message-time', () => dateLabel(m.timestamp)),
     );
     const body = el('div', 'agent-message-body');
-    const content = markdown(agent.text);
+    const content = markdown(agent.text, renderCwd ? { cwd: renderCwd } : undefined);
     const preview = el('span', 'agent-message-preview', () =>
       content.textContent.replace(/\s+/g, ' ').trim(),
     );
@@ -1782,7 +1988,7 @@ function renderMessage(m, index) {
     body.append(details);
     disclosure.append(summary, body);
     card.append(disclosure);
-    messageNodes.set(id, { node: card, signature });
+    nodes.set(id, { node: card, signature });
     return card;
   }
   const n = el('article', `message ${['assistant', 'user'].includes(m.role) ? m.role : 'system'}`);
@@ -1844,12 +2050,12 @@ function renderMessage(m, index) {
         icon('chevron', 'chevron'),
       );
       const content = el('div', 'thinking-content reasoning-markdown');
-      content.append(markdown(m.thinking));
+      content.append(markdown(m.thinking, renderCwd ? { cwd: renderCwd } : undefined));
       d.hidden = reasoningMode(prefs) === 'hidden';
       d.append(s, content);
       body.append(d);
     }
-    if (m.text) body.append(markdown(m.text));
+    if (m.text) body.append(markdown(m.text, renderCwd ? { cwd: renderCwd } : undefined));
     for (const tool of m.tools || []) body.append(renderTool(tool, id));
     if (translateKnown(m.error)) body.append(el('div', 'message-error', () => translateKnown(m.error)));
     if (m.streaming) body.append(el('span', 'stream-caret'));
@@ -1896,7 +2102,7 @@ function renderMessage(m, index) {
     disclosure.append(summary, ...Array.from(n.children).filter((child) => child !== heading));
     n.replaceChildren(disclosure);
   }
-  messageNodes.set(id, { node: n, signature });
+  nodes.set(id, { node: n, signature });
   return n;
 }
 const conversationRenderer = createConversationRenderer({
@@ -1911,6 +2117,85 @@ const conversationRenderer = createConversationRenderer({
   reasoningMode: () => reasoningMode(prefs),
   renderMessage,
 });
+
+// Multi-conversation view registry (approach B). The manager owns view shells,
+// per-view scroll/draft/generation slots and host adoption; globals below keep
+// mirroring the FOCUSED view so every singleton engine (Roadmap, Inspector,
+// questions, live queue, SSE fan-out) behaves exactly as before.
+convViews = createConversationViews({
+  read: readStorage,
+  write: writeStorage,
+  getDocking,
+  renderer: {
+    el,
+    icon,
+    markdown,
+    renderTool,
+    makeDetails,
+    dateLabel,
+    copyText,
+    renderMessage,
+    reasoningMode: () => reasoningMode(prefs),
+  },
+  getRun: (id) => state.runs.get(id),
+  isRunActive: (run) => isRunning(run),
+  describeRun: (run) => ({
+    pendingQuestions: (run?.interactions || []).filter((item) => item.status === 'pending').length,
+  }),
+  getSessionTitle: (id) => session(id)?.title || '',
+  getHostText: () => composerText(),
+  setHostText: (text, opts) => setComposerText(text, opts),
+  afterTextRestore: () => commandsUI?.restoreDraft(),
+  getControls: () => ({
+    model: $('model-select').value,
+    thinking: $('thinking-select').value,
+    allowQuestions: $('allow-questions').checked,
+  }),
+  hostRender: (force) => renderMessages(force),
+  renderNavigation: () => renderNavigation(),
+  saveSelection: () => saveSelection(),
+  peekImages: (key) => imageComposer?.peek(key) || { count: 0, pending: 0, loading: false },
+  clearHostNodes: () => messageNodes.clear(),
+  paintViewChrome: (view) => paintViewChrome(view),
+  markSessionRead: (view) => markVisibleSessionRead(view),
+  // Pre-bootstrap the access mode is unknown: act readonly so dock captures
+  // can neither erase a restored draft with an empty composer nor render
+  // private stored drafts. Bootstrap restores normally once initialized.
+  isReadOnly: () => !state.initialized || state.readOnly,
+  getHostScrollState: () => getHostScrollState(),
+  restoreHostScrollState: (saved) => restoreHostScrollState(saved),
+  onToast: (message, error) => toast(message, error),
+  afterFocus: (view) => {
+    const units = view?.units;
+    (units?.images || imageComposer)?.update();
+    (units?.commands || commandsUI)?.update();
+    (units?.live || liveMessagesUI)?.update();
+    (units?.questions || questionsUI)?.update();
+    computerUseUI?.onSessionChange();
+    updateComposer();
+    if (view) ensureViewUnits(view);
+    // Preferences gating follows the active project, not geometry: a
+    // saved-visible prefs tab must not keep pre-bootstrap/pre-switch tabs.
+    // refreshContext is a tiny prefs-owner method (requested); absent → no-op.
+    const prefsCwd = state.projectCwd;
+    if (prefsCwd !== lastPrefsProject) {
+      lastPrefsProject = prefsCwd;
+      try {
+        settingsDockApi?.refreshContext?.();
+      } catch {}
+    }
+  },
+  mirrorToGlobal: (view) => {
+    state.sessionId = view.sessionId;
+    state.viewRunId = view.viewRunId;
+    state.history = view.history;
+    state.execCwd = view.execCwd;
+    state.projectCwd = view.projectCwd;
+    state.projectOverview = false;
+    state.loading = view.loading;
+    state.requestId++;
+  },
+});
 function nearBottom() {
   const s = $('conversation-scroll');
   return s.scrollHeight - s.scrollTop - s.clientHeight < 110;
@@ -1921,23 +2206,27 @@ function atConversationBottom() {
   const s = $('conversation-scroll');
   return s.scrollHeight - s.scrollTop - s.clientHeight < 3;
 }
-function markVisibleSessionRead() {
-  if (!conversationVisible()) return;
-  if (
-    document.hidden ||
-    state.loading ||
-    state.projectOverview ||
-    !state.sessionId ||
-    isRunning(activeRun()) ||
-    !nearBottom() ||
-    document.querySelector('dialog[open], #sidebar.mobile-open, #details-panel.mobile-open')
-  )
-    return;
-  if (sessionActivity.markRead(state.sessionId, activeMessages())) {
+function markVisibleSessionRead(view = null) {
+  const live = convViews?.composerLive?.();
+  const target = view || (live ? convViews.byId(PRIMARY_VIEW_ID) : convViews?.focused());
+  if (!target || !target.sessionId) return;
+  if (document.hidden || target.loading || state.projectOverview) return;
+  const run = runForView(target);
+  if (isRunning(run)) return;
+  const msgs = run && run.initialized ? [...(run.base || []), ...(run.messages || [])] : target.history || [];
+  if (sessionActivity.markRead(target.sessionId, msgs)) {
     renderProjects();
     renderSessions();
     renderProjectOverview();
   }
+}
+// Host-scroller gates (bottom, modal, visibility) stay host-bound; the pane
+// shells gate themselves before calling markVisibleSessionRead(view).
+function markHostSessionRead() {
+  if (!conversationVisible()) return;
+  if (!nearBottom()) return;
+  if (document.querySelector('dialog:modal, #sidebar.mobile-open, #details-panel.mobile-open')) return;
+  markVisibleSessionRead();
 }
 async function syncSessionActivity() {
   const token = state.requestId;
@@ -1945,6 +2234,10 @@ async function syncSessionActivity() {
   const current = histories.find((history) => history.id === state.sessionId);
   if (current && token === state.requestId && !state.loading && !state.viewRunId && !isRunning(activeRun())) {
     state.history = current.messages || [];
+    if (convViews) {
+      const view = convViews.focused();
+      if (view && view.sessionId === state.sessionId) view.history = state.history;
+    }
     renderMessages();
   }
   markVisibleSessionRead();
@@ -1953,6 +2246,9 @@ async function syncSessionActivity() {
   renderProjectOverview();
 }
 function conversationVisible() {
+  if (convViews?.composerLive?.())
+    return !dockingUI?.active || dockingUI.visiblePanels().includes('conversation');
+  if (convViews) return convViews.hostVisible();
   return !dockingUI?.active || dockingUI.visiblePanels().includes('conversation');
 }
 function resizeDockedConversation() {
@@ -1975,13 +2271,31 @@ function scrollBottom(smooth = false) {
     behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant',
   });
   $('scroll-bottom').hidden = true;
-  markVisibleSessionRead();
+  markHostSessionRead();
 }
 function detachConversation() {
   followConversation = false;
   cancelAnimationFrame(bottomScrollFrame);
   bottomScrollFrame = 0;
   lastConversationTop = $('conversation-scroll').scrollTop;
+  $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
+}
+// Per-view scroll contract (injected into the conversation manager): globals
+// always describe the focused view. Capture saves top+follow; restore cancels
+// any pending bottom snap and applies the view's saved pair consistently.
+function getHostScrollState() {
+  const scroller = $('conversation-scroll');
+  return { top: scroller ? scroller.scrollTop : 0, follow: followConversation !== false };
+}
+function restoreHostScrollState(saved) {
+  const scroller = $('conversation-scroll');
+  cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = 0;
+  followConversation = !saved || saved.follow !== false;
+  if (scroller) {
+    scroller.scrollTop = Math.max(0, saved?.top || 0);
+    lastConversationTop = scroller.scrollTop;
+  }
   $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
 }
 let renderScheduled = false;
@@ -1999,6 +2313,17 @@ function scheduleMessages() {
   });
 }
 function renderMessages(forceScroll = false) {
+  // Live routing: the host column always shows the primary view; the focused
+  // dynamic view renders in its own shell. Force applies to the focused target
+  // only, so selecting a session never yanks the primary pane. Undocked (or
+  // pre-enable) keeps the legacy single-view path verbatim.
+  if (convViews?.composerLive?.() && dockingUI?.active) {
+    const primary = convViews.byId(PRIMARY_VIEW_ID);
+    renderHostPrimary(forceScroll && convViews.isFocused(PRIMARY_VIEW_ID), primary);
+    const focused = convViews.focused();
+    if (focused && focused.id !== PRIMARY_VIEW_ID) convViews.renderViewNow(focused.id, forceScroll);
+    return;
+  }
   cancelAnimationFrame(bottomScrollFrame);
   bottomScrollFrame = 0;
   if (forceScroll) {
@@ -2028,6 +2353,40 @@ function renderMessages(forceScroll = false) {
     });
   else $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
 }
+// Host transcript always shows the primary view (globals are primary-scoped
+// post-enable: dynamic restores never touch them). Inline question forms use
+// the singleton (focused run) — a documented transient edge when a background
+// run holds pending questions while primary is visible; the standalone root
+// below the transcript always shows the focused run.
+function renderHostPrimary(forceScroll = false, primary = null) {
+  const view = primary || (convViews ? convViews.byId(PRIMARY_VIEW_ID) : null);
+  if (!view) return;
+  cancelAnimationFrame(bottomScrollFrame);
+  bottomScrollFrame = 0;
+  if (forceScroll) followConversation = true;
+  const run = runForView(view);
+  const stick = forceScroll || followConversation;
+  const messages =
+    run && run.initialized ? [...(run.base || []), ...(run.messages || [])] : view.history || [];
+  $('welcome').hidden = state.projectOverview || messages.length > 0 || view.loading;
+  $('conversation-loading').hidden = !view.loading;
+  $('messages').hidden = state.projectOverview || view.loading;
+  const root = $('messages'),
+    keep = new Set();
+  questionsUI?.update();
+  conversationRenderer.render(root, messages);
+  messages.forEach((m, i) => keep.add(m.id || `history-${i}`));
+  for (const key of messageNodes.keys()) if (!keep.has(key)) messageNodes.delete(key);
+  if (!messages.length && !view.loading) {
+    $('conversation-scroll').scrollTop = 0;
+    $('scroll-bottom').hidden = true;
+  } else if (stick)
+    bottomScrollFrame = requestAnimationFrame(() => {
+      bottomScrollFrame = 0;
+      if (followConversation) scrollBottom();
+    });
+  else $('scroll-bottom').hidden = state.projectOverview || atConversationBottom();
+}
 function closeSidebar() {
   $('sidebar').classList.remove('mobile-open');
   $('mobile-backdrop').hidden = true;
@@ -2047,12 +2406,43 @@ function resetView() {
 }
 function newSession(execCwd) {
   if (state.readOnly) return;
-  saveDraft();
-  resetView();
   // Direct onclick wiring passes a MouseEvent as the first argument. Only a
   // non-empty string is a valid execution cwd. Every caller routes through
   // here, so ignore anything else and fall back to the selected project.
-  state.execCwd = typeof execCwd === 'string' && execCwd.trim() ? execCwd : state.projectCwd;
+  const cwd = typeof execCwd === 'string' && execCwd.trim() ? execCwd : state.projectCwd;
+  if (!convViews) {
+    saveDraft();
+    resetView();
+    state.execCwd = cwd;
+    selectNewConversationModel();
+    state.archived = false;
+    saveSelection();
+    restoreDraft();
+    renderNavigation();
+    renderMessages(true);
+    closeSidebar();
+    computerUseUI?.onSessionChange();
+    if (!state.projectCwd) openProjectDialog();
+    else $('composer').focus();
+    return;
+  }
+  saveDraft();
+  // Rebind the focused pane in place — docked, classic, buttons, Ctrl+N,
+  // worktree and commands share this path. Never an extra tab, never a silent
+  // route to primary (Add-Tab/picker stays the only view-creating path).
+  // Other panes keep drafts/attachments under their own canonical keys: only
+  // the focused slot is saved above before rebinding.
+  const view = convViews.bindFocused(
+    {
+      kind: 'new',
+      sessionId: null,
+      viewRunId: null,
+      projectCwd: state.projectCwd,
+      execCwd: cwd || state.projectCwd,
+    },
+    { inheritLegacy: true, keepNonce: true },
+  );
+  afterViewFocused();
   selectNewConversationModel();
   state.archived = false;
   saveSelection();
@@ -2061,12 +2451,33 @@ function newSession(execCwd) {
   renderMessages(true);
   closeSidebar();
   computerUseUI?.onSessionChange();
+  // A rebound pane may be parked (all conversation tabs closed): reveal it
+  // first so focus lands on a visible textarea, reusing the existing pane.
+  if (convViews && dockingUI?.active) convViews.focusView(view.id, { reveal: true });
   if (!state.projectCwd) openProjectDialog();
-  else $('composer').focus();
+  else (view?.units?.nodes?.textarea || $('composer')).focus();
 }
 function selectProject(cwd) {
   saveDraft();
-  resetView();
+  if (convViews) {
+    // The focused panel genuinely becomes the project overview: a fresh
+    // session-less binding, so view and globals describe the same target and
+    // session dedupe can never return this panel for its old session.
+    convViews.bindFocused(
+      { kind: 'new', sessionId: null, viewRunId: null, projectCwd: cwd, execCwd: cwd },
+      { inheritLegacy: false },
+    );
+    afterViewFocused();
+  } else {
+    resetView();
+  }
+  state.sessionId = null;
+  state.viewRunId = null;
+  state.history = [];
+  state.loading = false;
+  state.projectOverview = false;
+  state.requestId++;
+  messageNodes.clear();
   state.projectCwd = cwd;
   state.execCwd = cwd;
   restoreGenerationSettings(null, null);
@@ -2083,6 +2494,547 @@ function selectProject(cwd) {
   computerUseUI?.onSessionChange();
   $('project-overview-title').focus({ preventScroll: true });
 }
+function runningForSession(id) {
+  return [...state.runs.values()].find((r) => r.sessionId === id && isRunning(r));
+}
+function runForView(view) {
+  if (!view) return null;
+  if (view.viewRunId) return state.runs.get(view.viewRunId) || null;
+  return runningForSession(view.sessionId);
+}
+function modelForView(view) {
+  if (!view) return state.modelCatalogDefault || '';
+  return tripleForView(view).model || state.modelCatalogDefault || '';
+}
+function imageContextFor(view) {
+  return {
+    key: convViews.imageKeyOf(view),
+    available: state.attachmentsAvailable === true,
+    disabled:
+      state.readOnly ||
+      (view.id === PRIMARY_VIEW_ID && state.projectOverview) ||
+      state.sending ||
+      !view.projectCwd,
+    input: state.models.find((model) => model.id === (modelForView(view) || state.modelCatalogDefault))
+      ?.input,
+    imageModel: state.imageModel,
+  };
+}
+function liveContextFor(view) {
+  const run = runForView(view);
+  return {
+    draftKey: convViews.draftKeyFor(view),
+    runId: run?.id,
+    sessionId: run?.sessionId || view.sessionId,
+    cwd: view.execCwd,
+    running: isRunning(run),
+    stopping: run?.status === 'stopping',
+    readOnly: state.readOnly,
+    online: state.online,
+  };
+}
+function commandsContextFor(view) {
+  return {
+    cwd: view.execCwd,
+    sessionId: runForView(view)?.sessionId || view.sessionId,
+    running: isRunning(runForView(view)),
+    readOnly: state.readOnly,
+    loading: !!view.loading || (view.id === PRIMARY_VIEW_ID && state.projectOverview),
+    remote: state.remote,
+  };
+}
+function questionsContextFor(view) {
+  return {
+    run: runForView(view),
+    readOnly: state.readOnly || !state.online,
+    hidden: view.id === PRIMARY_VIEW_ID ? state.projectOverview || !!view.loading : false,
+  };
+}
+function onComposerError(error) {
+  toast(translateKnown(error.message) || String(error), true);
+}
+function makeImageComposer(view, roots) {
+  return createImageComposer({
+    getContext: () => imageContextFor(view),
+    onChange: () => updateComposer(view),
+    onError: onComposerError,
+    roots,
+  });
+}
+function makeCommands(view, text, chipFactory, attachControls, input, images) {
+  return createCommands({
+    api,
+    getContext: () => commandsContextFor(view),
+    action: commandsAction,
+    onChange: () => {
+      saveDraft();
+      resizeComposer();
+    },
+    onError: onComposerError,
+    hasAttachments: () => images?.hasImages() || false,
+    ...(input ? { input } : {}),
+    ...(attachControls ? { attachControls } : {}),
+    ...(text ? { text } : {}),
+    ...(chipFactory ? { chipFactory } : {}),
+  });
+}
+function makeLiveMessages(view, images, text, roots) {
+  return createLiveMessages({
+    api,
+    imageComposer: images,
+    getContext: () => liveContextFor(view),
+    onAccepted: ({ key, text: sent }) => convViews.acceptDraftFor(view, key, sent),
+    onSent: () => {
+      saveDraft();
+      resizeComposer();
+    },
+    onError: onComposerError,
+    ...(roots ? { roots } : {}),
+    ...(text ? { text } : {}),
+  });
+}
+function makeQuestions(view, root) {
+  return createQuestions({ root, api, getContext: () => questionsContextFor(view) });
+}
+// Live per-view composer controllers. Primary keeps the singletons until the
+// enable commit; dynamic views build scoped units on docked focus/mount only,
+// so classic never gains background traffic or duplicate host controllers.
+function ensureViewUnits(view) {
+  if (!view || !convViews || view.id === PRIMARY_VIEW_ID || view.units) return view?.units || null;
+  if (!dockingUI?.active) return null;
+  const nodes = view.composerNodes;
+  if (!nodes?.textarea || !nodes?.form || !nodes?.send || !nodes?.stop) return null;
+  const scope = createComposer(() => nodes.textarea);
+  const images = makeImageComposer(view, { form: nodes.form, textarea: nodes.textarea });
+  const text = {
+    get: () => scope.composerText(),
+    set: (value, opts) => scope.setComposerText(value, opts),
+    command: () => scope.composerCommand(),
+    select: (value, args) => scope.selectComposerCommand(value, args),
+  };
+  const live = makeLiveMessages(view, images, text, {
+    form: nodes.form,
+    composer: nodes.textarea,
+    send: nodes.send,
+    stop: nodes.stop,
+  });
+  const attachControls = nodes.form.querySelector('[data-cvw="attach-controls"]');
+  const commands = makeCommands(
+    view,
+    text,
+    () => scope.createChip(),
+    attachControls || undefined,
+    nodes.textarea,
+    images,
+  );
+  const questions = makeQuestions(view, view.shell.questions);
+  nodes.textarea.addEventListener('input', () => {
+    saveDraft();
+    resizeComposer(nodes.textarea);
+  });
+  nodes.textarea.addEventListener('keydown', handleComposerEnter);
+  nodes.form.addEventListener('submit', (event) => sendMessage(event));
+  nodes.stop.addEventListener('click', () => stopRun());
+  nodes.thinking.addEventListener('change', () => {
+    void saveGenerationSettings({ thinking: nodes.thinking.value }, view);
+  });
+  nodes.allowQ.addEventListener('change', () => {
+    void saveGenerationSettings({ allowQuestions: nodes.allowQ.checked }, view);
+  });
+  // Computer Use engine stays sibling-owned: the pane checkbox delegates to
+  // the host checkbox flow (focus-first makes it the acting view).
+  nodes.allowCU.addEventListener('change', () => {
+    const hostBox = document.getElementById('allow-computer-use');
+    if (hostBox && hostBox.checked !== nodes.allowCU.checked) {
+      hostBox.checked = nodes.allowCU.checked;
+      hostBox.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+  nodes.modelBtn.addEventListener('click', () => openModelDialogFor(view));
+  view.units = { scope, text, images, live, commands, questions, nodes };
+  return view.units;
+}
+// Model picker target for a pane: the singleton dialog serves whichever view
+// opened it; selection persists through the shared generation flow, then the
+// pane button repaints from the triple.
+function openModelDialogFor(view) {
+  openModelPicker({
+    button: view?.units?.nodes?.modelBtn || $('model-picker-button'),
+    value: modelForView(view),
+    onSelect: (id) => setSelectedModel(id, true, true, view || undefined),
+  });
+}
+// Writes a triple into a control set (host refs or per-view unit refs —
+// identical key names). The ONLY generation-DOM write path besides init.
+function writeTripleToNodes(nodes, triple) {
+  if (!nodes || !triple) return;
+  try {
+    if (nodes.thinking) nodes.thinking.value = triple.thinking || '';
+    if (nodes.allowQ) nodes.allowQ.checked = !!triple.allowQuestions;
+  } catch {}
+  paintModelControl(nodes, triple.model || '');
+}
+function paintModelControl(nodes, id) {
+  if (!nodes?.modelBtn) return;
+  const name = modelDisplayName(id);
+  const model = state.models.find((item) => item.id === id);
+  const provider =
+    model?.provider ||
+    (id.includes('/')
+      ? id.slice(0, id.indexOf('/'))
+      : id
+        ? tr('ui.modele_personnalise')
+        : tr('ui.configuration_prime_agent'));
+  bindText(nodes.modelName, () => name);
+  if (nodes.modelProvider) bindText(nodes.modelProvider, () => provider);
+  bindAttribute(nodes.modelBtn, 'title', () => (id ? `${name} · ${model?.id || id}` : name));
+  bindAttribute(nodes.modelBtn, 'aria-label', () =>
+    tr('ui.choisir_le_modele_selection_actuelle', { value1: id ? `${name}, ${model?.id || id}` : name }),
+  );
+}
+function paintViewModelButton(view) {
+  const nodes = view?.units?.nodes;
+  if (!nodes) return;
+  paintModelControl(nodes, modelForView(view));
+}
+function focusedUnits() {
+  return convViews?.focused()?.units || null;
+}
+function hostComposerNodes() {
+  const pick = (id) => document.getElementById(id);
+  return {
+    area: document.querySelector('.conversation-column .composer-area'),
+    form: pick('composer-form'),
+    textarea: pick('composer'),
+    toolbar: document.querySelector('.conversation-column .composer-toolbar'),
+    attachControls: document.querySelector('.conversation-column .attachment-controls'),
+    modelBtn: pick('model-picker-button'),
+    modelName: pick('model-picker-label'),
+    modelProvider: pick('model-picker-provider'),
+    modelSelect: pick('model-select'),
+    thinking: pick('thinking-select'),
+    allowQ: pick('allow-questions'),
+    allowCU: pick('allow-computer-use'),
+    send: pick('send-button'),
+    stop: pick('stop-button'),
+    runStatus: pick('run-status'),
+    runLabel: pick('run-status-label'),
+    runElapsed: pick('run-elapsed'),
+    footnote: document.querySelector('.conversation-column .composer-footnote'),
+  };
+}
+// Atomic enable: teardown singleton host chrome, rebuild identical primary
+// units (default ID path — same DOM, same IDs), adopt them as primary.units,
+// mount dynamic subtrees. Synchronous: no paint lands mid-swap.
+function enableLiveComposers() {
+  // Adoption guard (not the DOM-mounted flag: sidecar restore builds shells
+  // without mounting composers, which must never skip primary teardown).
+  if (!convViews || convViews.byId(PRIMARY_VIEW_ID)?.units) return true;
+  try {
+    liveMessagesUI?.destroy?.();
+  } catch {}
+  try {
+    imageComposer?.destroy?.();
+  } catch {}
+  try {
+    commandsUI?.destroy?.();
+  } catch {}
+  try {
+    $('interactive-questions')?.replaceChildren();
+  } catch {}
+  const primary = convViews.byId(PRIMARY_VIEW_ID);
+  if (!primary) return false;
+  imageComposer = makeImageComposer(primary, undefined);
+  commandsUI = makeCommands(primary, null, null, undefined, undefined, imageComposer);
+  liveMessagesUI = makeLiveMessages(primary, imageComposer);
+  questionsUI = makeQuestions(primary, $('interactive-questions'));
+  primary.units = {
+    scope: null,
+    text: {
+      get: () => composerText(),
+      set: (value, opts) => setComposerText(value, opts),
+      command: () => composerCommand(),
+      select: (value, args) => selectComposerCommand(value, args),
+    },
+    images: imageComposer,
+    live: liveMessagesUI,
+    commands: commandsUI,
+    questions: questionsUI,
+    nodes: hostComposerNodes(),
+  };
+  for (const view of convViews.views.values()) {
+    if (view.id === PRIMARY_VIEW_ID) continue;
+    try {
+      convViews.mountComposer(view.id);
+    } catch {}
+    ensureViewUnits(view);
+  }
+  try {
+    convViews.bindHost();
+  } catch {}
+  renderMessages(true);
+  renderNavigation();
+  return true;
+}
+// View-owned generation triple. Sources in order: per-view draft (new chats),
+// in-flight PATCH (optimistic, session-keyed, single writer per session),
+// server-confirmed/session row, catalog defaults. Host controls are NEVER a
+// source: post-enable they show the primary panel, not the acting view.
+function tripleForView(view) {
+  const defaults = {
+    model: state.modelCatalogDefault || '',
+    thinking: state.modelCatalogThinking || '',
+    allowQuestions: state.studioPreferences?.allowQuestionsByDefault !== false,
+  };
+  // Draft picks belong to unbound new chats only; a stale gen must never
+  // override a bound session (cleared on bind, guarded here regardless).
+  if (view?.gen && !view.sessionId)
+    return {
+      model: view.gen.model || '',
+      thinking: view.gen.thinking || '',
+      allowQuestions: view.gen.allowQuestions !== false,
+    };
+  if (view?.sessionId || view?.viewRunId) {
+    // Per-field nullish fallback (same semantics as restoreGenerationSettings):
+    // the backend legitimately returns partial settings, so each field falls
+    // through pending → confirmed → session row → live run → raw session and
+    // history response fields (legacy records predate generationSettings) →
+    // defaults.
+    const run = runForView(view);
+    const pending = view.sessionId ? generationPending.get(view.sessionId)?.settings : null;
+    const confirmed = view.sessionId ? generationConfirmed.get(view.sessionId)?.settings : null;
+    const row = view.sessionId ? session(view.sessionId) : null;
+    const settings = row?.generationSettings;
+    const meta = view.historyMeta || null;
+    return {
+      model:
+        pending?.model ??
+        confirmed?.model ??
+        settings?.model ??
+        run?.model ??
+        row?.model ??
+        meta?.model ??
+        defaults.model,
+      thinking:
+        pending?.thinking ??
+        confirmed?.thinking ??
+        settings?.thinking ??
+        run?.thinking ??
+        row?.thinking ??
+        meta?.thinking ??
+        defaults.thinking,
+      allowQuestions:
+        pending?.allowQuestions ??
+        confirmed?.allowQuestions ??
+        settings?.allowQuestions ??
+        run?.allowQuestions ??
+        row?.allowQuestions ??
+        defaults.allowQuestions,
+    };
+  }
+  return { ...defaults };
+}
+// Repaints a visible pane's controls from its triple + refreshes its unit
+// engines. Cheap and idempotent; unit updates self-dedupe internally.
+function paintViewChrome(view) {
+  const units = view?.units;
+  if (!units?.nodes) return;
+  const nodes = units.nodes;
+  paintViewModelButton(view);
+  const triple = tripleForView(view);
+  if (nodes.thinking.value !== (triple.thinking || '')) nodes.thinking.value = triple.thinking || '';
+  if (nodes.allowQ.checked !== triple.allowQuestions) nodes.allowQ.checked = triple.allowQuestions;
+  const hostCU = document.getElementById('allow-computer-use');
+  if (hostCU && nodes.allowCU.checked !== hostCU.checked) nodes.allowCU.checked = hostCU.checked;
+  const run = runForView(view);
+  nodes.runStatus.hidden = !isRunning(run);
+  updateComposer(view);
+}
+
+function restoreGenerationForView(view) {
+  if (!view || !convViews) return;
+  if (view.sessionId || view.viewRunId) {
+    restoreGenerationSettings();
+    return;
+  }
+  const gen = view.gen || {};
+  const triple = {
+    model: gen.model || state.modelCatalogDefault || '',
+    thinking: gen.thinking || '',
+    allowQuestions: gen.allowQuestions !== false,
+  };
+  if (convViews?.composerLive?.() && view.units?.nodes) {
+    // Dynamic pane owns its nodes; host keeps primary truth (untouched here).
+    writeTripleToNodes(view.units.nodes, triple);
+  } else {
+    setSelectedModel(triple.model, false);
+    $('thinking-select').value = triple.thinking;
+    $('allow-questions').checked = triple.allowQuestions;
+  }
+  renderConfigurationWarning();
+}
+
+// Post-focus settle: generation controls follow the view; stale or unloaded
+// session views reload (focused views only — backgrounds never fetch). Pass
+// deferLoad when the caller awaits the load itself (single history/sync fetch).
+function afterViewFocused(opts = {}) {
+  const view = convViews?.focused();
+  if (!view) return;
+  restoreGenerationForView(view);
+  if (
+    !opts.deferLoad &&
+    view.sessionId &&
+    (view.dirty || (!view.history.length && !view.loading && !view.viewRunId))
+  ) {
+    view.dirty = false;
+    void loadSessionIntoView(view);
+  }
+}
+
+async function viewsSelectSession(id, cwd) {
+  // Dedupe: a view already showing this session is focused, never duplicated,
+  // so two panels can never hold dual drafts for one session.
+  const existing = convViews.bySession(id);
+  if (existing) {
+    // Same-id activation runs the full focus contract (global mirror), so a
+    // sidecar-restored focused session at boot mirrors state.sessionId before
+    // any awaited hydration — first send and Roadmap provenance stay on S.
+    convViews.focusView(existing.id, { reveal: true });
+    afterViewFocused();
+    closeSidebar();
+    return;
+  }
+  saveDraft();
+  const knownOwner = cwd && state.projects.some((p) => samePath(p.cwd, cwd)) ? cwd : state.projectCwd;
+  const view = convViews.bindFocused(
+    {
+      kind: 'session',
+      sessionId: id,
+      projectCwd: knownOwner,
+      execCwd: session(id)?.cwd || cwd || knownOwner,
+    },
+    { inheritLegacy: false },
+  );
+  afterViewFocused({ deferLoad: true });
+  projectNavigation?.reveal(state.projectCwd);
+  closeSidebar();
+  await loadSessionIntoView(view);
+}
+
+async function viewsSelectRun(run) {
+  saveDraft();
+  convViews.bindFocused(
+    {
+      kind: 'run',
+      sessionId: null,
+      viewRunId: run.id,
+      projectCwd: run.projectCwd || run.cwd,
+      execCwd: run.cwd,
+    },
+    { inheritLegacy: false },
+  );
+  afterViewFocused();
+  projectNavigation?.reveal(run.cwd);
+  messageNodes.clear();
+  if (!run.initialized) initializeRun(run, []);
+  subscribe(run);
+  saveSelection();
+  renderNavigation();
+  renderMessages(true);
+  closeSidebar();
+}
+
+async function loadSessionIntoView(view) {
+  const originId = view.id;
+  const sessionId = view.sessionId;
+  if (!sessionId || !convViews.byId(originId)) return;
+  const myToken = ++view.token;
+  const focusedNow = convViews.isFocused(originId);
+  // Only an explicit focused load may invalidate global navigation or run the
+  // focus-scoped sync check. Background completions update their view only.
+  if (focusedNow) state.requestId++;
+  view.loading = true;
+  view.unavailable = false;
+  if (focusedNow) {
+    state.loading = true;
+    restoreGenerationSettings(session(sessionId), runningForSession(sessionId));
+    messageNodes.clear();
+    saveSelection();
+    restoreDraft();
+    renderNavigation();
+    renderMessages(true);
+  } else {
+    convViews.refreshView(originId);
+  }
+  if (focusedNow) void checkConversationSync(sessionId, state.requestId);
+  const running = runningForSession(sessionId);
+  try {
+    let h;
+    try {
+      h = await api(`/api/history?id=${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+      if (e.status === 404 && running) h = { messages: [] };
+      else throw e;
+    }
+    const current = convViews.byId(originId);
+    if (!current || current.token !== myToken || current.sessionId !== sessionId) return;
+    current.history = h.messages || [];
+    current.historyMeta = h && typeof h === 'object' ? { model: h.model, thinking: h.thinking } : null;
+    if (h?.cwd) current.execCwd = h.cwd;
+    else if (session(sessionId)?.cwd) current.execCwd = session(sessionId).cwd;
+    // A newly notified session may not be in the cached list yet. History
+    // includes the saved worktree binding; never infer ownership from a prefix.
+    if (h?.cwd && !session(sessionId)) {
+      const ownerCwd = h.worktreeProjectCwd || h.cwd;
+      const owner = state.projects.find((o) => samePath(o.cwd, ownerCwd));
+      if (owner && !samePath(owner.cwd, current.projectCwd)) {
+        current.projectCwd = owner.cwd;
+        if (convViews.isFocused(originId)) {
+          state.projectCwd = owner.cwd;
+          projectNavigation?.reveal(owner.cwd);
+        }
+      }
+    }
+    if (h.id && !running) sessionActivity.observe(h);
+    if (running) {
+      current.viewRunId = running.id;
+      if (!running.initialized) initializeRun(running, current.history);
+      subscribe(running);
+    }
+    current.loading = false;
+    current.unavailable = false;
+    if (convViews.isFocused(originId)) {
+      state.history = current.history;
+      state.execCwd = current.execCwd;
+      state.projectCwd = current.projectCwd;
+      state.viewRunId = current.viewRunId;
+      state.loading = false;
+      restoreGenerationSettings(h, running);
+      restoreGenerationForView(current);
+      messageNodes.clear();
+      renderNavigation();
+      renderMessages(true);
+      saveSelection();
+    } else {
+      convViews.refreshView(originId);
+    }
+    convViews.refreshTitles();
+  } catch (e) {
+    const current = convViews.byId(originId);
+    if (!current || current.token !== myToken || current.sessionId !== sessionId) return;
+    current.loading = false;
+    if (e?.status === 404 && !running) current.unavailable = true;
+    if (convViews.isFocused(originId)) {
+      state.loading = false;
+      renderMessages();
+      banner(translateKnown(e.message), true);
+      toast(translateKnown(e.message), true);
+    } else {
+      convViews.refreshView(originId);
+    }
+  }
+}
+
 function historyBeforeRun(messages, run) {
   const start = toTime(run.startedAt);
   let i = messages.findIndex(
@@ -2092,6 +3044,7 @@ function historyBeforeRun(messages, run) {
   return i < 0 ? messages : messages.slice(0, i);
 }
 async function selectSession(id, cwd) {
+  if (convViews) return viewsSelectSession(id, cwd);
   saveDraft();
   const token = ++state.requestId;
   state.sessionId = id;
@@ -2159,6 +3112,7 @@ async function selectSession(id, cwd) {
 }
 async function selectRun(run) {
   if (run.sessionId) return selectSession(run.sessionId, run.projectCwd || run.cwd);
+  if (convViews) return viewsSelectRun(run);
   saveDraft();
   resetView();
   state.projectCwd = run.projectCwd || run.cwd;
@@ -2244,7 +3198,20 @@ function applyRunEvent(run, e) {
     case 'session':
       run.sessionId = e.sessionId;
       upsertSession(e.sessionId, run);
-      if (state.viewRunId === run.id) {
+      if (convViews) {
+        const origin = convViews.byRun(run.id);
+        if (origin && !origin.sessionId) {
+          origin.sessionId = e.sessionId;
+          if (origin.kind === 'new') origin.kind = 'session';
+        }
+        if (origin && convViews.isFocused(origin.id)) {
+          saveDraft();
+          state.sessionId = e.sessionId;
+          saveSelection();
+          saveDraft();
+        }
+        if (origin) convViews.refreshTitles();
+      } else if (state.viewRunId === run.id) {
         saveDraft();
         state.sessionId = e.sessionId;
         saveSelection();
@@ -2338,7 +3305,26 @@ function applyRunEvent(run, e) {
       void finishRun(run, e);
       break;
   }
-  if (state.viewRunId === run.id) scheduleMessages();
+  if (convViews?.composerLive?.()) {
+    const owner = convViews.byRun(run.id) || (run.sessionId ? convViews.bySession(run.sessionId) : null);
+    if (owner && !convViews.isFocused(owner.id)) {
+      if (owner.id === PRIMARY_VIEW_ID) renderHostPrimary();
+      else convViews.renderViewNow(owner.id);
+    }
+    convViews.notifyRunEvent(run, e.kind);
+    scheduleMessages();
+  } else if (convViews) {
+    const origin = convViews.byRun(run.id);
+    if (origin && convViews.isFocused(origin.id)) {
+      if (state.viewRunId === run.id) scheduleMessages();
+    } else if (origin) {
+      convViews.notifyRunEvent(run, e.kind);
+    } else if (state.viewRunId === run.id) {
+      scheduleMessages();
+    }
+  } else if (state.viewRunId === run.id) {
+    scheduleMessages();
+  }
 }
 function subscribe(run) {
   if (run.source || run.replayedDone) return;
@@ -2391,30 +3377,66 @@ async function finishRun(run, e) {
     });
     toast(translateKnown(e.error), true);
   } else if (e.status === 'stopped' || e.status === 'cancelled') toast(() => tr('ui.l_agent_a_ete_arrete'));
-  if (state.viewRunId === run.id) {
+  const finishOrigin = convViews?.byRun(run.id) || null;
+  const finishViewToken = finishOrigin?.token;
+  if (convViews && finishOrigin) {
+    if (finishOrigin.kind === 'new' && run.sessionId) {
+      finishOrigin.sessionId = run.sessionId;
+      finishOrigin.kind = 'session';
+    }
+    finishOrigin.history = [...run.base, ...run.messages];
+    if (convViews.isFocused(finishOrigin.id)) {
+      state.sessionId = run.sessionId || state.sessionId;
+      state.history = finishOrigin.history;
+      saveSelection();
+      scheduleMessages();
+    } else {
+      convViews.refreshView(finishOrigin.id);
+    }
+  } else if (!convViews && state.viewRunId === run.id) {
     state.sessionId = run.sessionId || state.sessionId;
     state.history = [...run.base, ...run.messages];
     saveSelection();
     scheduleMessages();
-    if (run.sessionId) {
-      try {
-        const h = await api(`/api/history?id=${encodeURIComponent(run.sessionId)}`);
-        sessionActivity.observe(h);
-        if (state.viewRunId === run.id && h.messages?.length) {
-          state.history = h.messages;
-          if (translateKnown(e.error))
-            state.history.push({
-              id: `${run.id}-error`,
-              role: 'system',
-              text: e.error,
-              tools: [],
-              timestamp: run.endedAt,
-            });
-          state.viewRunId = null;
-          scheduleMessages();
-        }
-      } catch {}
+  }
+  if (!convViews || !finishOrigin || convViews.isFocused(finishOrigin.id)) {
+    if (state.viewRunId === run.id) {
+      if (run.sessionId) {
+        try {
+          const h = await api(`/api/history?id=${encodeURIComponent(run.sessionId)}`);
+          sessionActivity.observe(h);
+          const stillThere = convViews ? convViews.byId(finishOrigin.id) : true;
+          const tokenOk = convViews ? finishOrigin.token === finishViewToken : true;
+          if (stillThere && tokenOk && state.viewRunId === run.id && h.messages?.length) {
+            state.history = h.messages;
+            if (finishOrigin) finishOrigin.history = h.messages;
+            if (translateKnown(e.error))
+              state.history.push({
+                id: `${run.id}-error`,
+                role: 'system',
+                text: e.error,
+                tools: [],
+                timestamp: run.endedAt,
+              });
+            state.viewRunId = null;
+            if (finishOrigin) finishOrigin.viewRunId = null;
+            scheduleMessages();
+          }
+        } catch {}
+      }
     }
+  } else if (run.sessionId) {
+    try {
+      const h = await api(`/api/history?id=${encodeURIComponent(run.sessionId)}`);
+      sessionActivity.observe(h);
+      const stillThere = convViews.byId(finishOrigin.id);
+      if (stillThere && finishOrigin.token === finishViewToken && h.messages?.length) {
+        finishOrigin.history = h.messages;
+        finishOrigin.viewRunId = null;
+        convViews.refreshView(finishOrigin.id);
+        convViews.refreshTitles();
+      }
+    } catch {}
   }
   await refreshOverview();
   renderNavigation();
@@ -2423,18 +3445,38 @@ async function finishRun(run, e) {
 async function sendMessage(event) {
   event?.preventDefault();
   if (state.readOnly || state.sending) return;
-  if (await commandsUI?.intercept()) return;
-  if (isRunning(activeRun())) return liveMessagesUI?.submitDraft();
-  if (state.readOnly || $('send-button').disabled || state.sending) return;
-  const imageDraft = imageComposer?.snapshot();
+  // Origin view captured BEFORE any await: late completions update the origin
+  // only and never rebind globals or the host from a background send.
+  const entryOriginId = convViews?.focusedId() || null;
+  const origin = convViews?.byId(entryOriginId) || null;
+  const originUnits = origin?.units || null;
+  const originCommands = originUnits?.commands || commandsUI;
+  if (await originCommands?.intercept()) return;
+  if (convViews && convViews.focusedId() !== entryOriginId) return;
+  if (isRunning(activeRun())) return (originUnits?.live || liveMessagesUI)?.submitDraft();
+  updateComposer();
+  const originSend = originUnits?.nodes?.send || $('send-button');
+  if (state.readOnly || (originSend && originSend.disabled) || state.sending) return;
+  if (convViews && convViews.focusedId() !== entryOriginId) return;
+  const originToken = origin?.token;
+  const originKey = origin ? convViews.draftKeyFor(origin) : null;
+  const originImages = originUnits?.images || imageComposer;
+  const originText = originUnits ? originUnits.text.get() : composerText();
+  const imageDraft = originImages?.snapshot();
   const images = imageDraft?.images || [];
   const files = imageDraft?.files || [];
-  const originalDraft = composerText(),
-    originalDraftKey = draftKey();
+  const originalDraft = originText,
+    originalDraftKey = originKey || draftKey();
   const message =
       originalDraft.trim() || (images.length || files.length ? tr('ui.analyse_les_pieces_jointes') : ''),
-    cwd = state.execCwd || state.projectCwd,
-    sessionId = state.sessionId,
+    // The loaded session of the origin view is the authoritative send target:
+    // globals always mirror the focused view, but the origin wins on paper so
+    // a send can never file under a stale global id after a view switch.
+    // Model/effort/questions likewise come from the origin triple, never from
+    // whichever panel happens to own the host controls.
+    cwd = origin?.execCwd || origin?.projectCwd || state.execCwd || state.projectCwd,
+    sessionId = origin ? origin.sessionId || null : state.sessionId,
+    originTriple = origin ? tripleForView(origin) : null,
     base = [...activeMessages()],
     token = state.requestId;
   if (!isValidRunCwd(cwd)) {
@@ -2449,7 +3491,8 @@ async function sendMessage(event) {
   // the stored backend with no silent fallback.
   const globalComputerModel =
     computerUse && typeof settingsUI?.getComputerModel === 'function' ? settingsUI.getComputerModel() : '';
-  const effectiveModel = globalComputerModel || $('model-select').value || state.modelCatalogDefault || '';
+  const effectiveModel =
+    globalComputerModel || originTriple?.model || $('model-select').value || state.modelCatalogDefault || '';
   state.sending = true;
   updateComposer();
   try {
@@ -2463,8 +3506,8 @@ async function sendMessage(event) {
         ...(sessionId ? { sessionId } : {}),
         ...(computerUse ? { computerUse: true } : {}),
         model: effectiveModel,
-        thinking: $('thinking-select').value || state.modelCatalogThinking || '',
-        allowQuestions: $('allow-questions').checked,
+        thinking: originTriple?.thinking || $('thinking-select').value || state.modelCatalogThinking || '',
+        allowQuestions: origin ? !!originTriple?.allowQuestions : $('allow-questions').checked,
       },
     });
     Object.assign(run, {
@@ -2484,16 +3527,39 @@ async function sendMessage(event) {
       currentMessage: null,
     });
     state.runs.set(run.id, run);
-    generationDrafts.delete(normalizedPath(cwd));
-    if (imageDraft) imageComposer.accepted(imageDraft);
+    if (imageDraft) originImages.accepted(imageDraft);
     if (run.sessionId) upsertSession(run.sessionId, run);
-    acceptDraft(originalDraftKey, originalDraft);
-    if (token === state.requestId) {
-      state.viewRunId = run.id;
-      state.sessionId = run.sessionId || sessionId;
-      saveSelection();
-      resizeComposer();
-      renderMessages(true);
+    if (convViews && origin) {
+      // Key-scoped accept runs regardless of rebinding: the captured binding
+      // key is cleared when it still holds the submitted text, even if this
+      // pane now shows another conversation (different key, untouched) or
+      // another view is focused (host textarea kept).
+      convViews.acceptDraftFor(origin, originalDraftKey, originalDraft);
+      const current = convViews.byId(origin.id);
+      if (current && current.token === originToken) {
+        current.viewRunId = run.id;
+        if (convViews.isFocused(current.id) && token === state.requestId) {
+          state.viewRunId = run.id;
+          state.sessionId = run.sessionId || sessionId;
+          saveSelection();
+          resizeComposer();
+          renderMessages(true);
+        } else {
+          convViews.refreshView(current.id);
+          convViews.refreshTitles();
+        }
+      } else {
+        convViews.refreshTitles();
+      }
+    } else {
+      acceptDraft(originalDraftKey, originalDraft);
+      if (token === state.requestId) {
+        state.viewRunId = run.id;
+        state.sessionId = run.sessionId || sessionId;
+        saveSelection();
+        resizeComposer();
+        renderMessages(true);
+      }
     }
     subscribe(run);
     computerUseUI?.notifyRunCreated(run);
@@ -2560,6 +3626,7 @@ function refreshOverview() {
           }
         }
         setConnection(true);
+        adoptVisibleRuns();
         renderNavigation();
         await syncSessionActivity();
       } catch {
@@ -2570,6 +3637,56 @@ function refreshOverview() {
     overviewPromise = null;
   });
   return overviewPromise;
+}
+// Runs learned from overview that belong to an open session view are adopted
+// so background views render real buffers. Subscriptions start only for
+// visible views (docked) or the focused view; hidden views render on focus.
+function adoptVisibleRuns() {
+  if (!convViews) return;
+  // Restored bindings can dangle on runs that died without a done event
+  // (interrupted, expired). Release them first so re-adoption is never
+  // blocked: interrupted/expired views reload on next focus, completed runs
+  // were already merged by finishRun and clear silently.
+  for (const view of convViews.views.values()) {
+    if (!view.viewRunId) continue;
+    const bound = state.runs.get(view.viewRunId);
+    if (bound && isRunning(bound)) continue;
+    view.viewRunId = null;
+    if (!bound || bound.status === 'interrupted') {
+      view.dirty = true;
+      convViews.refreshView(view.id);
+    }
+  }
+  // Restored run bindings whose run expired server-side resolve safely back
+  // to session/new views instead of dangling on an unknown run id.
+  for (const view of convViews.views.values()) {
+    if (view.viewRunId && !state.runs.has(view.viewRunId)) {
+      view.viewRunId = null;
+      if (view.kind === 'run' && !view.sessionId) view.kind = 'new';
+    }
+  }
+  const docked = !!dockingUI?.active;
+  let visible = [];
+  try {
+    visible = docked ? dockingUI.visiblePanels() : [convViews.focusedId()];
+  } catch {
+    visible = [convViews.focusedId()];
+  }
+  for (const run of state.runs.values()) {
+    if (!isRunning(run) || !run.sessionId) continue;
+    if (convViews.byRun(run.id)) continue;
+    const view = convViews.bySession(run.sessionId);
+    if (!view || view.viewRunId) continue;
+    view.viewRunId = run.id;
+    if (!run.initialized) initializeRun(run, view.history);
+    if (visible.includes(view.id) || convViews.isFocused(view.id)) subscribe(run);
+    if (convViews.isFocused(view.id)) {
+      state.viewRunId = run.id;
+      renderMessages(true);
+    } else {
+      convViews.refreshView(view.id);
+    }
+  }
 }
 function modelConfigNumber(value) {
   return new Intl.NumberFormat('fr-FR').format(value || 0);
@@ -2690,7 +3807,9 @@ async function openModelConfig() {
     toast(() => tr('ui.la_configuration_des_modeles_est_disponible_uniquement_sur_l_ordi'), true);
     return;
   }
-  $('settings-dialog').close();
+  // Release the settings top layer (if modal) through the Preferences owner
+  // so the popup session survives the async model-picker open that follows.
+  settingsDockApi?.prepareDockMove?.();
   $('model-config-loading').hidden = false;
   bindText($('model-config-loading'), () => tr('ui.chargement_de_la_configuration'));
   $('model-config-content').hidden = true;
@@ -2874,14 +3993,57 @@ async function bootstrap() {
       $('global-banner').dataset.persistent = 'true';
     }
     renderNavigation();
+    if (convViews) {
+      // One-time legacy adoption: pre-multiview drafts/attachments stored under
+      // `session:`/`project:` keys move into the restored focused view's slots.
+      const primary = convViews.focused();
+      if (primary) {
+        if (!primary.sessionId && !primary.viewRunId && selection.cwd && !primary.projectCwd) {
+          primary.projectCwd = selection.cwd;
+          primary.execCwd = selection.cwd;
+        }
+        convViews.adoptLegacyBackup(primary);
+        restoreGenerationForView(primary);
+        // One-time legacy attachment adoption with caller-captured keys.
+        // Canonical `session:<id>` rows never move (already home — migration
+        // is a no-op by construction). `project:<cwd>` rows move only into a
+        // session-less focused view of the SAME project, never into another
+        // session's key. No timers, no late key lookups.
+        const bootFocused = convViews.focused();
+        const projectLegacy =
+          !selection.sessionId && selection.cwd ? `project:${normalizedPath(selection.cwd)}` : null;
+        const imageTarget =
+          projectLegacy &&
+          bootFocused &&
+          !bootFocused.sessionId &&
+          normalizedPath(bootFocused.projectCwd) === normalizedPath(selection.cwd)
+            ? convViews.focusedImageKey()
+            : null;
+        if (imageTarget && projectLegacy !== imageTarget && imageComposer?.migrateItems) {
+          void imageComposer.migrateItems(projectLegacy, imageTarget).catch(() => {});
+        }
+      }
+    }
     const lastRun = state.runs.get(selection.runId);
     if (lastRun && isRunning(lastRun)) await selectRun(lastRun);
     else if (selection.sessionId && session(selection.sessionId))
       await selectSession(selection.sessionId, session(selection.sessionId).cwd);
     else {
-      restoreDraft();
-      renderMessages();
+      // No saved selection: a sidecar-restored focused session still hydrates
+      // (mirror + history), otherwise the host renders the fresh primary.
+      const bootView = convViews?.focused();
+      if (bootView?.sessionId) await selectSession(bootView.sessionId, bootView.projectCwd);
+      else {
+        restoreDraft();
+        renderMessages();
+      }
     }
+    adoptVisibleRuns();
+    // Permissions are known only now: re-gate a saved-visible prefs tab that
+    // may still show pre-bootstrap full-control content.
+    try {
+      settingsDockApi?.refreshContext?.();
+    } catch {}
     saveSelection();
     void syncSessionActivity();
     void checkComponentsUpdateBanner();
@@ -3231,8 +4393,16 @@ async function removeProject(event) {
     $('remove-project-dialog').close();
     if (wasSelected) {
       saveDraft();
-      resetView();
       state.projectCwd = state.projects[0]?.cwd || null;
+      if (convViews) {
+        convViews.bindFocused(
+          { kind: 'new', sessionId: null, projectCwd: state.projectCwd, execCwd: state.projectCwd },
+          { inheritLegacy: false, keepNonce: true },
+        );
+        afterViewFocused();
+      } else {
+        resetView();
+      }
       selectNewConversationModel();
       saveSelection();
       restoreDraft();
@@ -3470,7 +4640,7 @@ inspectorUI = createInspector({
     remote: state.remote,
     nativeFileOpen: state.nativeFileOpen,
     online: state.online,
-    mainModel: $('model-select').value || state.modelCatalogDefault || '',
+    mainModel: tripleForView(convViews?.focused()).model || state.modelCatalogDefault || '',
   }),
   onClose: () => {
     $('toggle-details').click();
@@ -3499,8 +4669,8 @@ roadmapUI = createRoadmap({
     name: project()?.name,
     sessions: project()?.sessions || [],
     sessionId: state.sessionId || activeRun()?.sessionId,
-    model: $('model-select').value || state.modelCatalogDefault,
-    thinking: $('thinking-select').value,
+    model: tripleForView(convViews?.focused()).model || state.modelCatalogDefault,
+    thinking: tripleForView(convViews?.focused()).thinking,
     readOnly: state.readOnly,
     online: state.online,
   }),
@@ -3523,6 +4693,7 @@ roadmapUI = createRoadmap({
     )
       return;
     if (resolved.agentId) await inspectorUI.openAgentById(resolved.agentId);
+    convViews?.ensureFocusedVisible();
   },
   onWork: async (result) => {
     if (result.run) {
@@ -3531,30 +4702,114 @@ roadmapUI = createRoadmap({
       if (!existing) state.runs.set(run.id, run);
       await selectRun(run);
     } else if (result.sessionId) await selectSession(result.sessionId, state.projectCwd);
+    convViews?.ensureFocusedVisible();
     if (result.linkWarning) toast(() => tr('roadmap.linkWarning'), true);
   },
 });
+// Shared dock-state sync: safe to call before the settings UI exists
+// (settingsDockApi is still null then) and after it is created.
+function syncDockingState() {
+  const active = !!dockingUI?.active;
+  const visible = active ? dockingUI.visiblePanels() : [];
+  roadmapUI?.setDocked?.(
+    active
+      ? {
+          visible: visible.includes('roadmap'),
+          onOpen: () => dockingUI.openPanel('roadmap'),
+          onClose: () => dockingUI.closePanel('roadmap'),
+        }
+      : null,
+  );
+  settingsDockApi?.setDocked?.(
+    active
+      ? {
+          visible: visible.includes('preferences'),
+          onOpen: () => dockingUI.openPanel('preferences'),
+          onClose: () => dockingUI.closePanel('preferences'),
+        }
+      : null,
+  );
+  inspectorUI?.setDocked?.(active, visible, (id) => dockingUI.openPanel(id));
+}
+// Main entrypoints always open the popup (Prefs default modal), even when
+// docked. The docked Preferences tab opens only via explicit AddTab.
+function openSettings() {
+  settingsUI.open();
+}
 dockingUI = createDocking({
   panels: {
-    conversation: document.querySelector('.conversation-column'),
+    ...(convViews
+      ? convViews.shellEntries()
+      : { conversation: document.querySelector('.conversation-column') }),
     roadmap: $('roadmap-panel'),
-    inspector: $('details-panel'),
+    ...(hasInspectorSplit() ? inspectorUI.roots() : { inspector: $('details-panel') }),
+    preferences: $('settings-dialog'),
   },
   read: readStorage,
   write: writeStorage,
   toast,
+  titleOf: (id) => convViews?.titleOf(id) ?? undefined,
+  isFocusedPanel: (id) => !!convViews?.isFocused(id),
+  // Tab glyph color: the owning project's folder color for conversation tabs,
+  // '' when none (dock validates/falls back). Registry-sourced per view, so a
+  // background tab keeps ITS project color, not the active project's.
+  projectColorOf: (id) => {
+    try {
+      const view = convViews?.byId(id);
+      if (!view?.projectCwd) return '';
+      const owner = state.projects.find((proj) => samePath(proj.cwd, view.projectCwd));
+      return projectFolderColor(owner) || '';
+    } catch {
+      return '';
+    }
+  },
+  onChooseConversation: async () => {
+    // Popup chooser; user close resolves null (silent no-op). A real picker
+    // failure toasts explicitly and returns null — never a silent blank view
+    // in the wrong project. The resolved choice becomes a view via the shared
+    // entry; dock mounts + focuses the returned id.
+    let choice = null;
+    try {
+      choice = await runConversationPicker();
+    } catch (error) {
+      const message = error?.message ? translateKnown(error.message) : tr('common.error');
+      toast(() => message || tr('common.error'), true);
+      return null;
+    }
+    if (!choice) return null;
+    return openConversationView(choice);
+  },
+  onDropConversation: async ({ sessionId, projectCwd } = {}) =>
+    openConversationView({ sessionId, projectCwd }),
+  onActivatePanel: (id) => {
+    if (convViews?.activateFromDock(id)) afterViewFocused();
+  },
+  onCreateConversation: (opts) => convViews?.handleCreateConversation(opts) || null,
+  onBeforeModeChange: () => convViews?.captureForModeChange(),
+  onBeforeMove: (id, node) => {
+    if (id === 'preferences') settingsDockApi?.prepareDockMove?.();
+    // Same-group timing: dock parks panels before onActivatePanel runs. Capture
+    // the live host scroll here, while it still has layout — never from a
+    // hidden node. Classic switches are already covered by onBeforeModeChange.
+    try {
+      const host = convViews?.hostNode?.();
+      if (dockingUI?.active && host && node?.contains?.(host)) convViews?.captureFocusedScroll?.();
+    } catch {}
+  },
   onChange: ({ active, visiblePanels }) => {
-    roadmapUI.setDocked(
-      active
-        ? {
-            visible: visiblePanels.includes('roadmap'),
-            onOpen: () => dockingUI.openPanel('roadmap'),
-            onClose: () => dockingUI.closePanel('roadmap'),
-          }
-        : null,
-    );
+    syncDockingState();
+    convViews?.setDocked(active, visiblePanels);
+    if (active && convViews) {
+      for (const id of visiblePanels) {
+        const pane = convViews.byId(id);
+        if (pane) ensureViewUnits(pane);
+      }
+    }
+    // Split inspector tabs live outside #details-panel while docked; the empty
+    // classic home stays hidden until undock restores it via prefs.details.
+    if (active && hasInspectorSplit()) $('details-panel').hidden = true;
     applyPreferences();
-    if (!active || visiblePanels.includes('conversation')) resizeDockedConversation();
+    if (!active || conversationVisible()) resizeDockedConversation();
   },
   onResize: resizeDockedConversation,
 });
@@ -3584,7 +4839,7 @@ worktreesUI = createWorktreesUI({
     remote: state.remote,
     readOnly: state.readOnly,
     online: state.online,
-    mainModel: $('model-select').value || state.modelCatalogDefault || '',
+    mainModel: tripleForView(convViews?.focused()).model || state.modelCatalogDefault || '',
   }),
   toast,
   refreshOverview,
@@ -3598,138 +4853,91 @@ worktreesUI = createWorktreesUI({
     if (sessionId) void selectSession(sessionId, ownerCwd || state.projectCwd);
   },
 });
-imageComposer = createImageComposer({
-  getContext: () => ({
-    key: draftKey(),
-    available: state.attachmentsAvailable === true,
-    disabled: state.readOnly || state.projectOverview || state.sending || !state.projectCwd,
-    input: state.models.find((model) => model.id === ($('model-select').value || state.modelCatalogDefault))
-      ?.input,
-    imageModel: state.imageModel,
-  }),
-  onChange: () => updateComposer(),
-  onError: (error) => toast(translateKnown(error.message) || String(error), true),
-});
-commandsUI = createCommands({
-  api,
-  getContext: () => ({
-    cwd: execCwdOf(),
-    sessionId: activeRun()?.sessionId || state.sessionId,
-    running: isRunning(activeRun()),
-    readOnly: state.readOnly,
-    loading: state.loading || state.projectOverview,
-    remote: state.remote,
-  }),
-  hasAttachments: () => imageComposer.hasImages(),
-  onChange: () => {
-    saveDraft();
-    resizeComposer();
-  },
-  onError: (error) => toast(translateKnown(error.message), true),
-  action: async (name, args) => {
-    if (!['model', 'effort', 'name'].includes(name) && args)
-      throw new Error(tr('ui.ce_raccourci_du_studio_s_utilise_sans_argument'));
-    if (['model', 'effort'].includes(name) && isRunning(activeRun()))
-      throw new Error(tr('ui.le_modele_et_son_effort_se_choisissent_entre_deux_tours'));
-    if (['name', 'session', 'export', 'copy'].includes(name) && !state.sessionId)
-      throw new Error(tr('ui.ouvrez_d_abord_une_session'));
-    switch (name) {
-      case 'roadmap':
-      case 'backlog':
-        return roadmapUI.open($('open-roadmap'), name === 'backlog' ? 'backlog' : 'project');
-      case 'help':
-        return commandsUI.open();
-      case 'skills':
-        return commandsUI.open('skill');
-      case 'settings':
-        $('settings-dialog').showModal();
-        break;
-      case 'mcp':
-        $('open-mcp-settings').click();
-        break;
-      case 'model':
-        openModelDialog();
-        if (args) {
-          $('model-search').value = args;
-          renderModelList();
-        }
-        break;
-      case 'effort':
-        if (args) {
-          if (![...$('thinking-select').options].some((option) => option.value === args))
-            throw new Error(tr('ui.niveau_attendu_off_minimal_low_medium_high_xhigh_ou_max'));
-          $('thinking-select').value = args;
-          $('thinking-select').dispatchEvent(new Event('change'));
-          toast(() => tr('ui.effort_de_raisonnement_modifie'));
-        } else {
-          $('thinking-select').focus();
-          try {
-            $('thinking-select').showPicker?.();
-          } catch {}
-        }
-        break;
-      case 'new':
-        newSession();
-        break;
-      case 'name':
-        if (args) await patchSession(state.sessionId, { title: args });
-        else {
-          state.menuSessionId = state.sessionId;
-          await menuAction('rename');
-        }
-        break;
-      case 'session':
-        inspectorUI.setTab('session');
-        if (dockingUI?.active) dockingUI.openPanel('inspector');
-        else if (innerWidth <= 1080) $('details-panel').classList.add('mobile-open');
-        else {
-          prefs.details = true;
-          savePreferences({ details: true });
-          applyPreferences();
-        }
-        renderDetails();
-        break;
-      case 'copy': {
-        const last = [...activeMessages()]
-          .reverse()
-          .find((message) => message.role === 'assistant' && message.text);
-        if (!last) throw new Error(tr('ui.aucune_reponse_a_copier'));
-        await copyText(last.text, () => tr('ui.derniere_reponse_copiee'));
-        break;
+imageComposer = makeImageComposer(convViews.byId(PRIMARY_VIEW_ID));
+async function commandsAction(name, args) {
+  if (!['model', 'effort', 'name'].includes(name) && args)
+    throw new Error(tr('ui.ce_raccourci_du_studio_s_utilise_sans_argument'));
+  if (['model', 'effort'].includes(name) && isRunning(activeRun()))
+    throw new Error(tr('ui.le_modele_et_son_effort_se_choisissent_entre_deux_tours'));
+  if (['name', 'session', 'export', 'copy'].includes(name) && !state.sessionId)
+    throw new Error(tr('ui.ouvrez_d_abord_une_session'));
+  switch (name) {
+    case 'roadmap':
+    case 'backlog':
+      return roadmapUI.open($('open-roadmap'), name === 'backlog' ? 'backlog' : 'project');
+    case 'help':
+      return commandsUI.open();
+    case 'skills':
+      return commandsUI.open('skill');
+    case 'settings':
+      openSettings();
+      break;
+    case 'mcp':
+      $('open-mcp-settings').click();
+      break;
+    case 'model':
+      openModelDialog();
+      if (args) {
+        $('model-search').value = args;
+        renderModelList();
       }
-      case 'export':
-        await exportSession();
-        break;
-      case 'resume':
-        openSidebar();
-        $('session-search').focus();
-        break;
+      break;
+    case 'effort':
+      if (args) {
+        if (![...$('thinking-select').options].some((option) => option.value === args))
+          throw new Error(tr('ui.niveau_attendu_off_minimal_low_medium_high_xhigh_ou_max'));
+        // Direct patch (no host DOM touch): the acting view is focused, and
+        // its own nodes repaint through the shared generation flow.
+        await saveGenerationSettings({ thinking: args });
+        toast(() => tr('ui.effort_de_raisonnement_modifie'));
+      } else {
+        $('thinking-select').focus();
+        try {
+          $('thinking-select').showPicker?.();
+        } catch {}
+      }
+      break;
+    case 'new':
+      newSession();
+      break;
+    case 'name':
+      if (args) await patchSession(state.sessionId, { title: args });
+      else {
+        state.menuSessionId = state.sessionId;
+        await menuAction('rename');
+      }
+      break;
+    case 'session':
+      inspectorUI.setTab('session');
+      if (dockingUI?.active) dockingUI.openPanel(hasInspectorSplit() ? 'session' : 'inspector');
+      else if (innerWidth <= 1080) $('details-panel').classList.add('mobile-open');
+      else {
+        prefs.details = true;
+        savePreferences({ details: true });
+        applyPreferences();
+      }
+      renderDetails();
+      break;
+    case 'copy': {
+      const last = [...activeMessages()]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.text);
+      if (!last) throw new Error(tr('ui.aucune_reponse_a_copier'));
+      await copyText(last.text, () => tr('ui.derniere_reponse_copiee'));
+      break;
     }
-  },
-});
-liveMessagesUI = createLiveMessages({
-  api,
-  imageComposer,
-  getContext: () => {
-    const run = activeRun();
-    return {
-      draftKey: draftKey(),
-      runId: run?.id,
-      sessionId: run?.sessionId || state.sessionId,
-      cwd: execCwdOf(),
-      running: isRunning(run),
-      stopping: run?.status === 'stopping',
-      readOnly: state.readOnly,
-      online: state.online,
-    };
-  },
-  onAccepted: ({ key, text }) => acceptDraft(key, text),
-  onSent: () => {
-    saveDraft();
-    resizeComposer();
-  },
-  onError: (error) => toast(translateKnown(error.message) || String(error), true),
-});
+    case 'export':
+      await exportSession();
+      break;
+    case 'resume':
+      openSidebar();
+      $('session-search').focus();
+      break;
+  }
+}
+
+commandsUI = makeCommands(convViews.byId(PRIMARY_VIEW_ID), null, null, undefined, undefined, imageComposer);
+liveMessagesUI = makeLiveMessages(convViews.byId(PRIMARY_VIEW_ID), imageComposer);
 projectNavigation = createProjectNavigation({
   root: $('session-list'),
   scroller: $('project-list'),
@@ -3789,7 +4997,7 @@ $('session-menu').onclick = (e) => {
 };
 $('export-session').onclick = () => exportSession();
 $('copy-project-path').onclick = () => copyText(state.projectCwd, () => tr('ui.chemin_du_projet_copie'));
-$('open-settings').onclick = () => $('settings-dialog').showModal();
+$('open-settings').onclick = () => openSettings();
 // Full control may rotate the remote PIN via the gateway (it signs out remotes, deliberately).
 // Consultation stays blocked via readOnly.
 createRemoteAccessSettings({ api, isRemote: () => state.readOnly, toast });
@@ -3818,6 +5026,15 @@ sessionSorting = createSessionSorting({
   refresh: refreshOverview,
   render: renderProjects,
   reportError: (error) => toast(translateKnown(error.message), true),
+  // Sidebar-to-workspace drop bridge (sorting owner drives the gesture; dock
+  // owns preview/mount; the view id resolves through openConversationView).
+  externalDrop: {
+    isEnabled: () => !!dockingUI?.active,
+    preview: ({ clientX, clientY }) => dockingUI?.previewConversationDrop?.({ clientX, clientY }),
+    drop: ({ sessionId, projectCwd, clientX, clientY }) =>
+      dockingUI?.dropConversation?.({ sessionId, projectCwd, clientX, clientY }),
+    cancel: () => dockingUI?.cancelConversationDrop?.(),
+  },
 });
 $('remove-project-form').onsubmit = removeProject;
 $('logout-button').onclick = logout;
@@ -3861,7 +5078,11 @@ $('toggle-sidebar').onclick = openSidebar;
 $('mobile-backdrop').onclick = closeSidebar;
 $('toggle-details').onclick = () => {
   if (dockingUI?.active) {
-    if (dockingUI.visiblePanels().includes('inspector')) dockingUI.closePanel('inspector');
+    if (hasInspectorSplit()) {
+      const open = ['session', 'agents', 'files'].filter((id) => dockingUI.visiblePanels().includes(id));
+      if (open.length) open.forEach((id) => dockingUI.closePanel(id));
+      else dockingUI.openPanel('session');
+    } else if (dockingUI.visiblePanels().includes('inspector')) dockingUI.closePanel('inspector');
     else dockingUI.openPanel('inspector');
     return;
   }
@@ -3889,7 +5110,7 @@ $('conversation-scroll').onscroll = () => {
     bottomScrollFrame = 0;
   }
   $('scroll-bottom').hidden = state.projectOverview || atBottom;
-  markVisibleSessionRead();
+  markHostSessionRead();
 };
 // Images and native questions can grow after the transcript render has finished.
 // Preserve the user's reading position, or keep following the latest content.
@@ -3900,19 +5121,20 @@ const conversationSizeObserver = new ResizeObserver(() => {
 });
 conversationSizeObserver.observe($('messages'));
 conversationSizeObserver.observe($('interactive-questions'));
-$('composer').oninput = () => {
-  saveDraft();
-  resizeComposer();
-};
-$('composer').onkeydown = (e) => {
+function handleComposerEnter(e) {
   if (e.key === 'Enter' && !e.isComposing) {
     const send = prefs.enterToSend ? !e.shiftKey : e.ctrlKey || e.metaKey;
     if (send) {
       e.preventDefault();
-      void sendMessage();
+      void sendMessage(e);
     }
   }
+}
+$('composer').oninput = () => {
+  saveDraft();
+  resizeComposer();
 };
+$('composer').onkeydown = handleComposerEnter;
 $('model-picker-button').onclick = openModelDialog;
 $('model-refresh').onclick = () => void refreshModelCatalog({ force: true, manual: true });
 $('model-select').onchange = () => setSelectedModel($('model-select').value, true);
@@ -3969,20 +5191,18 @@ $('model-dialog').addEventListener('keydown', (event) => {
   $('model-dialog').close();
 });
 $('thinking-select').onchange = () => {
-  void saveGenerationSettings({ thinking: $('thinking-select').value });
+  void saveGenerationSettings(
+    { thinking: $('thinking-select').value },
+    convViews?.byId(PRIMARY_VIEW_ID) || undefined,
+  );
 };
 createPasskeySettings({ getContext: () => ({ remote: state.remote, readOnly: state.readOnly }) });
 $('allow-questions').onchange = () =>
-  void saveGenerationSettings({ allowQuestions: $('allow-questions').checked });
-questionsUI = createQuestions({
-  root: $('interactive-questions'),
-  api,
-  getContext: () => ({
-    run: activeRun(),
-    readOnly: state.readOnly || !state.online,
-    hidden: state.projectOverview || state.loading,
-  }),
-});
+  void saveGenerationSettings(
+    { allowQuestions: $('allow-questions').checked },
+    convViews?.byId(PRIMARY_VIEW_ID) || undefined,
+  );
+questionsUI = makeQuestions(convViews.byId(PRIMARY_VIEW_ID), $('interactive-questions'));
 $('enter-to-send').onchange = (e) => {
   savePreferences({ enterToSend: e.target.checked });
   applyPreferences();
@@ -4049,7 +5269,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.key.toLowerCase() === 'n') {
       e.preventDefault();
-      if (!document.querySelector('dialog[open]')) newSession();
+      if (!document.querySelector('dialog:modal')) newSession();
     }
   }
   const openMenu = [$('session-menu'), $('project-menu')].find((menu) => !menu.hidden);
@@ -4113,7 +5333,7 @@ window.addEventListener('online', () => {
   if (state.initialized) void refreshOverview();
 });
 setInterval(() => {
-  const r = activeRun();
+  const r = convViews?.composerLive?.() ? runForView(convViews.byId(PRIMARY_VIEW_ID)) : activeRun();
   if (isRunning(r)) {
     const s = Math.max(0, Math.floor((Date.now() - toTime(r.startedAt)) / 1000));
     bindText($('run-elapsed'), () => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`));
@@ -4161,6 +5381,8 @@ const settingsUI = createSettings({
   openModelPicker,
   icon,
 });
+settingsDockApi = settingsUI;
+syncDockingState();
 const pushSettings = createPushSettings();
 pushSettings.listenMessages((sessionId) => selectSession(sessionId));
 window.addEventListener('prime-desktop-notification-open', (event) => {
@@ -4224,6 +5446,7 @@ subscribeSync((snapshot) => {
   renderSyncFooter();
   renderSyncHeader();
 });
+enableLiveComposers();
 if ($('sync-footer')) $('sync-footer').onclick = () => openSyncPreferences();
 $('detail-git-align').onclick = () => void alignSessionGit();
 void bootstrap();

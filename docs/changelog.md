@@ -4,6 +4,16 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.3.0-beta.1
+
+- **Espace modulable** : activez-le depuis **Agencement** sur les écrans desktop de plus de 1080 px. Séparez, regroupez, réordonnez et redimensionnez les vrais panneaux sans gouttière. Les dispositions classique et mobile restent disponibles.
+- **Conversations indépendantes** : affichez jusqu’à huit panneaux, chacun avec son compositeur complet et ses réglages de modèle, de réflexion et de questions. Brouillons, pièces jointes et flux restent liés à leur conversation ; seul le panneau focalisé fournit le contexte des outils partagés.
+- **Onglets et navigation précis** : glissez une conversation depuis la barre latérale ou insérez un onglet entre ses voisins. **Ajouter un onglet** propose un sélecteur projet/conversation ; le bouton principal **Nouvelle conversation** et **Ctrl+N** réutilisent le panneau focalisé.
+- **Fermer les autres** : gardez l’onglet choisi et rangez uniquement ses frères du même groupe, sans perdre les brouillons ou pièces jointes ni arrêter les exécutions. Les autres groupes restent intacts.
+- **Outils indépendants et Préférences** : Session, Agents, Fichiers et Roadmap s’agencent séparément. Le bouton Préférences ouvre une pop-up modale par défaut ; **Ajouter un onglet → Préférences** ouvre explicitement un onglet ancré. Les deux chemins conservent le même formulaire vivant et ses dialogues enfants.
+- **Agencements nommés et restauration sûre** : sauvegardez la géométrie des panneaux sans y inclure le contenu ni les références de session. Fermeture, réouverture, rechargement et passage à une fenêtre étroite conservent les états par vue. Les icônes reflètent le type de panneau et la couleur du projet propriétaire.
+- **Redimensionnement fiable** : les panneaux à leur largeur minimale ne laissent plus de bande vide et ne provoquent plus de saut de largeur. Le redimensionnement au pointeur ou au clavier, l’annulation et la géométrie sauvegardée restent cohérents.
+
 ## 4.2.1-beta.3
 
 - **Bandeau et champ de saisie mobiles** : les actions regroupées tiennent à 320 et 390 px, le texte indicatif reste entièrement visible pendant un tour, et les libellés courts des permissions conservent leurs noms accessibles complets. La disposition desktop et le panneau de détails mobile plein écran sont préservés.

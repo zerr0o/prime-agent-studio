@@ -71,23 +71,33 @@ export function createLiveMessages({
   onSent = () => {},
   onError = () => {},
   onChange = () => {},
+  // Per-pane instances pass roots { form, composer, send, stop } plus text
+  // accessors for their own textarea. Defaults preserve the exact primary
+  // behavior (document IDs + shared composer text + host image composer).
+  roots,
+  text,
 }) {
-  const form = document.getElementById('composer-form');
-  const composer = document.getElementById('composer');
-  const send = document.getElementById('send-button');
-  const stop = document.getElementById('stop-button');
+  const form = roots?.form || document.getElementById('composer-form');
+  const composer = roots?.composer || document.getElementById('composer');
+  const send = roots?.send || document.getElementById('send-button');
+  const stop = roots?.stop || document.getElementById('stop-button');
+  const scoped = Boolean(roots?.form && roots?.composer && roots?.send && roots?.stop);
+  const getText = text?.get || composerText;
+  const setText = text?.set || setComposerText;
   const toolbar = form?.querySelector('.composer-toolbar');
   if (!form || !composer || !send || !stop || !toolbar)
     throw new Error(tr('ui.le_formulaire_de_conversation_est_introuvable'));
 
   const actions = node('div', 'live-message-actions');
-  actions.id = 'live-message-actions';
+  if (!scoped) actions.id = 'live-message-actions';
+  else actions.setAttribute('data-cvw', 'actions');
   actions.append(stop, send);
   toolbar.append(actions);
   form.classList.add('has-live-messages');
 
   const modeRow = node('div', 'live-mode-row');
-  modeRow.id = 'live-mode-row';
+  if (!scoped) modeRow.id = 'live-mode-row';
+  else modeRow.setAttribute('data-cvw', 'moderow');
   modeRow.hidden = true;
   modeRow.append(node('span', 'live-mode-label', () => tr('ui.ce_message')));
   const modes = node('div', 'live-mode-options');
@@ -123,13 +133,15 @@ export function createLiveMessages({
   modeRow.append(modes);
   toolbar.before(modeRow);
   const status = node('p', 'live-message-status');
-  status.id = 'live-message-status';
+  if (!scoped) status.id = 'live-message-status';
+  else status.setAttribute('data-cvw', 'status');
   status.hidden = true;
   status.setAttribute('role', 'status');
   form.append(status);
 
   const queue = node('details', 'live-queue');
-  queue.id = 'live-queue';
+  if (!scoped) queue.id = 'live-queue';
+  else queue.setAttribute('data-cvw', 'queue');
   queue.hidden = true;
   const summary = node('summary', 'live-queue-summary');
   summary.append(node('span', '', () => tr('ui.messages_en_attente')));
@@ -140,7 +152,8 @@ export function createLiveMessages({
   );
   queue.append(summary);
   const queueList = node('div', 'live-queue-list');
-  queueList.id = 'live-queue-list';
+  if (!scoped) queueList.id = 'live-queue-list';
+  else queueList.setAttribute('data-cvw', 'queuelist');
   queue.append(queueList);
   const queueError = node('p', 'live-queue-error');
   queueError.hidden = true;
@@ -148,12 +161,14 @@ export function createLiveMessages({
   queue.append(queueError);
 
   const editor = node('form', 'live-queue-editor');
-  editor.id = 'live-queue-editor';
+  if (!scoped) editor.id = 'live-queue-editor';
+  else editor.setAttribute('data-cvw', 'editor');
   editor.hidden = true;
   const editorLabel = node('label', '', () => tr('ui.modifier_le_message_en_attente'));
-  editorLabel.htmlFor = 'live-queue-edit-text';
+  if (!scoped) editorLabel.htmlFor = 'live-queue-edit-text';
   const editorText = node('textarea');
-  editorText.id = 'live-queue-edit-text';
+  if (!scoped) editorText.id = 'live-queue-edit-text';
+  else editorText.setAttribute('data-cvw', 'edittext');
   editorText.rows = 3;
   editorText.maxLength = 200000;
   const editorFooter = node('div', 'live-queue-editor-footer');
@@ -409,9 +424,9 @@ export function createLiveMessages({
     const images = imageDraft?.images || [];
     const files = imageDraft?.files || [];
     const message =
-      composerText().trim() || (images.length || files.length ? tr('ui.analyse_les_pieces_jointes') : '');
+      getText().trim() || (images.length || files.length ? tr('ui.analyse_les_pieces_jointes') : '');
     if (!message || sending || !editable() || current.stopping || imageComposer?.blocked()) return true;
-    const originalDraft = composerText(),
+    const originalDraft = getText(),
       originalRevision = draftRevision,
       selectedMode = mode,
       token = generation;
@@ -432,11 +447,11 @@ export function createLiveMessages({
         },
       });
       if (imageDraft) imageComposer.accepted(imageDraft);
-      const draftUnchanged = composerText() === originalDraft && draftRevision === originalRevision;
+      const draftUnchanged = getText() === originalDraft && draftRevision === originalRevision;
       onAccepted({ key: current.draftKey, text: originalDraft });
       if (destroyed || token !== generation) return true;
       retry = null;
-      if (draftUnchanged) setComposerText('');
+      if (draftUnchanged) setText('');
       onSent(result, { context: current, message, mode: selectedMode, draftUnchanged });
       if (inFlight) await inFlight;
       await refresh();
@@ -483,7 +498,7 @@ export function createLiveMessages({
     } else if (!wasOnline && key) queueMicrotask(() => void refresh());
     wasOnline = Boolean(current.online);
     const active = Boolean(current.running),
-      hasDraft = Boolean(composerText().trim() || imageComposer?.hasImages());
+      hasDraft = Boolean(getText().trim() || imageComposer?.hasImages());
     // Keep the controls still while the first click opens an attachment picker.
     // Revealing this row on focus moves the button between pointerdown and click.
     modeRow.hidden = !active || current.readOnly || !hasDraft;

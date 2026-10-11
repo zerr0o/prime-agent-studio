@@ -1,18 +1,28 @@
 /**
- * Dockable workspace layout model (Studio 4.3.0, first slice).
+ * Dockable workspace layout model (Studio 4.3.x, geometry V3).
  *
  * Pure data model: no DOM, no localStorage, no network. The storage
  * envelope and the DOM controller are owned by the parent scope; this
  * module only builds, validates and transforms immutable layout docs.
  *
  * Schema:
- *   LayoutDoc = { version: 1, root: LayoutNode }
+ *   LayoutDoc = { version: 3, root: LayoutNode }
  *   Group     = { kind: 'group', id, panels: PanelId[], active: PanelId | null }
  *   Split     = { kind: 'split', id, dir: 'row' | 'column', ratio, first, second }
+ *   PanelId   = 'conversation' | 'roadmap' | 'session' | 'agents' | 'files' | 'preferences' | `conv:${InstanceId}`
  *
  * Conventions (part of the API contract):
- * - Exactly the fixed panel set PANEL_IDS; a panel absent from the tree is
- *   CLOSED (closable/reopenable). No session state is stored here.
+ * - Tabs are panel ids: the fixed PANEL_IDS plus dynamic conversation refs
+ *   `conv:<id>` (see isConversationPanel). A panel absent from the tree is
+ *   CLOSED (closable/reopenable). At most MAX_CONVERSATIONS conversation tabs
+ *   (legacy primary included) and at most one of each singleton. No session,
+ *   draft, run, or registry state is stored here: geometry only.
+ * - V1 docs (fixed conversation/roadmap/inspector, no preferences, no
+ *   conv: refs) and V2 docs (plus preferences and conv: refs) are accepted
+ *   as legacy: validated against their original allowed ids, then `inspector`
+ *   is replaced IN PLACE with `session`, `agents`, `files` in the same group
+ *   (active `inspector` becomes `session`) and normalized to frozen V3 on
+ *   output. V3 rejects `inspector`. Unknown versions are rejected.
  * - The root may be an empty group `{ panels: [], active: null }` when every
  *   panel is closed. Nested (non-root) empty groups are invalid and are
  *   collapsed away by mutators.
@@ -39,30 +49,83 @@
  *   `active` to the moved panel.
  */
 
-// Slice 1 panel set: the whole existing inspector keeps its internal
-// Session/Agents/Files tabs, so it docks as one panel. The sidebar stays a
-// fixed global nav outside the layout tree. (A 5-view inspector split is an
-// explicit later slice, not part of this model.)
-export const PANEL_IDS = Object.freeze(['conversation', 'roadmap', 'inspector']);
+// Fixed panel ids (geometry V3): the legacy primary conversation plus the five
+// singleton panels. Extra conversation instances are dynamic refs `conv:<id>`
+// (see isConversationPanel): valid panel ids without being listed here. The old
+// whole `inspector` panel is no longer mountable (V3 rejects it); its former
+// Session/Agents/Files tabs are now three separate panels. The sidebar stays a
+// fixed global nav outside the layout tree. Preferences stays closed by default
+// until explicitly added as a tab.
+export const PANEL_IDS = Object.freeze([
+  'conversation',
+  'roadmap',
+  'session',
+  'agents',
+  'files',
+  'preferences',
+]);
+
+/** Maximum conversation instances mounted at once, legacy primary included. */
+export const MAX_CONVERSATIONS = 8;
+
+const CONV_REF_PATTERN = /^conv:[A-Za-z0-9_-]{1,64}$/;
+const SINGLETON_SET = new Set(['roadmap', 'session', 'agents', 'files', 'preferences']);
+
+/**
+ * True for the legacy primary 'conversation' or a dynamic instance ref
+ * `conv:<id>`. Which session/draft an instance shows is resolved by the
+ * frontend registry, never by this pure geometry validator.
+ */
+export function isConversationPanel(id) {
+  return id === 'conversation' || (typeof id === 'string' && CONV_REF_PATTERN.test(id));
+}
+
+/** True for any mountable tab: singletons plus all conversation instances. */
+export function isPanelId(id) {
+  return typeof id === 'string' && (SINGLETON_SET.has(id) || isConversationPanel(id));
+}
 
 export const MIN_RATIO = 0.15;
 export const MAX_RATIO = 0.85;
 
-const VERSION = 1;
-// Tree budgets derived from the fixed panel count N (binary tree: at most N
-// groups, at most 2N-1 nodes, split nesting well under 2N-1). Nested empty
+const VERSION = 3;
+const V1_VERSION = 1;
+const V2_VERSION = 2;
+// Tree budgets derived from the maximum mounted tab count
+// (5 singletons + MAX_CONVERSATIONS conversations = 13). Binary tree: at most
+// 13 groups, at most 25 nodes, split nesting well under 25. Nested empty
 // groups collapse, so every surviving non-root group holds >= 1 panel.
-const PANEL_COUNT = PANEL_IDS.length;
-const MAX_GROUPS = PANEL_COUNT;
-const MAX_NODES = 2 * PANEL_COUNT - 1;
-const MAX_DEPTH = 2 * PANEL_COUNT - 1;
-const MAX_PANELS_PER_GROUP = PANEL_COUNT;
+const MAX_SINGLETONS = 5;
+const MAX_PANELS = MAX_SINGLETONS + MAX_CONVERSATIONS;
+const MAX_GROUPS = MAX_PANELS;
+const MAX_NODES = 2 * MAX_PANELS - 1;
+const MAX_DEPTH = 2 * MAX_PANELS - 1;
+const MAX_PANELS_PER_GROUP = MAX_PANELS;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 // Validation budget: bounds work on hostile input (deep chains use an
 // explicit stack, never recursion; cycles are cut via a visited set).
 const MAX_VISITED_NODES = 64;
 
-const PANEL_SET = new Set(PANEL_IDS);
+// V1 accepted exactly these fixed ids (no preferences, no conv: refs);
+// V2 accepted these fixed ids (plus conv: refs). Both are validated against
+// their original allowed ids, then migrated to frozen V3 on output: `inspector`
+// is replaced in place with `session`, `agents`, `files` (active follows).
+const V1_PANEL_SET = new Set(['conversation', 'roadmap', 'inspector']);
+const V2_SINGLETON_SET = new Set(['roadmap', 'inspector', 'preferences']);
+const INSPECTOR_REPLACEMENT = ['session', 'agents', 'files'];
+
+function isV2PanelId(id) {
+  return typeof id === 'string' && (V2_SINGLETON_SET.has(id) || isConversationPanel(id));
+}
+
+function migratePanels(panels) {
+  const out = [];
+  for (const panel of panels) {
+    if (panel === 'inspector') out.push(...INSPECTOR_REPLACEMENT);
+    else out.push(panel);
+  }
+  return out;
+}
 const EDGE_ZONES = new Set(['left', 'right', 'top', 'bottom']);
 
 function isPlainObject(value) {
@@ -112,7 +175,7 @@ function allocateId(ids, prefix) {
 /**
  * Default desktop layout: a `row` split (id 'main', ratio 0.68) with the
  * conversation alone on the left and the tool panels tabbed on the right
- * (roadmap active).
+ * (roadmap, session, agents, files; roadmap active). Preferences stays closed.
  */
 export function createDefaultLayout() {
   return freezeDeep({
@@ -131,7 +194,7 @@ export function createDefaultLayout() {
       second: {
         kind: 'group',
         id: 'tools-group',
-        panels: ['roadmap', 'inspector'],
+        panels: ['roadmap', 'session', 'agents', 'files'],
         active: 'roadmap',
       },
     },
@@ -141,21 +204,29 @@ export function createDefaultLayout() {
 /**
  * Strictly validate an unknown value as a layout doc.
  *
- * Returns a safe canonical deep-frozen doc, or null when the input is
- * rejected. Rejected (=> null): non-object input, wrong/missing version,
- * missing/unknown `kind` or `dir`, missing/wrongly-typed fields, unsafe node
- * ids (not matching /^[A-Za-z0-9_-]{1,64}$/), unknown panel ids, duplicate
- * panels (globally) or duplicate node ids, `active` not in `panels`
- * (non-empty groups) or non-null `active` on empty groups, nested empty
- * groups, non-finite ratios, topology over budget (nodes > 2N-1, groups > N,
- * split depth > 2N-1, where N = PANEL_IDS.length), cyclic references, or
- * anything beyond the visit budget.
+ * Returns a safe canonical deep-frozen V3 doc, or null when the input is
+ * rejected. V1 and V2 docs are accepted as legacy: validated against their
+ * original allowed ids, then `inspector` is replaced in place with `session`,
+ * `agents`, `files` (active `inspector` becomes `session`) and normalized to
+ * V3. Rejected (=> null): non-object input, missing/unknown version (only 1,
+ * 2 and 3 accepted), missing/unknown `kind` or `dir`, missing/wrongly-typed
+ * fields, unsafe node ids (not matching /^[A-Za-z0-9_-]{1,64}$/), unknown
+ * panel ids (V3 rejects `inspector`; V1 additionally rejects preferences and
+ * conv: refs; V2 rejects the new session/agents/files ids), more than
+ * MAX_CONVERSATIONS conversation tabs, duplicate panels (globally) or
+ * duplicate node ids, `active` not in `panels` (non-empty groups) or non-null
+ * `active` on empty groups, nested empty groups, non-finite ratios, topology
+ * over budget (nodes > 25, groups > 13, split depth > 25, panels/group > 13),
+ * cyclic references, or anything beyond the visit budget.
  * Unknown EXTRA fields are stripped (canonical nodes keep exactly the
  * schema fields). Finite out-of-range ratios are CLAMPED (see header).
  */
 export function validateLayout(input) {
   if (!isPlainObject(input)) return null;
-  if (input.version !== VERSION) return null;
+  if (input.version !== VERSION && input.version !== V1_VERSION && input.version !== V2_VERSION) return null;
+  const v1Only = input.version === V1_VERSION;
+  const v2Only = input.version === V2_VERSION;
+  const isLegacy = v1Only || v2Only;
   if (input.root === null || typeof input.root !== 'object') return null;
 
   // Iterative walk: tolerates hostile depth without call-stack overflow.
@@ -180,7 +251,8 @@ export function validateLayout(input) {
       if (typeof node.id !== 'string' || !ID_PATTERN.test(node.id)) return null;
       if (!Array.isArray(node.panels) || node.panels.length > MAX_PANELS_PER_GROUP) return null;
       for (const panel of node.panels) {
-        if (typeof panel !== 'string' || panel.length > 64 || !PANEL_SET.has(panel)) return null;
+        if (typeof panel !== 'string' || panel.length > 128) return null;
+        if (v1Only ? !V1_PANEL_SET.has(panel) : v2Only ? !isV2PanelId(panel) : !isPanelId(panel)) return null;
       }
       if (node.panels.length === 0) {
         if (!isRoot) return null; // nested empty groups are invalid
@@ -219,17 +291,23 @@ export function validateLayout(input) {
       }
     }
   }
+  let conversations = 0;
+  for (const panel of panelsSeen) if (isConversationPanel(panel)) conversations += 1;
+  if (conversations > MAX_CONVERSATIONS) return null;
 
-  // Rebuild canonical nodes (extras stripped, ratios clamped), then freeze.
+  // Rebuild canonical nodes (extras stripped, ratios clamped, legacy
+  // `inspector` replaced in place), then freeze.
   const canonical = new Map();
   for (let i = order.length - 1; i >= 0; i -= 1) {
     const node = order[i];
     if (node.kind === 'group') {
+      const panels = isLegacy ? migratePanels(node.panels) : [...node.panels];
+      const active = isLegacy && node.active === 'inspector' ? 'session' : node.active;
       canonical.set(node, {
         kind: 'group',
         id: node.id,
-        panels: [...node.panels],
-        active: node.active,
+        panels,
+        active,
       });
     } else {
       canonical.set(node, {
@@ -248,7 +326,12 @@ export function validateLayout(input) {
 }
 
 function checkDoc(doc) {
-  return isPlainObject(doc) && doc.version === VERSION && doc.root !== null && typeof doc.root === 'object';
+  return (
+    isPlainObject(doc) &&
+    (doc.version === VERSION || doc.version === V1_VERSION || doc.version === V2_VERSION) &&
+    doc.root !== null &&
+    typeof doc.root === 'object'
+  );
 }
 
 // Full strict validation for mutator entry: guarantees bounded depth for the
@@ -443,10 +526,10 @@ function arraysEqual(a, b) {
  *   Moves from another group (or from closed) remove/collapse the source
  *   first, so empty groups never linger after the move.
  *
- * Unknown panel, unknown target group, or unknown zone => no-op (same doc).
+ * Unknown/invalid panel ref, unknown target group, or unknown zone => no-op (same doc).
  */
 export function movePanel(doc, { panel, targetGroupId, zone = 'center', index } = {}) {
-  if (typeof panel !== 'string' || !PANEL_SET.has(panel)) return doc;
+  if (!isPanelId(panel)) return doc;
   if (typeof targetGroupId !== 'string') return doc;
   if (zone !== 'center' && !EDGE_ZONES.has(zone)) return doc;
   const base0 = asValid(doc);
@@ -560,10 +643,10 @@ export function movePanel(doc, { panel, targetGroupId, zone = 'center', index } 
 
 /**
  * Make an OPEN panel its group's active tab. Closed or already-active
- * panels (and unknown ids) => no-op (same doc).
+ * panels (and unknown/invalid ids) => no-op (same doc).
  */
 export function activatePanel(doc, panel) {
-  if (typeof panel !== 'string' || !PANEL_SET.has(panel)) return doc;
+  if (!isPanelId(panel)) return doc;
   const base0 = asValid(doc);
   if (!base0) return doc;
   const groupId = findPanelGroupId(base0.root, panel);
@@ -585,7 +668,7 @@ export function activatePanel(doc, panel) {
  * group `{ panels: [], active: null }`. Closing an absent panel => no-op.
  */
 export function closePanel(doc, panel) {
-  if (typeof panel !== 'string' || !PANEL_SET.has(panel)) return doc;
+  if (!isPanelId(panel)) return doc;
   const base0 = asValid(doc);
   if (!base0) return doc;
   const { node, removed } = removePanel(base0.root, panel, true);

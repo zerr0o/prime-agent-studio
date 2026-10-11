@@ -1,7 +1,16 @@
 // Stable conversation drag/drop, mirroring project-sorting UX.
 // Scoped to one project + pinned + archived bucket; conversations never move
 // projects. Touch uses the handle only so list scrolling stays available.
-export function createSessionSorting({ root, scroller, canSort, move, refresh, render, reportError }) {
+export function createSessionSorting({
+  root,
+  scroller,
+  canSort,
+  move,
+  refresh,
+  render,
+  reportError,
+  externalDrop,
+}) {
   let gesture = null,
     saving = false,
     frame = 0,
@@ -39,6 +48,13 @@ export function createSessionSorting({ root, scroller, canSort, move, refresh, r
   function targetAtPointer() {
     clearTargets();
     gesture.target = null;
+    gesture.external =
+      !!externalDrop?.isEnabled?.() &&
+      !!externalDrop.preview({
+        clientX: gesture.x,
+        clientY: gesture.y,
+      });
+    if (gesture.external || !canSort()) return;
     const scrollerBounds = (scroller || root).getBoundingClientRect();
     if (
       gesture.x < scrollerBounds.left ||
@@ -91,17 +107,42 @@ export function createSessionSorting({ root, scroller, canSort, move, refresh, r
     current.entry.classList.remove('session-dragging');
     (scroller || root).classList.remove('session-sorting');
     root.classList.remove('session-sorting');
+    externalDrop?.cancel?.();
     if (!current.dragging) return;
     suppressClickUntil = performance.now() + 350;
+    if (!cancelled && current.external && externalDrop?.isEnabled?.()) {
+      Promise.resolve()
+        .then(() =>
+          externalDrop.drop({
+            sessionId: current.entry.dataset.sessionId,
+            projectCwd: current.entry.dataset.projectKey,
+            clientX: current.x,
+            clientY: current.y,
+          }),
+        )
+        .catch(reportError);
+      return;
+    }
     if (!cancelled && current.target && canSort())
       void commit({ id: current.entry.dataset.sessionId, ...current.target });
     else render();
   }
   root.addEventListener('pointerdown', (event) => {
-    if (!canSort() || saving || gesture || event.button !== 0 || !event.isPrimary) return;
+    if (
+      (!canSort() && !externalDrop?.isEnabled?.()) ||
+      saving ||
+      gesture ||
+      event.button !== 0 ||
+      !event.isPrimary
+    )
+      return;
     const entry = event.target.closest('.session-row[data-session-id]');
     const handle = event.target.closest('.session-drag-handle');
-    if (!entry?.dataset.sessionId || event.target.closest('.session-more') || (event.pointerType === 'touch' && !handle))
+    if (
+      !entry?.dataset.sessionId ||
+      event.target.closest('.session-more') ||
+      (event.pointerType === 'touch' && !handle)
+    )
       return;
     if (!handle && !event.target.closest('.session-select')) return;
     gesture = {
@@ -113,6 +154,7 @@ export function createSessionSorting({ root, scroller, canSort, move, refresh, r
       y: event.clientY,
       dragging: false,
       target: null,
+      external: false,
     };
     // Prevent the project drag handler on the outer list from stealing rows.
     event.stopPropagation();

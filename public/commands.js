@@ -26,6 +26,25 @@ const labels = {
     return tr('commands.extension');
   },
 };
+// Per-instance namespace for scoped palettes: every ARIA reference
+// (controls/labelledby/activedescendant) must resolve to an OWN node, never
+// to the primary popup/rows/title. Classic default IDs stay byte-identical.
+let paletteCounter = 0;
+// Module-shared command catalog cache (keyed by cwd/session/running state):
+// every pane in one project shares rows instead of refetching each. Pending
+// loads, generations, and drafts stay per-instance (focus-safe).
+const sharedCatalogCache = new Map();
+const SHARED_CATALOG_CAP = 12;
+function sharedCacheGet(key) {
+  return sharedCatalogCache.get(key);
+}
+function sharedCacheSet(key, value) {
+  if (sharedCatalogCache.size >= SHARED_CATALOG_CAP) {
+    const oldest = sharedCatalogCache.keys().next().value;
+    if (oldest !== undefined && oldest !== key) sharedCatalogCache.delete(oldest);
+  }
+  sharedCatalogCache.set(key, value);
+}
 const normalize = (text) =>
   String(text || '')
     .normalize('NFD')
@@ -44,20 +63,45 @@ function commandTitle(command, tag = 'span') {
   return title;
 }
 
-export function createCommands({ api, getContext, action, onChange, onError, hasAttachments }) {
-  const input = document.getElementById('composer');
-  const chip = createCommandChip();
+export function createCommands({
+  api,
+  getContext,
+  action,
+  onChange,
+  onError,
+  hasAttachments,
+  // Per-pane instances pass input (their textarea), attachControls (their
+  // toolbar group), text fns bound to their composer scope, and a chip factory
+  // from that same scope. Defaults preserve the exact primary behavior.
+  input: inputOverride,
+  attachControls,
+  text,
+  chipFactory,
+}) {
+  const input = inputOverride || document.getElementById('composer');
+  const scoped = Boolean(inputOverride);
+  const ns = scoped ? `cmd${(paletteCounter += 1)}` : '';
+  const popupId = scoped ? `${ns}-suggestions` : 'command-suggestions';
+  const dialogId = scoped ? `${ns}-dialog` : 'commands-dialog';
+  const titleId = scoped ? `${ns}-title` : 'commands-title';
+  const chip = chipFactory ? chipFactory() : createCommandChip();
+  const getText = text?.get || composerText;
+  const setText = text?.set || setComposerText;
+  const getCommand = text?.command || composerCommand;
+  const selectCommand = text?.select || selectComposerCommand;
   const button = node('button', 'attach-image-button command-launcher');
   button.innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M15 4 9 20"/></svg>';
-  button.id = 'open-commands';
+  if (!scoped) button.id = 'open-commands';
+  else button.setAttribute('data-cvw', 'commands-launcher');
   button.type = 'button';
   bindAttribute(button, 'title', () => tr('ui.commandes_et_skills'));
   bindAttribute(button, 'aria-label', () => button.title);
   button.setAttribute('aria-haspopup', 'dialog');
-  document.querySelector('.attachment-controls').prepend(button);
+  (attachControls || document.querySelector('.attachment-controls'))?.prepend(button);
   const popup = node('div', 'command-suggestions');
-  popup.id = 'command-suggestions';
+  popup.id = popupId;
+  if (scoped) popup.setAttribute('data-cvw', 'suggestions');
   popup.hidden = true;
   popup.setAttribute('role', 'listbox');
   bindAttribute(popup, 'aria-label', () => tr('ui.commandes_proposees'));
@@ -65,11 +109,11 @@ export function createCommands({ api, getContext, action, onChange, onError, has
   input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-expanded', 'false');
   const dialog = node('dialog', 'modal command-dialog');
-  dialog.id = 'commands-dialog';
-  dialog.setAttribute('aria-labelledby', 'commands-title');
+  dialog.id = dialogId;
+  dialog.setAttribute('aria-labelledby', titleId);
   const header = node('div', 'command-heading');
   const title = node('h2', '', () => tr('ui.commandes_et_skills'));
-  title.id = 'commands-title';
+  title.id = titleId;
   const close = node('button', 'secondary-button', () => tr('ui.termine'));
   close.type = 'button';
   close.onclick = () => dialog.close();
@@ -85,7 +129,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
   const folders = node('div', 'command-folders');
   folders.hidden = true;
   const folderScope = node('select');
-  folderScope.id = 'command-folder-scope';
+  if (!scoped) folderScope.id = 'command-folder-scope';
   bindAttribute(folderScope, 'aria-label', () => tr('folders.scope'));
   for (const [value, label] of [
     ['global', 'folders.global'],
@@ -98,7 +142,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
   const openFolder = node('button', 'secondary-button', () =>
     tr(getContext().remote ? 'ui.ouvrir_le_dossier_sur_le_pc' : 'ui.ouvrir_le_dossier'),
   );
-  openFolder.id = 'command-open-folder';
+  if (!scoped) openFolder.id = 'command-open-folder';
   openFolder.type = 'button';
   const folderStatus = node('span', 'command-folder-status');
   folderStatus.setAttribute('role', 'status');
@@ -119,7 +163,9 @@ export function createCommands({ api, getContext, action, onChange, onError, has
   );
   dialog.append(header, intro, search, filters, folders, note, list, help);
   document.body.append(popup, dialog);
-  const cache = new Map();
+  const cache = {
+    get: (key) => sharedCacheGet(key),
+  };
   let catalog = null,
     catalogKey = '',
     loadedAt = 0,
@@ -191,8 +237,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
           throw new Error(tr('ui.le_projet_selectionne_a_change'));
         catalog = data;
         loadedAt = Date.now();
-        if (cache.size >= 12) cache.delete(cache.keys().next().value);
-        cache.set(requestedKey, { data, at: loadedAt });
+        sharedCacheSet(requestedKey, { data, at: loadedAt });
         return data;
       })
       .catch((error) => {
@@ -210,13 +255,9 @@ export function createCommands({ api, getContext, action, onChange, onError, has
   }
   function insert(command) {
     if (!command.supported) return;
-    const text = composerText();
-    const suffix = composerCommand()
-      ? input.value
-      : text.startsWith('/')
-        ? text.replace(/^\/\S*\s*/, '')
-        : text;
-    selectComposerCommand(command, suffix);
+    const text = getText();
+    const suffix = getCommand() ? input.value : text.startsWith('/') ? text.replace(/^\/\S*\s*/, '') : text;
+    selectCommand(command, suffix);
     hide();
     dialog.close();
     dismissed = true;
@@ -385,7 +426,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
     if (
       dismissed ||
       document.activeElement !== input ||
-      composerCommand() ||
+      getCommand() ||
       !/^\/[^\s]*$/.test(input.value) ||
       getContext().readOnly
     ) {
@@ -397,12 +438,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
     renderSuggestions();
   }
   function renderSuggestions() {
-    if (
-      suggestionQuery !== input.value ||
-      composerCommand() ||
-      dismissed ||
-      document.activeElement !== input
-    ) {
+    if (suggestionQuery !== input.value || getCommand() || dismissed || document.activeElement !== input) {
       hide();
       return;
     }
@@ -418,7 +454,8 @@ export function createCommands({ api, getContext, action, onChange, onError, has
     popup.replaceChildren();
     matches.forEach((c, i) => {
       const row = node('div', 'command-suggestion');
-      row.id = `command-option-${i}`;
+      row.dataset.index = String(i);
+      row.id = scoped ? `${ns}-option-${i}` : `command-option-${i}`;
       row.setAttribute('role', 'option');
       row.append(
         commandTitle(c, 'strong'),
@@ -459,63 +496,101 @@ export function createCommands({ api, getContext, action, onChange, onError, has
     [...popup.querySelectorAll('[role=option]')].forEach((row, i) =>
       row.setAttribute('aria-selected', String(i === index)),
     );
-    const row = document.getElementById(`command-option-${index}`);
-    input.setAttribute('aria-activedescendant', row.id);
+    const row = popup.querySelector(`[data-index="${index}"]`);
+    if (row?.id) input.setAttribute('aria-activedescendant', row.id);
+    else input.removeAttribute('aria-activedescendant');
     row.scrollIntoView({ block: 'nearest' });
   }
-  input.addEventListener(
-    'keydown',
-    (event) => {
-      if (popup.hidden || event.isComposing) return;
-      if (!matches.length && ['Tab', 'Enter'].includes(event.key)) {
+  const onKeyDown = (event) => {
+    if (popup.hidden || event.isComposing) return;
+    if (!matches.length && ['Tab', 'Enter'].includes(event.key)) {
+      hide();
+      return;
+    }
+    if (['ArrowDown', 'ArrowUp', 'Tab', 'Enter', 'Escape'].includes(event.key)) {
+      if (event.key === 'Enter' && (event.shiftKey || event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.key === 'Escape') {
+        dismissed = true;
         hide();
-        return;
+      } else if (event.key === 'Tab' || event.key === 'Enter') {
+        if (matches[index]) insert(matches[index]);
+      } else if (matches.length) {
+        index = (index + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
+        selectIndex();
       }
-      if (['ArrowDown', 'ArrowUp', 'Tab', 'Enter', 'Escape'].includes(event.key)) {
-        if (event.key === 'Enter' && (event.shiftKey || event.ctrlKey || event.metaKey)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (event.key === 'Escape') {
-          dismissed = true;
-          hide();
-        } else if (event.key === 'Tab' || event.key === 'Enter') {
-          if (matches[index]) insert(matches[index]);
-        } else if (matches.length) {
-          index = (index + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
-          selectIndex();
-        }
-      }
-    },
-    true,
-  );
-  input.addEventListener('input', () => {
+    }
+  };
+  const onInput = () => {
     dismissed = false;
     void suggest();
-  });
-  input.addEventListener('focus', () => {
+  };
+  const onFocus = () => {
     dismissed = false;
     void suggest();
-  });
+  };
+  input.addEventListener('keydown', onKeyDown, true);
+  input.addEventListener('input', onInput);
+  input.addEventListener('focus', onFocus);
   input.addEventListener('blur', hide);
   window.addEventListener('resize', position);
   window.visualViewport?.addEventListener('resize', position);
   window.visualViewport?.addEventListener('scroll', position);
   button.onclick = () => void open();
   search.oninput = renderList;
+  // Teardown removes listeners + instance DOM (launcher, popup, dialog, chip)
+  // so a rebuilt unit on the same nodes never double-handles. Dialog close
+  // first: an open modal must not survive its controller.
+  function destroy() {
+    try {
+      if (dialog.open) dialog.close();
+    } catch {}
+    input.removeEventListener('keydown', onKeyDown, true);
+    input.removeEventListener('input', onInput);
+    input.removeEventListener('focus', onFocus);
+    input.removeEventListener('blur', hide);
+    window.removeEventListener('resize', position);
+    try {
+      window.visualViewport?.removeEventListener('resize', position);
+    } catch {}
+    try {
+      window.visualViewport?.removeEventListener('scroll', position);
+    } catch {}
+    button.onclick = null;
+    search.oninput = null;
+    try {
+      chip.destroy?.();
+    } catch {}
+    if (!chip.destroy) {
+      try {
+        chip.root?.remove();
+      } catch {}
+    }
+    for (const node of [button, popup, dialog]) {
+      try {
+        node.remove();
+      } catch {}
+    }
+  }
   return {
     open,
     update,
+    destroy,
     restoreDraft() {
-      const text = composerText(),
+      const text = getText(),
         requestedKey = key();
       const tokens = text.match(/^(\/skill:[A-Za-z0-9-]+(?:\s+\/skill:[A-Za-z0-9-]+)*)\s+([\s\S]*)$/);
       const single = !tokens && text.match(/^\/([^\s/]+) ([\s\S]*)$/);
       if (!tokens && !single) return;
       void load()
         .then((data) => {
-          if (key() !== requestedKey || composerText() !== text) return;
+          if (key() !== requestedKey || getText() !== text) return;
           if (tokens) {
-            const names = tokens[1].trim().split(/\s+/).map((token) => token.slice(1));
+            const names = tokens[1]
+              .trim()
+              .split(/\s+/)
+              .map((token) => token.slice(1));
             const entries = [];
             for (const raw of names) {
               const name = Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
@@ -527,8 +602,8 @@ export function createCommands({ api, getContext, action, onChange, onError, has
             const offset = tokens[1].length + 1,
               start = input.selectionStart - offset,
               end = input.selectionEnd - offset;
-            setComposerText('');
-            for (const entry of entries) selectComposerCommand(entry, tokens[2]);
+            setText('');
+            for (const entry of entries) selectCommand(entry, tokens[2]);
             input.setSelectionRange(start, end);
             onChange();
             return;
@@ -540,14 +615,14 @@ export function createCommands({ api, getContext, action, onChange, onError, has
           const offset = single[1].length + 2,
             start = input.selectionStart - offset,
             end = input.selectionEnd - offset;
-          selectComposerCommand({ ...command, name: single[1] }, single[2]);
+          selectCommand({ ...command, name: single[1] }, single[2]);
           input.setSelectionRange(start, end);
           onChange();
         })
         .catch(() => {});
     },
     async intercept() {
-      const draft = composerText();
+      const draft = getText();
       if (draft.trim() === '/') {
         void open();
         return true;
@@ -562,7 +637,7 @@ export function createCommands({ api, getContext, action, onChange, onError, has
           args = (parsed[2] || '').trim();
         const studio = immediateCommands.find((c) => c.name === name);
         const data = studio ? { commands: [studio] } : await load();
-        if (composerText() !== draft || contextKey !== key()) return true;
+        if (getText() !== draft || contextKey !== key()) return true;
         const command = data.commands.find((c) => c.name === name);
         if (!command)
           throw new Error(
@@ -573,15 +648,15 @@ export function createCommands({ api, getContext, action, onChange, onError, has
         if (command.source !== 'studio') return false;
         if (hasAttachments())
           throw new Error(tr('ui.retirez_les_pieces_jointes_avant_d_utiliser_ce_raccourci_du_studi'));
-        const token = composerCommand();
-        setComposerText('');
+        const token = getCommand();
+        setText('');
         onChange();
         try {
           await action(command.action, args);
         } catch (error) {
-          if (contextKey === key() && !composerText()) {
-            if (token) selectComposerCommand(token, draft.slice(token.name.length + 2));
-            else setComposerText(draft);
+          if (contextKey === key() && !getText()) {
+            if (token) selectCommand(token, draft.slice(token.name.length + 2));
+            else setText(draft);
             onChange();
           }
           throw error;

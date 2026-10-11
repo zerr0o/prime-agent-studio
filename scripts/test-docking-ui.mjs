@@ -536,7 +536,7 @@ try {
         '#dock-workspace (active only >1080px) with .dock-group[data-dock-group] + ' +
         'buttons[data-dock-tab] (role=tab, draggable) + [data-dock-close] per group, ' +
         '.dock-splitter[data-dock-split] (role=separator, tabindex=0), .dock-drop-preview during ' +
-        'internal drag, storage prime-studio.docking.layout {version:1,root,enabled:true}.',
+        'internal drag, storage prime-studio.docking.layout {version:2,root,enabled:true} (V1 migrated).',
     );
   }
   step(
@@ -555,7 +555,9 @@ try {
   await expectDefaultLayout(page, 'default');
   const envelope = await storageEnvelope(page);
   assert.ok(envelope?.parsed, 'Docking layout envelope must be stored');
-  assert.equal(envelope.parsed.version, 1, 'Envelope version must be 1');
+  // Round-2 geometry V2: V1 docs are accepted and normalized to frozen V2 on
+  // output, so the saved envelope is version 2. Exact pin, not a weakening.
+  assert.equal(envelope.parsed.version, 2, 'Envelope version must be 2');
   assert.equal(envelope.parsed.enabled, true, 'Envelope must record enabled:true');
   assert.ok(envelope.parsed.root, 'Envelope must carry the layout root');
   await measureNodes(page, 'desktop-default');

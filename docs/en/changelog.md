@@ -4,6 +4,16 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.3.0-beta.1
+
+- **Dockable workspace**: enable it from **Layout** on desktop screens wider than 1080 px. Split, group, reorder and resize real panels without gaps. Classic and mobile layouts remain available.
+- **Independent conversations**: display up to eight conversation panes, each with its own full composer, model, reasoning and Questions controls. Drafts, attachments and live output stay with their conversation; only the focused pane drives shared tools.
+- **Precise tabs and navigation**: drag a conversation from the sidebar or insert a tab between its neighbors. **Add Tab** offers a project/conversation picker; the main **New conversation** button and **Ctrl+N** reuse the focused pane.
+- **Close others**: keep the selected tab and park only its siblings in that group, without discarding drafts or attachments or stopping runs. Other groups stay intact.
+- **Independent tools and Preferences**: Session, Agents, Files and Roadmap can be arranged separately. The Preferences button opens a modal popup by default; **Add Tab → Preferences** explicitly opens a docked tab. Both paths preserve the same live form and its child dialogs.
+- **Named layouts and safe restore**: save and load panel geometry without embedding conversation content or session bindings. Closing, reopening, reloading and narrow-window transitions preserve per-view state. Tab icons use their panel type and owning project color.
+- **Resize reliability**: minimum-width panels no longer leave an empty strip or cause a width jump. Pointer and keyboard resizing, cancellation and saved geometry remain consistent.
+
 ## 4.2.1-beta.3
 
 - **Mobile header and composer**: grouped header actions fit at 320 and 390 px, the full running-state placeholder stays visible, and compact permission labels retain their full accessible names. Desktop layout and the full-screen mobile details panel are preserved.

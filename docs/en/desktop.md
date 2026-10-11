@@ -54,11 +54,18 @@ A Windows shortcut can use the `--settings` argument to open application setting
 
 ## Dockable workspace — 4.3 preview
 
-**In development, not released yet.** On wide screens (more than 1080 px), open **Layout** in the header and enable **Dockable workspace**. Drag the **Conversation**, **Roadmap** and **Inspector** tabs: to the center of a group to combine them, or to an edge to create a split. Drag the splitters to resize panels.
+**Available in the 4.3.0 beta, disabled by default.** On wide screens (more than 1080 px), open **Layout** in the header and enable **Dockable workspace**. Drag tabs to the center of a group to combine them, or to an edge to create a split. Panels meet without gaps; drag the splitters to resize them. Drop a tab between other tabs to place it at the insertion marker. You can also drag a conversation from the left sidebar into a pane or tab bar without starting a run.
 
-The Layout dialog also lets you move a panel with the keyboard, reopen a closed panel and reset the layout. Arrow keys resize a focused splitter; Escape cancels an active move. The layout is saved in this browser profile, without storing or duplicating conversations. Disable the mode to restore the classic interface. Narrow windows and mobile devices use that interface automatically, without deleting the desktop layout.
+- **Add Tab:** right-click a tab bar, or use its **⋯** button, to add a conversation or reopen a panel. Choose **New conversation** to select a project, then an existing conversation, a parked draft or a new empty conversation. Session, Agents, Files, Roadmap and Preferences are independent tabs.
+- **Multiple conversations:** up to eight conversation panes can be visible. Each pane has its own full composer and model controls. Click inside a pane to focus it; only its conversation tab carries the focus marker. Every tab has a type icon; conversation icons use their own project color. That conversation supplies the context for Roadmap, Session, Agents and Files. Other panes keep their own messages and live output without changing that context. Drafts and attachments stay with their conversation; closing a tab does not delete its content or stop its run.
+- **New conversation:** the main button and **Ctrl+N** reuse the focused conversation view and focus its editor, without adding a tab. Use **Add Tab** when you want another view.
+- **Close others:** right-click a tab to keep it and park only its siblings in the same group. From the tab bar, the action keeps the active tab. Other groups, drafts, attachments and runs stay intact.
+- **Preferences:** the main button opens a modal popup, even in a docked workspace. Choose **Add Tab → Preferences** explicitly to use a docked tab. Both paths use the same live form. Moving or hiding the tab preserves unsaved fields; closing the popup preserves an existing tab. Child dialogs remain modal, including in classic and mobile modes.
+- **Named layouts:** save, load or delete a layout in **Layout**. A saved layout contains pane types, counts and geometry only, not session references, messages, drafts or attachments. Loading one reuses conversation views and never starts a run.
 
-This first slice keeps Session, Agents and Files as tabs in a single Inspector. Native floating windows on multiple monitors and multiple conversation views are not available yet.
+The Layout dialog also lets you move a panel with the keyboard, reopen a closed panel and reset the layout. Arrow keys resize a focused splitter; Escape cancels an active move. Layouts are saved in this browser profile. Disable the mode to restore the classic interface. Narrow windows and mobile devices use that interface automatically, without deleting the desktop layout.
+
+This beta includes independent Session, Agents and Files tabs and multiple conversation views. Native floating windows across multiple monitors are not included.
 
 ## Data and updates
 

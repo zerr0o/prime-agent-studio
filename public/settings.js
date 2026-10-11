@@ -60,7 +60,26 @@ export function createSettings({
     setupUrl,
     httpsBusy = false,
     returnFrom,
-    returnButton;
+    returnButton,
+    dock = null,
+    programmaticCloses = 0,
+    suppressObserverOnce = false,
+    gatedOnce = false,
+    lastGateKey = '',
+    // Modal popup session: true while a main-entry/boot popup is user-facing
+    // (or was released for a node transfer and awaits restore). Dock resyncs
+    // never auto-convert it to a tab; the tab is explicit Add Tab only.
+    popupOpen = false,
+    // Popup visibility over a dock-hidden slot: the layout keeps the node
+    // hidden, so the attribute is lifted for the popup session and put back
+    // on close. No layout mutation, no tab, no active-tab change.
+    hideOnClose = false,
+    // Startup intent (?settings=updates): honored once at the first docked
+    // handshake even if the modal died before it (e.g. a pre-handshake parent
+    // move that bypassed prepareDockMove). Cleared on user cancel and on the
+    // handshake itself — never resurrected later.
+    bootUpdates = false,
+    bootPhase = true;
   const node = (tag, className, message) => {
     const element = document.createElement(tag);
     if (className) element.className = className;
@@ -77,8 +96,9 @@ export function createSettings({
     $(id).hidden = !value;
     bindText($(id), () => translateKnown(value || ''));
   };
-  function select(id, focus = false) {
+  function select(id, focus = false, opts = {}) {
     selected = id;
+    const refresh = opts.refresh !== false;
     for (const tab of tabs) {
       const active = tab.dataset.settingsTab === id;
       tab.setAttribute('aria-selected', String(active));
@@ -88,31 +108,41 @@ export function createSettings({
       if (active && matchMedia('(max-width: 700px)').matches)
         tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
-    if (id === 'remote' && !getContext().readOnly) void refreshNetwork();
-    if (id === 'api' && !getContext().readOnly && !getContext().remote) void publicApi.refresh();
-    if (id === 'sync' && !getContext().readOnly) void syncSettings.refresh();
-    if (id === 'system') {
-      void refreshSystem();
-      void refreshAutostart();
+    // Docked visibility resyncs (drag/move/tab toggle) pass { refresh: false } so
+    // the selected category and unsaved forms survive without re-fetching.
+    if (refresh) {
+      if (id === 'remote' && !getContext().readOnly) void refreshNetwork();
+      if (id === 'api' && !getContext().readOnly && !getContext().remote) void publicApi.refresh();
+      if (id === 'sync' && !getContext().readOnly) void syncSettings.refresh();
+      if (id === 'system') {
+        void refreshSystem();
+        void refreshAutostart();
+      }
+      if (id === 'updates') void updates.refresh();
+      if (id === 'models') {
+        void interactions.refreshDefault();
+        engineSettings.update();
+      }
+      if (id === 'tools') {
+        computerPreferences.update();
+        void computerPreferences.refresh().catch(() => {});
+      }
+      if (id === 'notifications') void interactions.refreshNotifications();
     }
-    if (id === 'updates') void updates.refresh();
-    if (id === 'models') {
-      void interactions.refreshDefault();
-      engineSettings.update();
-    }
-    if (id === 'tools') {
-      computerPreferences.update();
-      void computerPreferences.refresh().catch(() => {});
-    }
-    if (id === 'notifications') void interactions.refreshNotifications();
   }
   for (const tab of tabs) tab.onclick = () => select(tab.dataset.settingsTab);
   const narrow = matchMedia('(max-width: 700px)');
-  const orientation = () =>
+  const orientation = () => {
+    // Container-aware: a 260px dock pane on a wide desktop never trips the
+    // viewport query, so measure the dialog itself while docked. Attribute-only,
+    // never re-renders forms (dirty inputs untouched).
+    const horizontal = dock ? dialog.getBoundingClientRect().width <= 700 : narrow.matches;
     dialog
       .querySelector('.settings-nav')
-      .setAttribute('aria-orientation', narrow.matches ? 'horizontal' : 'vertical');
+      .setAttribute('aria-orientation', horizontal ? 'horizontal' : 'vertical');
+  };
   narrow.addEventListener('change', orientation);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => orientation()).observe(dialog);
   orientation();
   dialog.querySelector('.settings-nav').addEventListener('keydown', (event) => {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -128,8 +158,35 @@ export function createSettings({
             visible.length;
     select(visible[next].dataset.settingsTab, true);
   });
-  function opened() {
-    if (!dialog.open) return;
+  function gateKey() {
+    try {
+      const context = getContext();
+      return [context.readOnly, context.remote, context.projectCwd].join('|');
+    } catch {
+      return '';
+    }
+  }
+  function safeShowModal() {
+    // showModal() throws InvalidStateError on an already-open dialog, modal or
+    // not — so never call it open. Non-modal dock display is released silently
+    // first (tab registration kept); the counter keeps that close silent. An
+    // already-open modal is a no-op.
+    if (dialog.open && !dialog.matches?.(':modal')) closeProgrammatic();
+    if (!dialog.open) dialog.showModal();
+  }
+  function showDocked() {
+    if (!dock || !dock.visible || dialog.open) return dialog.open;
+    suppressObserverOnce = true;
+    try {
+      // Non-modal only: no inert page, no focus trap. Nested child dialogs keep
+      // real showModal() and stack above this surface.
+      dialog.show();
+    } catch {
+      suppressObserverOnce = false;
+    }
+    return dialog.open;
+  }
+  function applyGating() {
     const context = getContext();
     for (const tab of tabs)
       tab.hidden =
@@ -144,11 +201,117 @@ export function createSettings({
       tr(unavailable ? 'settings.choose_project' : 'settings.resources_scope'),
     );
     $('settings-logs-row').hidden = context.readOnly;
+  }
+  function opened() {
+    if (!dialog.open) return;
+    // A visible popup is a live surface even over a dock-hidden slot: only a
+    // closed dialog skips the refresh, never a hidden layout flag.
+    if (!dialog.getClientRects().length) return;
+    if (dock) {
+      const key = gateKey();
+      if (gatedOnce && key === lastGateKey) {
+        // Drag/move/tab-visibility resync: keep the selected category and all
+        // unsaved forms, no re-fetch. A real initial open or a context change
+        // still takes the full path below.
+        applyGating();
+        select(selected, false, { refresh: false });
+        return;
+      }
+      lastGateKey = key;
+      gatedOnce = true;
+      applyGating();
+      select(selected);
+      return;
+    }
+    applyGating();
     select(selected);
   }
-  new MutationObserver(opened).observe(dialog, { attributes: true, attributeFilter: ['open'] });
+  // Parent hook after bootstrap access mode or active-project change: re-apply
+  // readOnly/remote gating and re-assert the selected tab WITHOUT refetching,
+  // so dirty global forms survive a mere projectCwd change (opened() would
+  // full-refresh on a gateKey change and erase them). Safe no-op when closed
+  // or dock-hidden. Refreshes the gate marker so the next geometry resync
+  // does not refetch for this context change.
+  function refreshContext() {
+    if (!dialog.open) return;
+    if (!dialog.getClientRects().length) return;
+    applyGating();
+    select(selected, false, { refresh: false });
+    lastGateKey = gateKey();
+    gatedOnce = true;
+  }
+  new MutationObserver(() => {
+    if (suppressObserverOnce) {
+      suppressObserverOnce = false;
+      return;
+    }
+    opened();
+  }).observe(dialog, { attributes: true, attributeFilter: ['open'] });
+  // dialog.close() queues its close event asynchronously, so a synchronous
+  // try/finally flag around close() cannot work. Count programmatic closes
+  // instead: increment only when open, so every increment pairs with exactly
+  // one close event, and consume one count per event. No timeouts.
+  function closeProgrammatic(value) {
+    if (!dialog.open) return false;
+    programmaticCloses++;
+    try {
+      dialog.close(value);
+    } catch {
+      programmaticCloses--;
+      return false;
+    }
+    return true;
+  }
+  // Called via onBeforeMove before the parent transfers the node: release the
+  // top layer when modal. popupOpen already marks the popup session, so the
+  // post-move setDocked restores it (modal) or converts it (live tab slot).
+  function prepareDockMove() {
+    if (dialog.matches?.(':modal')) closeProgrammatic();
+  }
+  // A popup over a dock-hidden slot must be visible: lift the layout's hidden
+  // attribute for the session (put back on close). Ancestor frames stay
+  // untouched; the parent re-applies layout hiding on its own renders.
+  function revealPopup() {
+    if (dock && dialog.hidden) {
+      dialog.hidden = false;
+      hideOnClose = true;
+    }
+  }
+  // A known child manager modal currently open means this close is a
+  // parent yield (mcp/remote close a modal parent before opening), not a user
+  // cancel: the managers return path restores the popup session afterwards.
+  const childManagerOpen = () =>
+    ['model-config-dialog', 'providers-dialog', 'mcp-dialog', 'remote-access-dialog', 'commands-dialog'].some(
+      (id) => document.getElementById(id)?.open,
+    );
   dialog.addEventListener('close', () => {
     generation++;
+    if (programmaticCloses > 0) {
+      programmaticCloses--;
+      return;
+    }
+    // A post-boot user close cancels pending startup intent; the parent's own
+    // pre-handshake move (same synchronous boot task) and programmatic closes
+    // never do.
+    if (bootUpdates && !bootPhase) bootUpdates = false;
+    if (popupOpen) {
+      // Main/boot popup session ended: restore dock placement when a tab slot
+      // is live, never remove the tab (no transient tabs exist by design).
+      // A parent yield to a child modal keeps the session: its return path
+      // reopens the popup.
+      if (childManagerOpen()) return;
+      popupOpen = false;
+      if (hideOnClose && dock && !dock.visible) dialog.hidden = true;
+      hideOnClose = false;
+      if (dock && dock.visible) {
+        dialog.setAttribute('role', 'region');
+        showDocked();
+      }
+      return;
+    }
+    // Generic user close (X / data-close-dialog / Esc in classic) while docked
+    // removes the dock tab via the parent.
+    if (dock) dock.onClose?.();
   });
   // Return to the category only when this panel launched the child manager.
   const managers = {
@@ -173,16 +336,41 @@ export function createSettings({
   for (const id of new Set(Object.values(managers)))
     $(id)?.addEventListener('close', () => {
       if (returnFrom !== id) return;
+      const back = returnButton;
       returnFrom = undefined;
-      dialog.showModal();
-      returnButton?.focus();
+      returnButton = undefined;
+      if (dock) {
+        if (popupOpen) {
+          // Nested modal over a main/boot popup: restore the popup session
+          // even with no Preferences tab (reveal first, then show).
+          revealPopup();
+          safeShowModal();
+          try {
+            back?.focus?.();
+          } catch {}
+          return;
+        }
+        // Respect a user-closed pane: never surprise-reopen a panel the user
+        // closed while the child modal was open. Focus back only if visible.
+        if (!dock.visible) return;
+        dock.onOpen?.();
+        showDocked();
+        try {
+          if (dock.visible) back?.focus?.();
+        } catch {}
+        return;
+      }
+      safeShowModal();
+      back?.focus?.();
     });
   for (const [id, source] of [
     ['settings-skills', 'skill'],
     ['settings-prompts', 'prompt'],
   ])
     $(id).onclick = () => {
-      dialog.close();
+      // Docked: the shared settings node stays open underneath (non-modal); the
+      // commands dialog stacks as a real modal and returns via the managers map.
+      if (!dock) dialog.close();
       void openResources(source);
     };
 
@@ -459,6 +647,7 @@ export function createSettings({
   setInterval(() => {
     if (
       dialog.open &&
+      dialog.getClientRects().length &&
       selected === 'remote' &&
       document.visibilityState === 'visible' &&
       !$('network-content').contains(document.activeElement)
@@ -618,17 +807,32 @@ export function createSettings({
   };
   // Text bindings update in place, preserving open connection options and unsaved fields.
   onLanguageChange(() => {
-    if (dialog.open && selected === 'system') void refreshSystem();
+    if (dialog.open && (!dock || dock.visible) && selected === 'system') void refreshSystem();
   });
   translateDOM(dialog);
   // Opens straight on one tab: the previously selected tab is not refreshed first.
+  // Docked: route through the parent (same dock identity), keep the node non-modal.
   const openTab = (id) => {
     selected = id;
-    if (!dialog.open) dialog.showModal();
+    if (dock) {
+      dock.onOpen?.();
+      if (!dock.visible) return;
+      showDocked();
+      select(id);
+      return;
+    }
+    if (!dialog.open) safeShowModal();
     else select(id);
   };
   const openUpdatesPane = (focus) => {
-    if (!dialog.open) dialog.showModal();
+    if (dock) {
+      dock.onOpen?.();
+      if (!dock.visible) return;
+      showDocked();
+      select('updates', Boolean(focus));
+      return;
+    }
+    if (!dialog.open) safeShowModal();
     select('updates', Boolean(focus));
   };
   const openComponentPanel = () => {
@@ -652,19 +856,136 @@ export function createSettings({
   } catch {}
   if (new URLSearchParams(location.search).get('settings') === 'updates') {
     selected = 'updates';
-    dialog.showModal();
+    bootUpdates = true;
+    // Boot intent is a popup session like the main entry (never an auto tab).
+    popupOpen = true;
+    dialog.removeAttribute('role');
+    revealPopup();
+    safeShowModal();
     const url = new URL(location.href);
     url.searchParams.delete('settings');
     history.replaceState(null, '', url);
   }
+  // End of the synchronous boot task: anything closing the dialog afterwards
+  // is a user cancel (clearing startup intent), never the boot handoff itself.
+  queueMicrotask(() => {
+    bootPhase = false;
+  });
   // Refresh autostart visibility once context is known, without overriding the system tab state.
   void refreshAutostart().catch(() => {});
+  // Docking contract (mirrors roadmapUI.setDocked). The parent owns the move:
+  // app delegates Preferences onBeforeMove to prepareDockMove (releases the
+  // top layer when modal), then the parent calls setDocked after transfer.
+  // One existing #settings-dialog DOM:
+  // non-modal show() only while docked-visible, closed when invisible or on
+  // classic restore, showModal() classic only. The `dock !== null` gates in the
+  // child-open branches above stay dormant until the parent calls setDocked.
+  function setDocked(next) {
+    const wasDocked = dock !== null;
+    dock = next || null;
+    // Already classic: strict no-op. Never touch a classic modal (deep-link or
+    // otherwise) on a parent resync.
+    if (!dock && !wasDocked) return;
+    if (!dock) {
+      // Actual exit to classic. An open popup stays open as a classic modal;
+      // otherwise release dock display silently (or restore a popup released
+      // for an undock transfer).
+      dialog.removeAttribute('role');
+      if (dialog.matches?.(':modal')) return;
+      if (popupOpen) {
+        popupOpen = false;
+        safeShowModal();
+        popupOpen = dialog.open;
+      } else closeProgrammatic();
+      gatedOnce = false;
+      lastGateKey = '';
+      return;
+    }
+    // A visible modal popup is never auto-docked: the main entry and boot
+    // intent stay modal across transfers and resizes; only explicit Add Tab
+    // (on a closed dialog) ever shows tab display.
+    if (dialog.matches?.(':modal') && dialog.getClientRects().length) {
+      if (bootUpdates) {
+        bootUpdates = false;
+        applyGating();
+        select('updates');
+      }
+      popupOpen = true;
+      return;
+    }
+    // Remaining here: a closed dialog, or a parked (invisible) modal that can
+    // never serve as a popup. Startup intent or a released popup session is
+    // restored as a visible popup in place — never converted to a tab, never
+    // adding layout. Consumed here once; later resyncs and user-cancelled
+    // boots never reopen.
+    if (bootUpdates || popupOpen) {
+      const boot = bootUpdates;
+      bootUpdates = false;
+      popupOpen = false;
+      if (dialog.open) closeProgrammatic();
+      dialog.removeAttribute('role');
+      revealPopup();
+      safeShowModal();
+      popupOpen = dialog.open;
+      // Boot navigation opens fresh on Updates; a restored popup keeps state.
+      if (boot && dialog.open) select(selected);
+      return;
+    }
+    // Embedded settings tab display: no inert page, no focus trap. The region
+    // role fits a tab-embedded panel; classic restore removes it above.
+    dialog.setAttribute('role', 'region');
+    if (!dock.visible) {
+      closeProgrammatic();
+      return;
+    }
+    if (dialog.open) {
+      // Resync after drag/move: opened() takes the cheap gated path and keeps
+      // dirty inputs (gatedOnce + unchanged key).
+      opened();
+      return;
+    }
+    // Real (re)open while visible: the observer is suppressed for this one
+    // programmatic show; opened() runs explicitly for full gating + refresh.
+    suppressObserverOnce = true;
+    try {
+      dialog.show();
+    } catch {
+      suppressObserverOnce = false;
+      return;
+    }
+    opened();
+  }
   return {
-    open: () => dialog.showModal(),
+    open: () => {
+      // Main entry is ALWAYS a modal popup, even when docked. One live node:
+      // release dock display silently first (tab registration kept), reveal a
+      // dock-hidden slot, then show. Never adds a tab or moves the node.
+      if (!dialog.matches?.(':modal')) {
+        dialog.removeAttribute('role');
+        revealPopup();
+        safeShowModal();
+      }
+      popupOpen = dialog.open;
+    },
     dismiss: () => {
       returnFrom = undefined;
+      returnButton = undefined;
+      // Explicit dismiss cancels pending startup intent like a user close,
+      // and ends any popup session so a notification cancel stays shut.
+      bootUpdates = false;
+      popupOpen = false;
+      if (dock) {
+        // Route through the close listener so the parent removes the dock tab
+        // exactly once (no double onClose).
+        if (dialog.open) dialog.close('cancel');
+        else dock.onClose?.();
+        return;
+      }
       dialog.close('cancel');
     },
+    setDocked,
+    prepareDockMove,
+    refreshContext,
     openUpdates: () => openUpdatesPane(false),
     openTab,
     updates,

@@ -39,13 +39,16 @@ export function createRemoteAccessSettings({ api, isRemote, toast }) {
     };
   $('open-remote-access').onclick = async () => {
     if (isRemote()) return;
-    $('settings-dialog').close();
+    // Docked: the shared settings node stays open underneath (non-modal); the
+    // remote-access dialog stacks as a real modal and returns via managers.
+    const parent = $('settings-dialog');
+    if (parent?.matches?.(':modal')) parent.close();
     clear();
     const turn = ++generation;
     busy = false;
     refresh();
     bindText($('remote-access-status'), () => tr('ui.chargement_de_l_acces_mobile'));
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
     try {
       const data = await api('/api/remote-access');
       if (turn !== generation) return;

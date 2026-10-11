@@ -66,6 +66,31 @@ const busy = new Set([
   'queued',
   'compacting',
 ]);
+
+const INSPECTOR_UNIT_IDS = Object.freeze(['session', 'agents', 'files']);
+
+/**
+ * Visible-datasets-only fetch matrix (pure, unit-tested).
+ * Session consumes the agents dataset (status/usage/context); agents needs it;
+ * files needs it for the git bar. Files/git datasets and quota are narrower.
+ */
+function inspectorFetchPlan({ session = false, agents = false, files = false } = {}) {
+  const s = !!session,
+    a = !!agents,
+    f = !!files;
+  return { agents: s || a || f, files: f, git: f, quota: s, any: s || a || f };
+}
+
+/**
+ * ARIA descriptor per unit (pure, unit-tested). Docked units live inside the
+ * dock frame's own tabpanel, so they must not nest a duplicate tabpanel role;
+ * classic restores the exact original role + label.
+ */
+function inspectorUnitAria(key, docked) {
+  if (!INSPECTOR_UNIT_IDS.includes(key)) return null;
+  if (docked) return { role: null, labelledby: null };
+  return { role: 'tabpanel', labelledby: `inspector-tab-${key}` };
+}
 const count = (number) =>
   new Intl.NumberFormat('fr-FR', {
     notation: number >= 10000 ? 'compact' : 'standard',
@@ -89,6 +114,10 @@ export function createInspector({
     directory = '',
     contextKey = '',
     generation = 0;
+  // Dock split state. Null = classic/mobile singleton (unchanged behavior).
+  // Docked = { visible: Set<unitId>, show: (id) => bool }. #details-panel stays
+  // the classic home; docking owns every move/restore, so no markers here.
+  let docked = null;
   let current = {},
     agentData = null,
     fileData = null,
@@ -173,6 +202,13 @@ export function createInspector({
   let viewVersion = 0,
     opener;
   const visible = () => !panel.hidden && (innerWidth > 1080 || panel.classList.contains('mobile-open'));
+  const unitNode = (key) => document.getElementById(`inspector-${key}`);
+  function unitVisible(key) {
+    const node = unitNode(key);
+    if (!node || !node.isConnected) return false;
+    if (docked) return docked.visible.has(key) && node.getClientRects().length > 0;
+    return visible() && tab === key;
+  }
   const query = (values) => new URLSearchParams({ cwd: current.cwd, ...values }).toString();
   const filesUrl = (action, values = {}) =>
     `/api/project-files${action ? '/' + action : ''}?${query(values)}`;
@@ -251,9 +287,22 @@ export function createInspector({
   const QUOTA_REFRESH_MS = 5 * 60_000;
   const quotaFetchedAt = {};
   setInterval(() => {
-    if (document.hidden || !quotaSection || quotaSection.hidden) return;
+    if (document.hidden || !quotaSection || quotaSection.hidden || !unitVisible('session')) return;
     for (const button of quotaSection.querySelectorAll('.session-quota-refresh')) button.click();
   }, QUOTA_REFRESH_MS);
+  function requestQuota(force = false) {
+    // Central quota dispatch: the session unit must be visible in an enabled,
+    // online context. The probe key advances ONLY on dispatch, so hidden
+    // periods leave it stale and a reveal with unchanged model/cwd still
+    // dispatches when nothing was ever fetched; renderQuota's own
+    // key/snapshot/5-minute guards keep repeat dispatches cheap, and its
+    // generation checks keep stale replies off a changed context.
+    if (!current.enabled || !current.online || document.hidden || !unitVisible('session')) return;
+    const quotaKey = `${mainModelId()}\0${current.cwd || ''}`;
+    if (!force && quotaKey === lastQuotaProbeKey) return;
+    lastQuotaProbeKey = quotaKey;
+    void renderQuota();
+  }
   function ensureSessionExtras() {
     if (quotaSection && contextSection) return;
     const host = $('inspector-session');
@@ -772,7 +821,9 @@ export function createInspector({
       syncGitBar();
       showUsage();
       renderContext();
-      void renderQuota();
+      // Recheck expiring defaults/link metadata even with the same model/cwd.
+      // The central visibility gate and renderQuota caches still apply.
+      requestQuota(true);
       if (agentData.session) $('detail-status').replaceChildren(statusNode(agentData.session.status));
     } catch (error) {
       if (error.name !== 'AbortError')
@@ -780,6 +831,10 @@ export function createInspector({
     }
   }
   function setTab(value, focus = false) {
+    if (docked) {
+      if (INSPECTOR_UNIT_IDS.includes(value)) docked.show?.(value);
+      return;
+    }
     tab = value;
     for (const key of ['session', 'agents', 'files']) {
       const button = $(`inspector-tab-${key}`);
@@ -1832,6 +1887,37 @@ export function createInspector({
   };
   viewer.addEventListener('cancel', (event) => event.stopPropagation());
 
+  function applyUnitAria() {
+    for (const key of INSPECTOR_UNIT_IDS) {
+      const node = unitNode(key);
+      if (!node) continue;
+      const props = inspectorUnitAria(key, !!docked);
+      if (props.role) node.setAttribute('role', props.role);
+      else node.removeAttribute('role');
+      if (props.labelledby) node.setAttribute('aria-labelledby', props.labelledby);
+      else node.removeAttribute('aria-labelledby');
+    }
+  }
+
+  /** Live unit roots for docking registration. Docking owns move/restore. */
+  function roots() {
+    return { session: unitNode('session'), agents: unitNode('agents'), files: unitNode('files') };
+  }
+
+  /**
+   * Dock wiring (§6): active toggles dock mode, visiblePanels lists dock-visible
+   * unit ids, showPanel reveals one unit (dock openPanel or classic setTab).
+   * Classic/mobile (active falsy) restores original roles/labels; fetching
+   * re-gates on the next update() immediately.
+   */
+  function setDocked(active, visiblePanels, showPanel) {
+    docked = active
+      ? { visible: new Set(Array.isArray(visiblePanels) ? visiblePanels : []), show: showPanel }
+      : null;
+    applyUnitAria();
+    update();
+  }
+
   function update() {
     current = getContext();
     syncProjectFolderButton();
@@ -1877,18 +1963,19 @@ export function createInspector({
     if (agentData?.session) $('detail-status').replaceChildren(statusNode(agentData.session.status));
     $('inspector-tab-agents').disabled = !current.enabled;
     $('inspector-tab-files').disabled = !current.enabled;
-    subagentSettings.update({ ...current, active: tab === 'agents' && visible() && !document.hidden });
+    const plan = inspectorFetchPlan({
+      session: unitVisible('session'),
+      agents: unitVisible('agents'),
+      files: unitVisible('files'),
+    });
+    subagentSettings.update({ ...current, active: unitVisible('agents') && !document.hidden });
     // Session quota depends on the selected main model even without an open session.
     // Refresh it on model/cwd change; context needs live agent data.
     try {
       ensureSessionExtras();
-      const quotaKey = `${mainModelId()}\0${current.cwd || ''}`;
-      if (quotaKey !== lastQuotaProbeKey) {
-        lastQuotaProbeKey = quotaKey;
-        // Defer async fetch; renderQuota guards its own race via lastQuotaKey.
-        if (current.enabled && current.online && visible() && !document.hidden && tab === 'session')
-          void renderQuota();
-      }
+      // Deferred async fetch; requestQuota dispatches only for a visible
+      // session unit and advances the probe key solely on dispatch.
+      requestQuota();
       if (!current.enabled) {
         quotaSection.hidden = true;
         contextSection.hidden = true;
@@ -1900,13 +1987,14 @@ export function createInspector({
       if ($('inspector-git-commit')) $('inspector-git-commit').hidden = true;
       return;
     }
-    if (!visible() || document.hidden || !current.online) return;
-    if (tab === 'files') {
+    if (!plan.any || document.hidden || !current.online) return;
+    if (plan.files) {
       if (fileMode === 'changes' || !fileData) void loadFiles();
       syncGitBar();
       syncCommitBox();
       void loadGit();
-    } else void loadAgents();
+    }
+    if (plan.agents) void loadAgents();
   }
   const timer = setInterval(update, 2500);
   document.addEventListener('visibilitychange', update);
@@ -1914,8 +2002,11 @@ export function createInspector({
   return {
     update,
     setTab,
+    roots,
+    setDocked,
     openDocument,
     async openAgentById(id) {
+      if (docked) docked.show?.('agents');
       update();
       const expectedContext = contextKey;
       const expectedGeneration = generation;

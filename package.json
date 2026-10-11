@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "4.2.1-beta.3",
+  "version": "4.3.0-beta.1",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -42,6 +42,8 @@
     "test:mobile": "node scripts/test-mobile-control.mjs",
     "test:workspace": "node scripts/test-workspace-ui.mjs",
     "test:docking": "node --test test/docking-layout.test.mjs && node scripts/test-docking-ui.mjs",
+    "test:docking:workspace": "node scripts/test-docking-workspace-ui.mjs",
+    "test:docking:resize": "node scripts/test-docking-resize-ui.mjs",
     "test:inspector": "node scripts/test-inspector-ui.mjs && node scripts/test-file-context-ui.mjs && node scripts/test-inspector-folder-ui.mjs",
     "test:git-panel": "node scripts/test-git-panel-ui.mjs",
     "test:file-links": "node scripts/test-file-links-ui.mjs",

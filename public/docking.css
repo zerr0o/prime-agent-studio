@@ -30,8 +30,8 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 6px;
-  gap: 6px;
+  padding: 0;
+  gap: 0;
 }
 .dock-split {
   display: grid;
@@ -40,14 +40,14 @@
   min-height: 0;
 }
 .dock-split[data-direction='row'] {
-  grid-template-columns: minmax(var(--dock-min-first), var(--dock-first)) 6px minmax(
+  grid-template-columns: minmax(var(--dock-min-first), var(--dock-first)) 1px minmax(
       var(--dock-min-second),
       var(--dock-second)
     );
   grid-template-rows: minmax(0, 1fr);
 }
 .dock-split[data-direction='column'] {
-  grid-template-rows: minmax(var(--dock-min-first), var(--dock-first)) 6px minmax(
+  grid-template-rows: minmax(var(--dock-min-first), var(--dock-first)) 1px minmax(
       var(--dock-min-second),
       var(--dock-second)
     );
@@ -60,8 +60,8 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
   background: var(--bg);
 }
@@ -84,6 +84,9 @@
   scrollbar-width: thin;
 }
 .dock-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   position: relative;
   flex: 0 0 auto;
   padding: 10px 13px 9px;
@@ -92,6 +95,25 @@
   line-height: 15px;
   color: var(--muted);
   cursor: grab;
+  white-space: nowrap;
+  max-width: min(240px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dock-tab-icon {
+  display: grid;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.dock-tab-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.dock-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dock-tab:hover {
@@ -102,7 +124,8 @@
   color: var(--text);
   background: var(--bg);
 }
-.dock-tab[aria-selected='true']::after {
+.dock-tab:not(.is-conversation)[aria-selected='true']::after,
+.dock-tab.is-conversation.is-focused::after {
   content: '';
   position: absolute;
   inset: 0 12px auto;
@@ -150,10 +173,20 @@
 }
 .dock-splitter {
   position: relative;
-  z-index: 1;
-  border-radius: 3px;
+  z-index: 2;
+  border-radius: 0;
+  background: var(--line);
   touch-action: none;
   cursor: col-resize;
+}
+/* A generous transparent hit area preserves resize access without a visible gap. */
+.dock-splitter::before {
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+.dock-split[data-direction='column'] > .dock-splitter::before {
+  inset: -3px 0;
 }
 .dock-split[data-direction='column'] > .dock-splitter {
   cursor: row-resize;
@@ -161,7 +194,7 @@
 .dock-splitter:hover,
 .dock-splitter:focus-visible,
 .is-resizing .dock-splitter {
-  background: var(--accent-bg);
+  background: var(--accent);
 }
 .dock-splitter:focus-visible,
 .dock-tab:focus-visible,
@@ -172,6 +205,15 @@
 .dock-workspace.is-resizing,
 .dock-workspace.is-dragging {
   user-select: none;
+}
+.dock-tab-insertion {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 27px;
+  z-index: 21;
+  background: var(--accent);
+  pointer-events: none;
 }
 .dock-drop-preview {
   position: absolute;
@@ -345,6 +387,184 @@
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
+
+/* Context menus stay local to the workspace; content keeps its own right-click actions. */
+.dock-menu {
+  position: fixed;
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  min-width: 210px;
+  max-width: min(310px, calc(100vw - 24px));
+  padding: 5px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 8px 30px #0003;
+}
+.dock-menu[hidden],
+.docking-preset-confirmation[hidden] {
+  display: none;
+}
+.dock-menu button {
+  padding: 9px 11px;
+  text-align: left;
+  color: var(--text);
+  font-size: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-menu button:hover,
+.dock-menu button:focus-visible {
+  background: var(--accent-bg);
+  outline: none;
+  color: var(--accent-text);
+}
+.dock-menu button:disabled {
+  opacity: 0.45;
+}
+.dock-menu-submenu::after {
+  content: '›';
+  float: right;
+  margin-left: 22px;
+}
+.dock-menu hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 5px 0;
+}
+.docking-presets {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 18px;
+}
+.docking-presets h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+}
+.docking-presets > label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 13px 0 7px;
+}
+.docking-preset-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.docking-preset-row input,
+.docking-preset-row select {
+  flex: 1;
+  min-width: 120px;
+  width: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.docking-preset-confirmation {
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.docking-preset-confirmation p {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.docking-preset-confirmation button + button {
+  margin-left: 8px;
+}
+.docking-preset-status {
+  min-height: 20px;
+  margin-bottom: 0;
+}
+.docking-preset-status.is-error {
+  color: var(--red);
+}
+/* The same Preferences dialog becomes a non-modal region in its dock frame. */
+#dock-workspace #settings-dialog:not(:modal) {
+  position: static;
+  inset: auto;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+#dock-workspace #settings-dialog:not(:modal) > .modal-heading,
+#dock-workspace #settings-dialog:not(:modal) > .settings-actions {
+  display: none;
+}
+#dock-workspace #settings-dialog:not(:modal) .settings-layout {
+  min-width: 0;
+}
+@container dock-panel (max-width: 700px) {
+  #dock-workspace #settings-dialog:not(:modal) .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 7px;
+    gap: 3px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-nav button {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 7px 9px;
+    font-size: 11px;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-nav button svg {
+    width: 15px;
+    height: 15px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-panel {
+    padding: 20px 16px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-row > div:first-child {
+    flex: 1 1 160px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-resource-actions {
+    flex-wrap: wrap;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .settings-section-heading h3 {
+    font-size: 18px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .public-api-endpoint {
+    flex-wrap: wrap;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .public-api-token-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+  #dock-workspace #settings-dialog:not(:modal) .public-api-expiry {
+    white-space: normal;
+  }
+}
+
 @container dock-panel (max-width: 640px) {
   .dock-panel .welcome,
   .dock-panel .project-overview {
@@ -408,7 +628,8 @@
 }
 @container dock-panel (max-width: 360px) {
   .dock-panel .messages,
-  .dock-panel .inspector-content {
+  .dock-panel .inspector-content,
+  .dock-panel.inspector-content {
     padding: 14px 12px;
   }
   .dock-panel .composer-area {

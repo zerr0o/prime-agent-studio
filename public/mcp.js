@@ -581,11 +581,23 @@ export function createMcpSettings({ api, toast }) {
   dialog.onclose = () => {
     generation++;
     void cancelLogin();
-    document.getElementById('open-settings').focus({ preventScroll: true });
+    // Ordering: the settings managers return runs after this handler (it was
+    // registered later at boot), so when the parent is still open underneath
+    // it owns the final focus — ideally back inside Preferences. Only fall
+    // back to the header opener here, and only if actually visible.
+    const parent = document.getElementById('settings-dialog');
+    if (parent && parent.open) return;
+    const back = document.getElementById('open-settings');
+    try {
+      if (back?.getClientRects?.().length) back.focus({ preventScroll: true });
+    } catch {}
   };
   document.getElementById('open-mcp-settings').onclick = async () => {
-    document.getElementById('settings-dialog').close();
-    dialog.showModal();
+    // Docked: the shared settings node stays open underneath (non-modal); the
+    // MCP dialog stacks as a real modal and returns via the settings managers.
+    const parent = document.getElementById('settings-dialog');
+    if (parent?.matches?.(':modal')) parent.close();
+    if (!dialog.open) dialog.showModal();
     view('list-view');
     bindText($('mcp-list'), () => tr('ui.chargement_des_connexions'));
     try {

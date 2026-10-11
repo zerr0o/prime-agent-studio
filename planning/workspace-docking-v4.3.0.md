@@ -1,7 +1,8 @@
 # Dockable workspace — Studio 4.3.0
 
-Status: first development slice, not a release. No dependency, frontend build step,
-native installation, or engine restart is needed for these source changes.
+Status: development preview, not a release. The first-slice sections below are
+historical; the latest contract and acceptance appear at the end. No dependency,
+frontend build step, native installation, or engine restart is needed.
 
 ## First slice
 
@@ -67,3 +68,99 @@ manual tests, without closing the installed Studio. Its data and port are separa
    the current single-conversation composer/run lifecycle.
 
 A local prototype is not publication approval for 4.3.0.
+
+## Approved prototype feedback — second development slice
+
+The first slice is committed locally as `c120b6d`. This next slice is still under
+integration; its browser acceptance results must be recorded before completion.
+
+- Contiguous panels: no outer padding or pane gutters; a one-pixel divider retains
+  a wider transparent pointer target and keyboard resizing.
+- Right-click a tab or its bar for **Add Tab**. Shift+F10 and the ellipsis button
+  offer the same menu. Singleton tools move to the chosen group; they are not cloned.
+- Preferences uses the existing settings node, non-modal while docked. Child
+  managers and confirmations remain native modals. The owner handles queued close
+  events and classic/mobile restoration, not a patched browser dialog prototype.
+- Several real conversation views share the existing runs map and one SSE source
+  per run. One live editor follows explicit conversation focus. Background views
+  render their own live messages and keep their own scroll position. They cannot
+  send, answer questions or mutate a queue until focused. Shared Roadmap and
+  Inspector follow that focused conversation only.
+- Draft identity must distinguish two unsent conversations in the same project.
+  History loads, uploads, POST results and new session events belong to their
+  originating view/binding, even after focus changes. Closing a tab parks it;
+  it does not stop the run or discard the draft.
+- Geometry v2 accepts the first-slice v1 format. `conversation` is the legacy
+  primary view; `conv:<id>` identifies another view. At most eight conversation
+  panes are mounted, plus Roadmap, Inspector and Preferences. The conversation
+  registry is separate from the geometry; its persisted records must be bounded.
+- Named layouts store only panel kinds/counts, groups, active tabs and ratios.
+  They contain neither conversation content nor session/run bindings. Loading
+  reuses current views, parks any surplus, and creates empty slots if necessary;
+  it never sends a prompt. Overwrite/delete require confirmation. Storage failure
+  must be reported, not shown as a successful save.
+
+The old third following-slice item above is now explicitly in scope. The native
+floating-window and independent Inspector-view work remain separate.
+
+Regression targets: two new drafts in one project; concurrent simulated runs;
+late history/send/session events; attachments; close/reopen/reload; active-context
+Roadmap attribution; actual queued dialog-close behavior; named layouts; keyboard
+menus; read-only access; classic/mobile transitions. Fixtures must remain isolated
+from the user's open Studio Lab and installed Studio.
+
+## Revised follow-up — independent tools, composers and precise tab drops
+
+The latest user feedback supersedes the second-slice presentation with one visible
+composer and one Inspector panel:
+
+- Session, Agents and Files are independent dock tabs. Their existing live roots
+  return to the classic/mobile Inspector when docking is disabled.
+- Add Tab stays short. New conversation opens a two-step project/conversation
+  picker, including parked local drafts, instead of listing every view in a menu.
+- Every conversation pane has a real full composer with its model and other
+  controls. Clicking inside a pane focuses it before the original control action.
+  Only the focused conversation tab carries the focus marker. Shared tools still
+  follow a single focused context; background streams cannot steal it.
+- A sidebar conversation can be dragged into the workspace without creating a run.
+  Existing views are reused. Sidebar reordering keeps its existing pointer gesture.
+- Tabs can be inserted directly between adjacent tabs, including empty trailing
+  tab-bar space, with an insertion marker. Escape cancels the gesture.
+- The main Preferences button always opens a modal popup. **Add Tab → Preferences**
+  is the explicit dock-tab option. Both use the same live form; closing the popup
+  restores an existing dock tab without discarding form state.
+- **Close others** keeps the right-clicked tab, or the active tab when opened from
+  the bar, and parks only its siblings in that group. Other groups, drafts,
+  attachments and runs remain intact. The action is disabled for a one-tab group.
+- Main **New conversation** and **Ctrl+N** rebind the focused conversation view,
+  then reveal and focus its editor. They do not create another view. **Add Tab**
+  remains the explicit route to another conversation slot.
+
+Geometry is now canonical V3. V1/V2 `inspector` slots expand in place to
+`session`, `agents`, `files`, with the former active Inspector becoming Session.
+Named preset envelopes remain V1 and contain geometry only.
+
+## Follow-up acceptance — 2026-10-11
+
+The focused composer check and the complete workspace browser run pass on stable
+production sources. The complete run records 102 checks, no deferred scenario,
+10 simulated runs, no cancellation and no page error. It covers independent
+composers/settings/drafts/attachments, concurrent and delayed events, tab gestures,
+Close others, named layouts, both Preferences entrypoints and child dialogs,
+Updates bootstrap, read-only access, viewport changes and classic/mobile restore.
+Remote dialog coverage uses a real configured-but-disabled fixture; it opens no
+network listener. An additional real-app check confirms that a Preferences popup
+keeps its node and layout across desktop/narrow/desktop viewport changes.
+
+- `npm test`: 1,242 passed, one skipped, no failure.
+- `npm run check`: 2,206 translations, 17 documentation pairs and 286 links checked.
+- Task-file Prettier checks and `git diff --check` pass.
+- `npm run test:docking:workspace` enforces the full current contract by default.
+- Five Close others handler checks and 15 isolated browser gesture/menu checks
+  provide additional focused evidence.
+
+Proofs and genuine screenshots are under `.local/docking-4.3/round2/`; final
+command logs are under `round8/`. This validates the follow-up scope, not a release
+or the separate native floating-window work. No new commit, push, publication,
+installation, restart, real model call, or interaction with the user's open Lab
+has been performed.
