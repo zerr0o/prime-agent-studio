@@ -41,6 +41,12 @@ import { expandInlineSkillMessage, expandMultiSkillMessage } from './lib/skill-e
 import { createLiveMessages, routeLiveMessages } from './lib/live-messages.mjs';
 import { createLiveSessionClient } from './lib/live-session-client.mjs';
 import { createConversationSettings } from './lib/conversation-settings.mjs';
+import { createSessionGoals, validateGoalControl, validateGoalResume } from './lib/session-goals.mjs';
+import {
+  savedGoalCapabilities,
+  editSavedGoal as editInactiveGoal,
+  controlSavedGoal as controlInactiveGoal,
+} from './lib/saved-goal-client.mjs';
 import { createDesktopNotifications } from './lib/desktop-notifications.mjs';
 import { createPushService } from './lib/push.mjs';
 import { validateImages, imageBodyLimit } from './lib/images.mjs';
@@ -559,6 +565,28 @@ export function createApp(options = {}) {
       return liveClient(endpoint);
     },
   });
+  const savedGoalOptions = () => {
+    const endpoint = runtime.getLiveEndpoint?.();
+    return endpoint ? { ...endpoint, agentDir: agentHome, sessionDir } : null;
+  };
+  const getSavedGoalCapabilities = options.savedGoalCapabilities || savedGoalCapabilities;
+  const requireSavedGoalOptions = () => {
+    const endpoint = savedGoalOptions();
+    if (!endpoint) throw new HttpError(503, 'Goal controls are unavailable in this engine.');
+    return endpoint;
+  };
+  const sessionGoals =
+    options.goalService ||
+    createSessionGoals({
+      store,
+      getRuns: () => [...runs.values()],
+      getClient: () => options.liveClient || liveClient(runtime.getLiveEndpoint?.()),
+      getSavedCapabilities: () => getSavedGoalCapabilities(savedGoalOptions()),
+      editSavedGoal: (input) => editInactiveGoal(requireSavedGoalOptions(), input),
+      controlSavedGoal: (input) => controlInactiveGoal(requireSavedGoalOptions(), input),
+      stopRun,
+      isAdmitting: (id) => sessionLocks.has(id) && !activeRuns().some((run) => run.sessionId === id),
+    });
   const liveMessages = createLiveMessages({
     fileStore,
     getCatalog: (context) => commands.list(context),
@@ -1007,7 +1035,7 @@ export function createApp(options = {}) {
     );
   }
 
-  async function startRun(body, { authorize, apiRequestId } = {}) {
+  async function startRun(body, { authorize, apiRequestId, resumeGoal } = {}) {
     await authorize?.();
     // Admission revision for the Computer Use opt-in: slow validation
     // follows, and a stop landing meanwhile must win. A stale grant is
@@ -1087,7 +1115,7 @@ export function createApp(options = {}) {
       body.message = (await expandInlineSkillMessage(body.message, catalog)) || body.message;
       if (body.message.length > 200000)
         throw new HttpError(400, tr('server.le_message_depasse_200_000_caracteres'));
-    } else if (parseCommand(body.message))
+    } else if (!resumeGoal && parseCommand(body.message))
       validateCommand(body.message, await commands.list({ cwd }), {
         attachments: images.length + files.length > 0,
       });
@@ -1122,6 +1150,8 @@ export function createApp(options = {}) {
       if (!existing.cwd || cwdKey(cwd) !== cwdKey(existing.cwd))
         throw new HttpError(409, tr('server.cette_session_appartient_a_un_autre_dossier'));
     }
+    if (resumeGoal && (!existing || body.message !== '/goal resume' || images.length || files.length))
+      throw new HttpError(400, 'Goal retry requires the exact saved session and command.');
     if (worktreeAuth && existing?.id) {
       await store.bindSessionWorktree({
         id: existing.id,
@@ -1213,10 +1243,20 @@ export function createApp(options = {}) {
       body.allowQuestions ?? settings?.allowQuestions ?? (await studioPreferences()).allowQuestionsByDefault;
     if (catalog.models?.find((model) => model.id === selectedModel)?.availability === 'unavailable')
       throw new HttpError(409, tr('model.unavailableSelection'));
+    if (resumeGoal) {
+      validateGoalResume(await store.history(existing.id), resumeGoal);
+      if (!(await getSavedGoalCapabilities(savedGoalOptions())).resumable)
+        throw new HttpError(503, 'Goal retry requires a compatible Prime Agent.');
+    }
     // Check after awaited validation so simultaneous HTTP requests cannot race the lock.
     if (activeRuns().length >= 8)
       throw new HttpError(429, tr('server.huit_sessions_tournent_deja_arretez_en_une_avant_de_continuer'));
-    if (existing && (sessionLocks.has(existing.id) || conversationSettings.busy(existing.id)))
+    if (
+      existing &&
+      (sessionLocks.has(existing.id) ||
+        conversationSettings.busy(existing.id) ||
+        sessionGoals.busy(existing.id))
+    )
       throw new HttpError(409, tr('server.cette_session_travaille_deja'));
     if (existing) sessionLocks.add(existing.id);
     const run = {
@@ -1277,6 +1317,8 @@ export function createApp(options = {}) {
       if (pastudioGated && existing?.id && typeof body.model === 'string' && body.model)
         await store.setConversationSettings(existing.id, { model: body.model });
       await authorize?.();
+      // A slow run preflight must not resume a goal changed on another device.
+      if (resumeGoal) validateGoalResume(await store.history(existing.id), resumeGoal);
       run.handle = await runtime.start({
         cwd,
         message: run.prompt,
@@ -1328,7 +1370,7 @@ export function createApp(options = {}) {
       worktrees,
       dataDir,
       activeRuns,
-      sessionBusy: (id) => sessionLocks.has(id) || conversationSettings.busy(id),
+      sessionBusy: (id) => sessionLocks.has(id) || conversationSettings.busy(id) || sessionGoals.busy(id),
       startRun,
     });
   worktreeRoutesPlaceholder.current = worktreeRoutes;
@@ -1887,6 +1929,29 @@ export function createApp(options = {}) {
         const { messages, historyPage } = pageHistoryMessages(history, { limit, before: beforeRaw });
         return await historyJson(req, res, 200, { ...history, messages, historyPage });
       }
+      const goalRoute = path.match(/^\/api\/sessions\/([A-Za-z0-9_-]+)\/goal$/);
+      if (goalRoute && method === 'GET') return json(res, 200, await sessionGoals.get(goalRoute[1]));
+      if (goalRoute && method === 'PATCH')
+        return json(res, 200, await sessionGoals.update(goalRoute[1], await readBody(req)));
+      const goalResumeRoute = path.match(/^\/api\/sessions\/([A-Za-z0-9_-]+)\/goal\/resume$/);
+      if (goalResumeRoute && method === 'POST') {
+        const input = validateGoalControl(await readBody(req));
+        // Read the response before admission. A post-start read failure must not
+        // make an accepted run look like a failed request to the button caller.
+        const snapshot = await sessionGoals.get(goalResumeRoute[1]);
+        const run = await startRun(
+          { cwd: input.cwd, sessionId: goalResumeRoute[1], message: '/goal resume' },
+          { resumeGoal: input },
+        );
+        return json(res, 200, { ...snapshot, editable: false, resumable: false, run });
+      }
+      const goalControlRoute = path.match(/^\/api\/sessions\/([A-Za-z0-9_-]+)\/goal\/(stop|clear)$/);
+      if (goalControlRoute && method === 'POST')
+        return json(
+          res,
+          200,
+          await sessionGoals.control(goalControlRoute[1], goalControlRoute[2], await readBody(req)),
+        );
       if (method === 'POST' && (path === '/api/sessions/read' || path === '/api/sessions/unread')) {
         const body = await readBody(req);
         const result = await (path === '/api/sessions/read' ? store.markRead(body) : store.markUnread(body));

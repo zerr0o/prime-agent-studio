@@ -4508,6 +4508,107 @@ a.sidebar-settings {
     display: none;
   }
 }
+.session-goal-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 120px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.session-goal-button-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 10px;
+}
+.session-goal-button-status::before {
+  content: '· ';
+}
+.session-goal-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(720px, calc(100dvh - 24px));
+  overflow: auto;
+}
+.session-goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.session-goal-meta > :first-child {
+  color: var(--accent);
+  text-transform: capitalize;
+}
+.modal .session-goal-objective {
+  max-height: 28dvh;
+  margin: 0 0 16px;
+  overflow: auto;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.session-goal-dialog textarea {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  max-height: 28dvh;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.session-goal-limit {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.session-goal-dialog .modal-actions {
+  flex-wrap: wrap;
+}
+.session-goal-dialog .modal-actions button {
+  min-height: 44px;
+}
+@media (max-width: 600px) {
+  .has-session-goal .breadcrumb #header-project,
+  .has-session-goal .breadcrumb-separator {
+    display: none;
+  }
+  .has-session-goal .roadmap-button {
+    min-width: 32px;
+    padding: 6px;
+  }
+  .has-session-goal .roadmap-button > :not([data-icon]) {
+    display: none;
+  }
+  .session-goal-button {
+    max-width: 52px;
+    min-height: 44px;
+    padding: 4px 7px;
+  }
+  .session-goal-button-status {
+    display: none;
+  }
+  .session-goal-dialog {
+    padding: 18px;
+  }
+}
 .roadmap-button {
   display: inline-flex;
   align-items: center;
