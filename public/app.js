@@ -4743,7 +4743,7 @@ function closeSessionMenu() {
   $('session-menu-button').setAttribute('aria-expanded', 'false');
 }
 function openSessionMenu(id, anchor) {
-  if (state.readOnly) return;
+  if (state.readOnly || !id) return;
   closeProjectMenu();
   sessionMenuAnchor = anchor;
   state.menuSessionId = id;
@@ -4802,7 +4802,8 @@ async function menuAction(action) {
     } else if (action === 'unread') {
       if (id === state.sessionId && state.projectCwd) selectProject(state.projectCwd);
       await sessionActivity.markUnread(id);
-    } else if (action === 'export') await exportSession(id);
+    } else if (action === 'copy-id') await copyText(id);
+    else if (action === 'export') await exportSession(id);
   } catch (e) {
     toast(translateKnown(e.message), true);
   }

@@ -15,6 +15,7 @@ import { createWorktreeRoutes } from './lib/worktree-routes.mjs';
 import { createAgentRuntime } from './lib/agent.mjs';
 import { createRemoteNetwork } from './lib/remote-network.mjs';
 import { createRemoteAccess } from './lib/remote-access.mjs';
+import { createConversationTools } from './lib/conversation-tools.mjs';
 import { createPublicApiAccess } from './lib/public-api-access.mjs';
 import { generateOpenApi } from './lib/public-api-contract.mjs';
 import { createPublicApi, isPublicApiPath, isPublicApiAdminPath, publicApiError } from './lib/public-api.mjs';
@@ -269,6 +270,7 @@ export function createApp(options = {}) {
     options.roadmapBridge ||
     createRoadmapBridge({
       service: roadmap,
+      conversations: (action, params, admission) => conversationTools(action, params, admission),
       resolveCaller: createRoadmapCallerResolver({
         getRuns: () => [...runs.values()],
         store,
@@ -1118,6 +1120,7 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.identifiant_de_session_invalide'));
     let existing;
     if (body.sessionId) {
+      await authorize?.();
       existing = await store.history(body.sessionId);
       if (!existing.cwd || cwdKey(cwd) !== cwdKey(existing.cwd))
         throw new HttpError(409, tr('server.cette_session_appartient_a_un_autre_dossier'));
@@ -1414,6 +1417,7 @@ export function createApp(options = {}) {
       ];
     },
   });
+  const conversationTools = createConversationTools({ api: publicApi, store, runs });
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');

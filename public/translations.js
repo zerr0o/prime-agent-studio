@@ -5,6 +5,7 @@ export const languages = [
   { id: 'en', label: 'English' },
 ];
 export const messages = {
+  'sessions.copy_id': { en: 'Copy conversation ID', fr: 'Copier l’identifiant de la conversation' },
   'voice.transcribe': { en: 'Transcribe', fr: 'Transcrire' },
   'voice.limitDurationInsert': {
     en: 'Five-minute limit reached. Press Transcribe to add the text to your draft.',
