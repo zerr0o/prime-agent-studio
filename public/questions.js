@@ -1,5 +1,27 @@
 import { t as tr, bindText, bindAttribute } from './i18n.js';
 
+// Bridge questions have no native tool id. Keep their resolved form beside
+// the assistant message that was current when the question was asked.
+export function questionAnchorMessageId(run, request) {
+  const messages = run?.messages;
+  if (!Array.isArray(messages) || !request) return null;
+  if (request.toolId) {
+    const owner = messages.findLast((message) => message.tools?.some((tool) => tool.id === request.toolId));
+    return owner?.id || null;
+  }
+  if (request.status === 'pending') return null;
+  const askedAt = typeof request.createdAt === 'number' ? request.createdAt : Date.parse(request.createdAt);
+  if (!Number.isFinite(askedAt)) return null;
+  let anchor = null;
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !message.id) continue;
+    const messageAt =
+      typeof message.timestamp === 'number' ? message.timestamp : Date.parse(message.timestamp);
+    if (Number.isFinite(messageAt) && messageAt <= askedAt) anchor = message.id;
+  }
+  return anchor;
+}
+
 export function createQuestions({ root, api, getContext, icon }) {
   const nodes = new Map();
   const prefix = `question-${Math.random().toString(36).slice(2)}`;
@@ -244,6 +266,7 @@ export function createQuestions({ root, api, getContext, icon }) {
         nodes.set(request.id, entry);
       }
       const pending = request.status === 'pending' && run.status === 'running';
+      entry.anchorMessageId = questionAnchorMessageId(run, request);
       entry.form.hidden = !!hidden;
       entry.statusKey = pending ? 'pending' : request.status;
       entry.form.classList.toggle('question-resolved', !pending);
@@ -269,12 +292,21 @@ export function createQuestions({ root, api, getContext, icon }) {
               ? `${tr('questions.answered')} ${typeof request.answer === 'boolean' ? tr(request.answer ? 'questions.yes' : 'questions.no') : request.answer || ''}`
               : tr('questions.closed'),
         );
+      // The transcript may be windowed, with this message offscreen.
+      // Remove a resolved question from the live bottom until it mounts there.
+      if (!pending && entry.form.parentNode === root && entry.anchorMessageId) entry.form.remove();
     }
   }
   function partsFor(message) {
+    const run = getContext().run;
     const toolIds = new Set((message.tools || []).map((tool) => tool.id));
-    return (getContext().run?.interactions || [])
-      .filter((request) => request.toolId && toolIds.has(request.toolId) && nodes.has(request.id))
+    return (run?.interactions || [])
+      .filter(
+        (request) =>
+          nodes.has(request.id) &&
+          ((request.toolId && toolIds.has(request.toolId)) ||
+            (request.status !== 'pending' && nodes.get(request.id).anchorMessageId === message.id)),
+      )
       .map((request) => ({ key: `question:${request.id}`, node: nodes.get(request.id).form }));
   }
   return { update, partsFor };
