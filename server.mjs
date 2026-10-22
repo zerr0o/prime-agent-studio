@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { isDirectInvocation } from './scripts/launcher-common.mjs';
 import { randomUUID } from 'node:crypto';
+import { createGoalRecovery, validateRecoveryHistory } from './lib/goal-recovery.mjs';
 import { createStore, HttpError, validateDirectory, cwdKey, validId } from './lib/store.mjs';
 import { parseHistoryLimit, pageHistoryMessages } from './lib/history-page.mjs';
 import { createWorktrees } from './lib/worktrees.mjs';
@@ -403,6 +404,8 @@ export function createApp(options = {}) {
     if (!length) throw new HttpError(400, tr('server.la_demande_json_est_invalide'));
     return Buffer.concat(chunks);
   }
+  const rustOptIn =
+    options.runtime?.engine === 'rust' || (!options.runtime && Boolean(process.env.PRIME_STUDIO_RUST_CLI));
   const runtime =
     options.runtime ||
     createAgentRuntime({
@@ -410,7 +413,7 @@ export function createApp(options = {}) {
       sessionDir,
       cliPath: process.env.PRIME_AGENT_CLI,
       kernelRoot: process.env.PRIME_AGENT_GUI_KERNEL_ROOT,
-      subagentPolicyFile: subagentDefaults.file,
+      ...(rustOptIn ? {} : { subagentPolicyFile: subagentDefaults.file }),
       quotaFallback,
       metricsDir: metrics.rawDir,
       knowledge: { dataDir },
@@ -582,6 +585,19 @@ export function createApp(options = {}) {
       return liveClient(endpoint);
     },
   });
+  const goalRecovery = runtime.canRecoverGoals
+    ? createGoalRecovery({
+        dataDir,
+        store,
+        isBusy: (id) => closing || sessionLocks.has(id) || conversationSettings.busy(id),
+        startRun: (input, goal, recoveryContext) =>
+          startRun(
+            { ...input, message: 'Continuing interrupted work after Studio restarted.' },
+            { recoveryGoal: goal, recoveryContext },
+          ),
+        onError: (error) => console.error('Goal recovery:', error.message),
+      })
+    : null;
   const liveMessages = createLiveMessages({
     fileStore,
     getCatalog: (context) => commands.list(context),
@@ -608,6 +624,14 @@ export function createApp(options = {}) {
     getRuns: () => [...runs.values()],
   });
   let closing = false;
+  const pendingMetadata = new Set();
+  const sessionSyncTimers = new Set();
+  function persistMetadata(operation) {
+    const pending = Promise.resolve(operation).catch(console.error);
+    pendingMetadata.add(pending);
+    void pending.finally(() => pendingMetadata.delete(pending));
+    return pending;
+  }
   let statusCache,
     modelCache,
     modelRefreshing = false,
@@ -848,6 +872,10 @@ export function createApp(options = {}) {
     pushEvent(run, event);
   }
   function pushEvent(run, event) {
+    if (event.kind === 'goal' && event.goal?.goalId && run.sessionId && goalRecovery)
+      persistMetadata(
+        goalRecovery.updateGoal({ sessionId: run.sessionId, runId: run.id, goalId: event.goal.goalId }),
+      );
     if (event.budget) run.budget = event.budget;
     if (event.quota) run.quota = event.quota;
     if (event.kind === 'done' && run.quotaFinalizing) return;
@@ -879,22 +907,28 @@ export function createApp(options = {}) {
       if (run._pendingWorktree?.worktreeId) {
         const pending = run._pendingWorktree;
         delete run._pendingWorktree;
-        void store
-          .bindSessionWorktree({
+        persistMetadata(
+          store.bindSessionWorktree({
             id: event.sessionId,
             worktreeId: pending.worktreeId,
             projectCwd: pending.projectCwd,
-          })
-          .catch(() => {});
+          }),
+        );
       }
       if (run.allowQuestions !== undefined)
-        void store
-          .setConversationSettings(event.sessionId, { allowQuestions: run.allowQuestions })
-          .catch(console.error);
+        persistMetadata(
+          store.setConversationSettings(event.sessionId, {
+            allowQuestions: run.allowQuestions,
+            ...(goalRecovery && run.model ? { model: run.model } : {}),
+            ...(goalRecovery && run.thinking ? { thinking: run.thinking } : {}),
+          }),
+        );
     }
     if (event.kind === 'done') {
       if (run.finished) return;
       run.finished = true;
+      if (run.sessionId && !closing && goalRecovery)
+        persistMetadata(goalRecovery.retire(run.sessionId, run.id));
       roadmapBridge.revokeOwner(run.id);
       void computerBridge.revokeOwner(run.id);
       run.status = event.status || ((event.code ?? 0) === 0 ? 'completed' : 'failed');
@@ -910,8 +944,14 @@ export function createApp(options = {}) {
           other.sessionId === run.sessionId && !other.finished && ['running', 'stopping'].includes(other.status)))
         sessionLocks.delete(run.sessionId);
       // Send the finished turn right away instead of waiting for the next cycle.
-      if (run.sessionId && !closing)
-        setTimeout(() => void conversationSync.checkSession(run.sessionId).catch(() => {}), 1500).unref();
+      if (run.sessionId && !closing) {
+        const timer = setTimeout(() => {
+          sessionSyncTimers.delete(timer);
+          if (!closing) void conversationSync.checkSession(run.sessionId).catch(() => {});
+        }, 1500);
+        sessionSyncTimers.add(timer);
+        timer.unref();
+      }
     }
     if (
       (event.kind === 'message' && (event.message?.role === 'assistant' || event.message?.customType === 'compaction')) ||
@@ -944,6 +984,11 @@ export function createApp(options = {}) {
     body,
     { authorize, expectedRevision, allowTakeover = true, admission = computer.status().controlRevision } = {},
   ) {
+    if (rustOptIn && body.enabled)
+      throw Object.assign(
+        new HttpError(409, 'Studio Computer Use is unavailable with the official Rust daemon.'),
+        { code: 'rust_computer_use_unsupported' },
+      );
     let resolvedRun = null;
     let resolvedModel = null;
     const rejectStaleGrant = () => {
@@ -1105,7 +1150,7 @@ export function createApp(options = {}) {
     );
   }
 
-  async function startRun(body, { authorize, apiRequestId, quotaChain = [], quotaAuthorization, requiredModel } = {}) {
+  async function startRun(body, { authorize, apiRequestId, quotaChain = [], quotaAuthorization, requiredModel, recoveryGoal, recoveryContext } = {}) {
     await authorize?.();
     // Admission revision for the Computer Use opt-in: slow validation
     // follows, and a stop landing meanwhile must win. A stale grant is
@@ -1163,6 +1208,14 @@ export function createApp(options = {}) {
     }
     const images = validateImages(body.images);
     const files = validateFiles(body.files);
+    if (rustOptIn) {
+      const policy = (await subagentDefaults.get(cwd)).effective;
+      if (policy.model || policy.thinking)
+        throw Object.assign(
+          new HttpError(409, 'Studio subagent defaults are unavailable with the official Rust daemon.'),
+          { code: 'rust_subagent_policy_unsupported' },
+        );
+    }
     if (images.length + files.length > 8)
       throw new HttpError(400, tr('server.ajoutez_au_maximum_8_pieces_jointes'));
     if (typeof body.message !== 'string' || (!body.message.trim() && !images.length && !files.length))
@@ -1189,7 +1242,7 @@ export function createApp(options = {}) {
       validateCommand(body.message, await commands.list({ cwd }), {
         attachments: images.length + files.length > 0,
       });
-    if (images.length) {
+    if (images.length && !rustOptIn) {
       const catalog = await models();
       const selected = catalog.models?.find((model) => model.id === (body.model || catalog.default?.model));
       // A usable native imageModel routes the image turn on the engine side;
@@ -1275,8 +1328,22 @@ export function createApp(options = {}) {
       typeof globals?.computerModel === 'string' ? globals.computerModel.trim() : '';
     let selectedModel =
       (pastudioResolved ?? body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
+    if (rustOptIn && images.length) {
+      const selected = catalog.models?.find((model) => model.id === selectedModel);
+      if (
+        !selected ||
+        selected.availability === 'unavailable' ||
+        (!selected.input?.includes('image') && !(await imageRouteModel(catalog).catch(() => null)))
+      )
+        throw new HttpError(400, tr('ui.ce_modele_ne_prend_pas_en_charge_les_images_choisissez_un_modele'));
+    }
     const computerAuthorizedForModel =
       body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled);
+    if (rustOptIn && computerAuthorizedForModel)
+      throw Object.assign(
+        new HttpError(409, 'Studio Computer Use is unavailable with the official Rust daemon.'),
+        { code: 'rust_computer_use_unsupported' },
+      );
     if (computerAuthorizedForModel && globalComputerModel) {
       const override = catalog.models?.find((model) => model?.id === globalComputerModel);
       if (!override) throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
@@ -1384,6 +1451,7 @@ export function createApp(options = {}) {
       if (pastudioGated && existing?.id && typeof body.model === 'string' && body.model)
         await store.setConversationSettings(existing.id, { model: body.model });
       await authorize?.();
+      if (recoveryContext) validateRecoveryHistory(await store.history(existing.id), recoveryContext);
       const codeContext = await context.runtimeConfig(worktreeAuth?.projectCwd || cwd, existing?.id);
       // V1 indexes the registered root only; never expose wrong-root tools in a task worktree.
       if (worktreeAuth) codeContext.enabled = false;
@@ -1397,6 +1465,32 @@ export function createApp(options = {}) {
         model: selectedModel || undefined,
         thinking: selectedThinking || undefined,
         allowQuestions,
+        computerUse: computerAuthorizedForModel,
+        ...(recoveryGoal !== undefined
+          ? { goalRecovery: { goalId: recoveryGoal?.goalId ?? null, recoveryId: run.id } }
+          : {}),
+        onReady: async (identity) => {
+          if (closing || run.status !== 'running') throw new HttpError(409, 'Run admission was cancelled.');
+          if (recoveryContext) validateRecoveryHistory(await store.history(existing.id), recoveryContext);
+          run.sessionId = identity.sessionId;
+          sessionLocks.add(identity.sessionId);
+          await goalRecovery?.recordRun({
+            runId: run.id,
+            goalId: recoveryGoal?.goalId ?? existing?.goal?.goalId,
+            previousUserId: existing?.messages?.findLast((message) => message.role === 'user')?.id ?? null,
+            acceptedUserId: recoveryContext?.userId ?? null,
+            sessionId: identity.sessionId,
+            cwd,
+            model: selectedModel,
+            thinking: selectedThinking,
+            allowQuestions,
+          });
+          if (run.status !== 'running') {
+            await goalRecovery?.suppress(identity.sessionId);
+            throw new HttpError(409, 'Run admission was cancelled.');
+          }
+          if (closing) throw new HttpError(503, 'Studio is shutting down.');
+        },
         quotaAuthorization,
         budget,
         onEvent: (event) => pushEvent(run, event),
@@ -1431,7 +1525,9 @@ export function createApp(options = {}) {
       roadmapBridge.revokeOwner(run.id);
       void computerBridge.revokeOwner(run.id);
       runs.delete(run.id);
-      if (existing) sessionLocks.delete(existing.id);
+      if (run.sessionId) sessionLocks.delete(run.sessionId);
+      if (!closing && run.sessionId && goalRecovery && recoveryGoal === undefined)
+        await goalRecovery.retire(run.sessionId, run.id).catch(console.error);
       const failure = new HttpError(error.status || 503, error.message);
       if (typeof error.code === 'string') failure.code = error.code;
       throw failure;
@@ -1451,6 +1547,7 @@ export function createApp(options = {}) {
   worktreeRoutesPlaceholder.current = worktreeRoutes;
   async function stopRun(run) {
     if (!run.finished) {
+      if (run.sessionId) await goalRecovery?.suppress(run.sessionId);
       run.status = 'stopping';
       roadmapBridge.revokeOwner(run.id);
       await computerBridge.revokeOwner(run.id);
@@ -1823,7 +1920,18 @@ export function createApp(options = {}) {
         if (path === '/api/project-subagent-defaults' && !cwd)
           throw new HttpError(400, tr('server.choisissez_un_projet_pour_modifier_ses_sous_agents'));
         if (cwd) await store.findProject(cwd);
-        if (method === 'GET') return json(res, 200, await subagentDefaults.get(cwd));
+        if (method === 'GET') {
+          const settings = await subagentDefaults.get(cwd);
+          return json(res, 200, rustOptIn ? { ...settings, supported: false } : settings);
+        }
+        if (rustOptIn && (body.policy?.model || body.policy?.thinking))
+          throw Object.assign(
+            new HttpError(
+              409,
+              'Studio subagent defaults are unavailable with the official Rust daemon. Clear the policy to inherit native defaults.',
+            ),
+            { code: 'rust_subagent_policy_unsupported' },
+          );
         if (body.policy !== null) {
           if (!validPolicy(body.policy))
             throw new HttpError(400, tr('server.reglages_des_sous_agents_invalides'));
@@ -2233,14 +2341,18 @@ export function createApp(options = {}) {
         // off forever. Pure file check only, TTL-gated, never a worker
         // spawn; failures keep the last cached verdict.
         if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
-        return json(
-          res,
-          200,
-          computer.status({
+        return json(res, 200, {
+          ...computer.status({
             ...(url.searchParams.get('sessionId') ? { sessionId: url.searchParams.get('sessionId') } : {}),
             ...(url.searchParams.get('runId') ? { runId: url.searchParams.get('runId') } : {}),
           }),
-        );
+          ...(rustOptIn
+            ? {
+                supported: false,
+                unsupportedReason: 'Computer Use is unavailable with the official Rust daemon.',
+              }
+            : {}),
+        });
       }
       if (method === 'POST' && path === '/api/computer-use') {
         const admission = computer.status().controlRevision;
@@ -2381,24 +2493,32 @@ export function createApp(options = {}) {
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 15000;
+  server.once('listening', () => {
+    void goalRecovery?.recover().catch((error) => console.error('Goal recovery:', error.message));
+  });
   async function close() {
+    closing = true;
     remoteNetwork.close();
     await publicApi.close();
     directoryPicker.close?.();
     mcp.close?.();
     providers.close?.();
     commands.close?.();
-    closing = true;
     clearTimeout(contextStartup);
     await context.close();
     clearInterval(cleanup);
     clearTimeout(syncStartup);
     clearTimeout(syncSoonTimer);
     clearInterval(syncTimer);
+    for (const timer of sessionSyncTimers) clearTimeout(timer);
+    sessionSyncTimers.clear();
+    await goalRecovery?.close();
     await roadmapBridge.close();
     await computerBridge.close();
     await computer.close();
     await runtime.close();
+    while (pendingMetadata.size) await Promise.all([...pendingMetadata]);
+    await store.flush?.();
     await metrics.close();
     await roadmapRoutes.close();
     await roadmap.close();
@@ -2412,6 +2532,7 @@ export function createApp(options = {}) {
     worktrees,
     worktreeRoutes,
     runtime,
+    goalRecovery,
     context,
     metrics,
     modelConfig,

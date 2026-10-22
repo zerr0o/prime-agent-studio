@@ -115,7 +115,7 @@ Pour une installation par archive, remplacez les fichiers de Studio en conservan
 | **Travailler** | [Projets et conversations](docs/navigation.md) · [Messages vocaux](docs/voice.md) · [Roadmap](docs/roadmap.md) · [Connaissances du projet](docs/knowledge.md) |
 | **Utiliser les outils** | [Agents et fichiers](docs/inspector.md) · [Commandes et skills](docs/commands.md) · [MCP](docs/mcp.md) · [Computer Use](docs/computer-use.md) |
 | **Connecter** | [Accès mobile](docs/lan.md) · [PWA](docs/pwa.md) · [API publique](docs/api.md) |
-| **Contribuer** | [Développement](docs/development.md) · [Traductions](docs/translations.md) · [Changelog](docs/changelog.md) · [Discussions](https://github.com/zerr0o/prime-agent-studio/discussions) |
+| **Contribuer** · [Discussions](https://github.com/zerr0o/prime-agent-studio/discussions) | [Développement](docs/development.md) · [Moteur Rust expérimental](docs/rust-runtime.md) · [Traductions](docs/translations.md) · [Changelog](docs/changelog.md) · [Discussions](https://github.com/zerr0o/prime-agent-studio/discussions) |
 
 ## Licence et attribution
 
