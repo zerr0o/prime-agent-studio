@@ -5,6 +5,55 @@ export const languages = [
   { id: 'en', label: 'English' },
 ];
 export const messages = {
+  'goal.title': { en: 'Goal', fr: 'Objectif' },
+  'goal.objective': { en: 'Objective', fr: 'Objectif' },
+  'goal.edit': { en: 'Edit objective', fr: 'Modifier l’objectif' },
+  'goal.stop': { en: 'Stop goal', fr: 'Arrêter l’objectif' },
+  'goal.clear': { en: 'Clear goal', fr: 'Effacer l’objectif' },
+  'goal.retry': { en: 'Retry goal', fr: 'Réessayer l’objectif' },
+  'goal.resume': { en: 'Resume goal', fr: 'Reprendre l’objectif' },
+  'goal.retryHint': {
+    en: 'Retry continues this goal without resetting its usage.',
+    fr: 'La reprise continue cet objectif sans remettre son utilisation à zéro.',
+  },
+  'goal.resumeHint': {
+    en: 'Resume continues this goal without resetting its usage.',
+    fr: 'La reprise continue cet objectif sans remettre son utilisation à zéro.',
+  },
+  'goal.resumeBlockedRunning': {
+    en: 'The current run is still active. Wait for it to finish before resuming this goal.',
+    fr: 'L’exécution en cours est toujours active. Attendez sa fin avant de reprendre cet objectif.',
+  },
+  'goal.resumeBlockedStopping': {
+    en: 'Waiting for the current run to finish…',
+    fr: 'En attente de la fin de l’exécution en cours…',
+  },
+  'goal.resumeBlockedBusy': {
+    en: 'The session is changing. Please wait.',
+    fr: 'La session est en cours de modification. Veuillez patienter.',
+  },
+  'goal.tokens': { en: 'Tokens', fr: 'Jetons' },
+  'goal.time': { en: 'Time', fr: 'Temps' },
+  'goal.continuations': { en: 'Continuations', fr: 'Reprises' },
+  'goal.limit': { en: 'Maximum 4,000 characters', fr: '4 000 caractères maximum' },
+  'goal.length': {
+    en: 'Enter an objective of 1 to 4,000 characters.',
+    fr: 'Saisissez un objectif de 1 à 4 000 caractères.',
+  },
+  'goal.conflict': {
+    en: 'This goal changed elsewhere. Your draft is preserved. Reload the latest goal, review it, then save again.',
+    fr: 'Cet objectif a changé ailleurs. Votre brouillon est conservé. Rechargez la dernière version avant d’enregistrer.',
+  },
+  'goal.controlConflict': {
+    en: 'This goal changed elsewhere. Reload the latest goal before trying again.',
+    fr: 'Cet objectif a changé ailleurs. Rechargez la dernière version avant de réessayer.',
+  },
+  'goal.reload': { en: 'Reload latest', fr: 'Recharger' },
+  'goal.status.active': { en: 'active', fr: 'actif' },
+  'goal.status.paused': { en: 'paused', fr: 'en pause' },
+  'goal.status.budget_limited': { en: 'budget limited', fr: 'budget atteint' },
+  'goal.status.complete': { en: 'complete', fr: 'terminé' },
+  'goal.status.error': { en: 'error', fr: 'erreur' },
   "routing.billingTitle": {"en": "Confirm account and billing change", "fr": "Confirmer le changement de compte et de facturation"},
   "routing.billingModels": {"en": "From {source} to {target}", "fr": "De {source} vers {target}"},
   "routing.currentModel": {"en": "current model", "fr": "modèle courant"},

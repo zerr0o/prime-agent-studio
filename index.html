@@ -184,6 +184,17 @@
             <span id="sync-header-state" class="sync-header-state" role="status" hidden></span>
             <span id="sync-origin-state" class="sync-origin-state" role="img" hidden></span>
             <span id="session-state" class="session-state" hidden></span>
+            <button
+              id="session-goal-button"
+              class="session-goal-button"
+              type="button"
+              aria-haspopup="dialog"
+              aria-controls="session-goal-dialog"
+              hidden
+            >
+              <span data-i18n="goal.title">Goal</span
+              ><span id="session-goal-button-status" class="session-goal-button-status"></span>
+            </button>
             <div id="computer-use" class="computer-use" hidden>
               <button id="computer-use-toggle" class="computer-use-toggle" type="button" aria-pressed="false">
                 <span id="computer-use-dot" class="computer-use-dot" aria-hidden="true"></span
@@ -2707,6 +2718,75 @@
           </div>
         </form>
       </div>
+    </dialog>
+    <dialog id="session-goal-dialog" class="modal session-goal-dialog" aria-labelledby="session-goal-title">
+      <div class="modal-heading">
+        <h2 id="session-goal-title" data-i18n="goal.title">Goal</h2>
+        <button
+          class="icon-button"
+          type="button"
+          data-close-dialog
+          aria-label="Fermer"
+          data-i18n-aria-label="ui.fermer"
+          data-icon="x"
+        ></button>
+      </div>
+      <div class="session-goal-meta">
+        <span id="session-goal-status"></span><span id="session-goal-usage"></span>
+      </div>
+      <p id="session-goal-objective" class="session-goal-objective"></p>
+      <form id="session-goal-form">
+        <div id="session-goal-editor" hidden>
+          <label for="session-goal-input" data-i18n="goal.objective">Objectif</label>
+          <textarea id="session-goal-input" rows="7" aria-describedby="session-goal-limit"></textarea>
+          <span id="session-goal-limit" class="session-goal-limit" data-i18n="goal.limit"
+            >4 000 caractères maximum</span
+          >
+        </div>
+        <div id="session-goal-error" class="form-error" role="alert" hidden></div>
+        <div class="modal-actions">
+          <button
+            id="session-goal-reload"
+            class="secondary-button"
+            type="button"
+            data-i18n="goal.reload"
+            hidden
+          >
+            Recharger
+          </button>
+          <button id="session-goal-edit" class="secondary-button" type="button" data-i18n="goal.edit">
+            Modifier l’objectif
+          </button>
+          <button id="session-goal-resume" class="primary-button" type="button" data-i18n="goal.retry" hidden>
+            Réessayer l’objectif
+          </button>
+          <p id="session-goal-resume-hint" class="session-goal-limit" hidden></p>
+          <button id="session-goal-stop" class="secondary-button" type="button" data-i18n="goal.stop" hidden>
+            Arrêter l’objectif
+          </button>
+          <button
+            id="session-goal-clear"
+            class="secondary-button"
+            type="button"
+            data-i18n="goal.clear"
+            hidden
+          >
+            Effacer l’objectif
+          </button>
+          <button class="secondary-button" type="button" data-close-dialog data-i18n="ui.annuler">
+            Annuler
+          </button>
+          <button
+            id="session-goal-save"
+            class="primary-button"
+            type="submit"
+            data-i18n="ui.enregistrer"
+            hidden
+          >
+            Enregistrer
+          </button>
+        </div>
+      </form>
     </dialog>
     <dialog id="worktree-dialog" class="modal" aria-labelledby="worktree-title">
       <form id="worktree-form" method="dialog">

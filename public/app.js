@@ -51,6 +51,7 @@ import { createContext } from './context.js';
 import { createProjectArchives } from './project-archives.js';
 import { createWorktreesUI } from './worktrees.js';
 import { createRoadmap } from './roadmap.js';
+import { createSessionGoal } from './session-goal.js';
 import { createDocking } from './docking.js';
 import { clonePanelScope } from './panel-scope.js';
 import { createToolViews, captureToolTarget, resolveToolTarget, sameToolContext } from './tool-views.js';
@@ -92,6 +93,7 @@ let liveMessagesUI;
 let commandsUI;
 let inspectorUI;
 let roadmapUI;
+let goalUI;
 let dockingUI;
 let toolViews = null;
 let convViews = null;
@@ -1100,6 +1102,15 @@ async function api(path, { method = 'GET', body, signal } = {}) {
   }
   return data;
 }
+goalUI = createSessionGoal({
+  api,
+  t: tr,
+  onResumed: async (run) => {
+    state.runs.set(run.id, run);
+    await selectRun(run);
+    renderNavigation();
+  },
+});
 function setConnection(online) {
   state.online = online;
   $('connection-dot').className = `status-dot${online ? '' : ' offline'}`;
@@ -1897,6 +1908,11 @@ function renderDetails() {
   inspectorUI?.update();
 }
 function renderNavigation() {
+  goalUI.setSelection(
+    state.sessionId
+      ? { id: state.sessionId, cwd: state.execCwd || state.projectCwd, readOnly: state.readOnly }
+      : null,
+  );
   renderProjects();
   renderSessions();
   renderProjectOverview();
@@ -3728,6 +3744,9 @@ function applyRunEvent(run, e) {
     case 'status':
       applyRuntimeStatus(run, e, tr);
       break;
+    case 'goal':
+      if (run.sessionId && run.sessionId === state.sessionId) void goalUI.refresh({ force: true });
+      break;
     case 'replay_truncated':
       if (state.viewRunId === run.id)
         toast(() => tr('ui.le_debut_de_cette_execution_sera_recharge_depuis_l_historique_a_l'));
@@ -3935,6 +3954,7 @@ async function finishRun(run, e) {
   }
   await refreshOverview();
   renderNavigation();
+  if (run.sessionId && run.sessionId === state.sessionId) void goalUI.refresh({ force: true });
   computerUseUI?.notifyRunFinished();
   updateComposer(finishOrigin || undefined);
 }
@@ -6364,6 +6384,7 @@ onLanguageChange(() => {
     hideComponentsUpdateBanner();
   setConnection(state.online);
   renderNavigation();
+  goalUI.render();
   setSelectedModel($('model-select').value);
   renderModelDefaults();
   resizeComposer();
