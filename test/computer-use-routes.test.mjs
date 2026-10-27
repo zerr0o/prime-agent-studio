@@ -7,6 +7,28 @@ import { dirname, join, resolve } from 'node:path';
 import { createApp } from '../server.mjs';
 
 const IMAGE = Buffer.from('route-screenshot').toString('base64');
+const CONFIGURED_MODEL = 'openai/gpt-5.6-luna';
+
+// Fake verified native child for explicit holder acquisition. Grants record
+// permission only; only acquire() creates the holder.
+function fakeChild({
+  sessionId = 'native-session',
+  runId,
+  agentId = 'agent-child-1',
+  childSession = 'child-1',
+} = {}) {
+  return {
+    ownerId: runId,
+    rootSessionId: sessionId,
+    sessionId: childSession,
+    agentSessionId: childSession,
+    agentId,
+    cwd: '/tmp/p',
+    name: 'CU helper',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  };
+}
 
 function fakeComputerDriver() {
   const calls = [];
@@ -231,6 +253,8 @@ test('existing sessions enable while idle and rebind on the next turn', async (t
 });
 
 test('computer runs need an image capable model', async (t) => {
+  // Delegation: the text main may grant permission; only the configured CU
+  // model with image capability may acquire the desktop later.
   const runtime = fakeRuntime();
   runtime.getModels = async () => ({
     models: [{ id: 'text/only', name: 'Only', provider: 'text', input: ['text'] }],
@@ -238,12 +262,16 @@ test('computer runs need an image capable model', async (t) => {
   });
   const { api, cwd } = await fixture(t, { runtime });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
-  assert.equal(started.status, 400);
-  assert.match(started.json.error, /image/i);
+  assert.equal(started.status, 201);
+  assert.equal(started.json.computerUse, true);
+  const state = await api(`/api/computer-use?sessionId=${started.json.sessionId}&runId=${started.json.id}`);
+  assert.equal(state.json.enabled, true);
+  assert.equal(state.json.owner, null);
+  runtime.controls[0].finish();
 });
 
 test('enabling by run id checks the model and rejects session mismatches', async (t) => {
-  const { api, runtime, cwd } = await fixture(t);
+  const { api, runtime, cwd, app } = await fixture(t);
   const started = await api('/api/runs', {
     method: 'POST',
     body: { cwd, message: 'hi', sessionId: 'native-session' },
@@ -253,19 +281,32 @@ test('enabling by run id checks the model and rejects session mismatches', async
   const byRun = await api('/api/computer-use', { method: 'POST', body: { enabled: true, runId } });
   assert.equal(byRun.status, 200);
   assert.equal(byRun.json.enabled, true);
-  assert.equal(byRun.json.owner.runId, runId);
-  assert.equal(byRun.json.owner.sessionId, 'native-session');
+  // Permission only: no holder yet.
+  assert.equal(byRun.json.owner, null);
+  const scoped = await api(`/api/computer-use?runId=${runId}`);
+  assert.equal(scoped.json.enabled, true);
+  assert.equal(scoped.json.owner, null);
   const mismatch = await api('/api/computer-use', {
     method: 'POST',
     body: { enabled: true, runId, sessionId: 'other-session' },
   });
   assert.equal(mismatch.status, 409);
   assert.match(mismatch.json.error, /does not belong/i);
-  assert.equal((await api('/api/computer-use')).json.owner.runId, runId);
+  // Grant preserved, still no holder.
+  assert.equal((await api(`/api/computer-use?runId=${runId}`)).json.enabled, true);
+  assert.equal((await api(`/api/computer-use?runId=${runId}`)).json.owner, null);
+  // Explicit acquire by the fake verified child creates the holder.
+  const holder = await app.computer.acquire(
+    fakeChild({ sessionId: 'native-session', runId, childSession: 'child-1', agentId: 'agent-child-1' }),
+  );
+  assert.equal(holder.runId, runId);
+  assert.equal((await api(`/api/computer-use?runId=${runId}`)).json.owner.runId, runId);
   runtime.controls[0].finish();
 });
 
 test('enabling by run id refuses models without image support', async (t) => {
+  // Delegation: permission may grant for a text run; image capability is
+  // enforced at acquire time by the native child.
   const textRuntime = fakeRuntime();
   textRuntime.getModels = async () => ({
     models: [{ id: 'text/only', name: 'Only', provider: 'text', input: ['text'] }],
@@ -274,13 +315,14 @@ test('enabling by run id refuses models without image support', async (t) => {
   const { api, cwd } = await fixture(t, { runtime: textRuntime });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi' } });
   assert.equal(started.status, 201);
-  const refused = await api('/api/computer-use', {
+  const granted = await api('/api/computer-use', {
     method: 'POST',
     body: { enabled: true, runId: started.json.id },
   });
-  assert.equal(refused.status, 409);
-  assert.match(refused.json.error, /image/i);
-  assert.equal((await api('/api/computer-use')).json.enabled, false);
+  assert.equal(granted.status, 200);
+  assert.equal(granted.json.enabled, true);
+  assert.equal(granted.json.owner, null);
+  assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.enabled, true);
   textRuntime.controls[0].finish();
 });
 
@@ -482,9 +524,13 @@ test('idle sessions enable with an explicit backend and report it', async (t) =>
   });
   assert.equal(enabled.status, 200);
   assert.equal(enabled.json.backend, 'cua');
-  assert.equal(enabled.json.owner.backend, 'cua');
+  // Permission only: no holder yet, backend comes from the grant.
+  assert.equal(enabled.json.owner, null);
+  assert.equal(enabled.json.enabled, true);
   const status = await api('/api/computer-use?sessionId=native-session');
   assert.equal(status.json.backend, 'cua');
+  assert.equal(status.json.enabled, true);
+  assert.equal(status.json.owner, null);
 });
 
 test('unknown backends are rejected before any preflight', async (t) => {
@@ -510,10 +556,14 @@ test('unavailable backends never take the current owner offline', async (t) => {
     body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
   });
   assert.equal(refused.status, 409);
+  // Permission preserved; unscoped backend stays null without a holder.
+  const scoped = await api('/api/computer-use?sessionId=native-session');
+  assert.equal(scoped.json.enabled, true);
+  assert.equal(scoped.json.backend, 'native');
+  assert.equal(scoped.json.owner, null);
   const state = await api('/api/computer-use');
   assert.equal(state.json.enabled, true);
-  assert.equal(state.json.backend, 'native');
-  assert.equal(state.json.owner.sessionId, 'native-session');
+  assert.equal(state.json.owner, null);
 });
 
 test('the active backend cannot change without an explicit disable first', async (t) => {
@@ -529,7 +579,7 @@ test('the active backend cannot change without an explicit disable first', async
   });
   assert.equal(refused.status, 409);
   assert.match(refused.json.error, /Disable/i);
-  assert.equal((await api('/api/computer-use')).json.backend, 'native');
+  assert.equal((await api('/api/computer-use?sessionId=native-session')).json.backend, 'native');
   assert.equal(
     (
       await api('/api/computer-use', {
@@ -559,7 +609,7 @@ test('a disabled selector choice never enables desktop control', async (t) => {
 });
 
 test('a foreign scoped disable keeps the other owner driver', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
+  const { api, app } = await fixture(t, { computerBackends: CUA_BACKENDS });
   assert.equal(
     (
       await api('/api/computer-use', {
@@ -574,10 +624,31 @@ test('a foreign scoped disable keeps the other owner driver', async (t) => {
     body: { enabled: false, sessionId: 'someone-else' },
   });
   assert.equal(foreign.status, 200);
+  // Grant preserved; permission only, no holder yet.
+  const scoped = await api('/api/computer-use?sessionId=native-session');
+  assert.equal(scoped.json.enabled, true);
+  assert.equal(scoped.json.backend, 'cua');
+  assert.equal(scoped.json.owner, null);
   const state = await api('/api/computer-use');
   assert.equal(state.json.enabled, true);
-  assert.equal(state.json.backend, 'cua');
-  assert.equal(state.json.owner.sessionId, 'native-session');
+  assert.equal(state.json.owner, null);
+  // Explicit holder: a sibling native agent on the same run cannot steal it.
+  const holder = await app.computer.acquire(
+    fakeChild({ sessionId: 'native-session', runId: 'run-foreign-1', childSession: 'child-native-1' }),
+  );
+  assert.equal(holder.sessionId, 'native-session');
+  await assert.rejects(
+    app.computer.acquire(
+      fakeChild({
+        sessionId: 'native-session',
+        runId: 'run-foreign-1',
+        childSession: 'child-native-2',
+        agentId: 'agent-other-1',
+      }),
+    ),
+    /already held/i,
+  );
+  await app.computer.releaseAgent(holder.runId, holder.agentId, holder.agentSessionId);
 });
 
 test('runs start with computerUseBackend and reject invalid combinations', async (t) => {
@@ -605,7 +676,7 @@ test('runs start with computerUseBackend and reject invalid combinations', async
   const status = await api(`/api/computer-use?runId=${started.json.id}`);
   assert.equal(status.json.enabled, true);
   assert.equal(status.json.backend, 'cua');
-  assert.equal(status.json.owner.backend, 'cua');
+  assert.equal(status.json.owner, null);
   runtime.controls[0].finish();
 });
 
@@ -626,7 +697,8 @@ test('runs inherit the session preference backend when omitted', async (t) => {
   });
   assert.equal(started.status, 201);
   assert.equal(started.json.computerUse, true);
-  assert.equal((await api('/api/computer-use')).json.backend, 'cua');
+  assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.backend, 'cua');
+  assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.owner, null);
   runtime.controls[0].finish();
   assert.equal((await api('/api/computer-use?sessionId=native-session')).json.enabled, true);
 });

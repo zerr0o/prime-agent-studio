@@ -48,16 +48,19 @@ test('turn end while a subagent works reads children, then follows the subagents
   // Progress and a nested descendant keep the same wait without noise.
   assert.deepEqual(project(child('c1', 'running', { progressNote: 'Phase 1 committed' })), []);
   assert.deepEqual(project(child('g1', 'running', { parentId: 'c1' })), []);
-  assert.deepEqual(project(child('c1', 'done')), []);
-  assert.deepEqual(project(child('g1', 'cancelled', { parentId: 'c1' })), turnEnd);
+  assert.deepEqual(project(child('c1', 'done')), [{ kind: 'subagent_idle', agentId: 'c1' }]);
+  assert.deepEqual(project(child('g1', 'cancelled', { parentId: 'c1' })), [
+    ...turnEnd,
+    { kind: 'subagent_idle', agentId: 'g1' },
+  ]);
   // A retained subagent working on a follow-up counts again until it settles.
   assert.deepEqual(project(child('c1', 'done', { activity: { kind: 'executing' } })), children);
-  assert.deepEqual(project(child('c1', 'error')), turnEnd);
+  assert.deepEqual(project(child('c1', 'error')), [...turnEnd, { kind: 'subagent_idle', agentId: 'c1' }]);
   // The next root turn resumes and stays quiet until its own boundary.
   assert.deepEqual(project({ type: 'agent_start' }), [{ kind: 'status', status: 'running' }]);
   assert.deepEqual(project(child('c2', 'running')), []);
   assert.deepEqual(project({ type: 'agent_end' }), children);
-  assert.deepEqual(project(child('c2', 'done')), turnEnd);
+  assert.deepEqual(project(child('c2', 'done')), [...turnEnd, { kind: 'subagent_idle', agentId: 'c2' }]);
   assert.deepEqual(project({ type: 'agent_start' }), [{ kind: 'status', status: 'running' }]);
   assert.deepEqual(project({ type: 'agent_end' }), turnEnd);
   // Malformed updates change nothing, other events keep the stateless mapping.

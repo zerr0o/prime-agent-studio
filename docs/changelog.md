@@ -4,6 +4,13 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.7-beta.1
+
+- **Délégation à la demande** : l’agent principal garde son modèle et son niveau de réflexion. Les tâches de bureau utilisent des sous-agents natifs ordinaires avec le modèle et l’effort Computer Use configurés. Activer l’autorisation ne crée aucun enfant ni pilote de bureau. Un enfant inactif peut être réutilisé ou remplacé par un nouveau pour une autre tâche.
+- **Bureau exclusif** : plusieurs conversations peuvent être autorisées, mais un seul agent précis détient le bureau. Les frères ne partagent pas son verrou. La fin, l’arrêt ou la libération de l’enfant rend le bureau disponible et invalide les anciennes captures. Un bureau occupé est refusé sans prise de contrôle ni rejeu automatique.
+- **Accès vérifié** : le modèle de l’enfant vient de sa session native et sa capacité image du catalogue, jamais des indications de l’appel d’outil. La révocation des autorisations et la création du pilote restent protégées contre les requêtes concurrentes. Les erreurs d’outils exposent au modèle des détails de diagnostic bornés.
+- **Périmètre** : cette évolution porte sur la délégation. Elle ne prétend pas résoudre tous les problèmes de fenêtres temporaires, d’actions partielles ou de rétention des captures. La validation sur le vrai bureau reste distincte des tests automatisés avec bureau factice.
+
 ## 4.4.6
 
 - **GPT-6.1 Terra** : ajouté aux catalogues API OpenAI et Codex avec des métadonnées et niveaux de raisonnement vérifiés. L’accès Codex dépend toujours du compte ; le modèle par défaut ne change pas.

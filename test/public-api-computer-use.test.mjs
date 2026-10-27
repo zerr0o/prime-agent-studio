@@ -10,6 +10,28 @@ import { createComputerUseManager } from '../lib/computer-use.mjs';
 const ENDPOINT = '/api/v1/computer-use';
 const SCOPES = ['read', 'runs:write', 'computer:write'];
 const BACKENDS = ['native', 'cua'].map((id) => ({ id, supported: true, available: true }));
+const CONFIGURED_MODEL = 'openai/gpt-5.6-luna';
+
+// Fake verified native child: permission-only grants never create a holder,
+// only an explicit acquire does.
+function fakeChild({
+  sessionId = 'session-a',
+  runId = 'fixture-run',
+  agentId = 'agent-child-1',
+  childSession = 'child-1',
+} = {}) {
+  return {
+    ownerId: runId,
+    rootSessionId: sessionId,
+    sessionId: childSession,
+    agentSessionId: childSession,
+    agentId,
+    cwd: '/tmp/p',
+    name: 'CU helper',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  };
+}
 function fakeRuntime() {
   const controls = [];
   return {
@@ -333,7 +355,8 @@ test('session and unbound run grants revoke without native work or stopping runs
     assert.equal(granted.status, 200, JSON.stringify(granted.json));
     cleanDto(granted.json);
     assert.equal(granted.json.enabled, true);
-    for (const [key, value] of Object.entries(target)) assert.equal(granted.json.owner[key], value);
+    // Permission only: grants never create a holder.
+    assert.equal(granted.json.owner, null);
     assert.ok(granted.json.revision > before.json.revision);
     const revoked = await f.set({ enabled: false, expectedRevision: granted.json.revision, ...target });
     assert.equal(revoked.status, 200);
@@ -354,13 +377,38 @@ test('same-project controllers cannot take over or disable each other', async (t
     sessionId: 'session-a',
   });
   assert.equal(granted.status, 200);
-  assert.equal(granted.json.owner.runId, run.id);
-  for (const enabled of [true, false]) {
-    const refused = await f.set({ enabled, expectedRevision: granted.json.revision, sessionId: 'session-b' });
-    assert.equal(refused.status, 409);
-    assert.equal((await f.get()).json.revision, granted.json.revision);
-  }
-  const revoked = await f.set({ enabled: false, expectedRevision: granted.json.revision, runId: run.id });
+  // Permission only: no holder yet.
+  assert.equal(granted.json.owner, null);
+  // Two sessions may grant concurrently.
+  const other = await f.set({
+    enabled: true,
+    expectedRevision: granted.json.revision,
+    sessionId: 'session-b',
+  });
+  assert.equal(other.status, 200);
+  assert.equal(other.json.owner, null);
+  // Only one native holder: explicit acquire wins, sibling is busy.
+  const holder = await f.computer.acquire(
+    fakeChild({ sessionId: 'session-a', runId: run.id, childSession: 'child-a-1', agentId: 'agent-a-1' }),
+  );
+  assert.equal(holder.runId, run.id);
+  await assert.rejects(
+    f.computer.acquire(
+      fakeChild({
+        sessionId: 'session-b',
+        runId: 'other-run',
+        childSession: 'child-b-1',
+        agentId: 'agent-b-1',
+      }),
+    ),
+    /already held/i,
+  );
+  await f.computer.releaseAgent(holder.runId, holder.agentId, holder.agentSessionId);
+  const revoked = await f.set({
+    enabled: false,
+    expectedRevision: (await f.get()).json.revision,
+    runId: run.id,
+  });
   assert.equal(revoked.status, 200);
   assert.equal(f.runtime.controls[0].cancelCalls, 0);
   assert.deepEqual(f.effects, []);
@@ -371,6 +419,17 @@ test('foreign owner and stale frame/action metadata are redacted across handoff 
   const projectId = f.projects.find((p) => p.cwd === f.cwd).id;
   const key = (await f.token(['read', 'computer:write'], [projectId])).credential;
   await f.computer.enable({ sessionId: 'foreign-session', cwd: f.foreignCwd, name: 'PRIVATE name' });
+  await f.computer.acquire({
+    ownerId: 'foreign-run',
+    rootSessionId: 'foreign-session',
+    sessionId: 'foreign-child-1',
+    agentSessionId: 'foreign-child-1',
+    agentId: 'foreign-agent-1',
+    cwd: f.foreignCwd,
+    name: 'PRIVATE name',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  });
   f.computer.setFrame({ width: 100, height: 100, title: 'PRIVATE frame' });
   f.computer.recordAction({ text: 'PRIVATE action' });
   f.computer.setError('PRIVATE error');
@@ -384,16 +443,46 @@ test('foreign owner and stale frame/action metadata are redacted across handoff 
   assert.equal((await f.get('?sessionId=foreign-session', key)).status, 404);
   for (const enabled of [true, false]) {
     assert.equal(
-      (await f.set({ enabled, expectedRevision: global.json.revision, sessionId: 'foreign-session' }, key))
-        .status,
+      (
+        await f.set(
+          { enabled, expectedRevision: (await f.get('', key)).json.revision, sessionId: 'foreign-session' },
+          key,
+        )
+      ).status,
       404,
     );
+    // Concurrent grants allowed: session-a may grant/revoke while foreign holds.
     assert.equal(
-      (await f.set({ enabled, expectedRevision: global.json.revision, sessionId: 'session-a' }, key)).status,
-      409,
+      (
+        await f.set(
+          { enabled, expectedRevision: (await f.get('', key)).json.revision, sessionId: 'session-a' },
+          key,
+        )
+      ).status,
+      200,
     );
   }
+  // Re-grant session-a for handoff (loop ends revoked).
+  assert.equal(
+    (
+      await f.set(
+        { enabled: true, expectedRevision: (await f.get('', key)).json.revision, sessionId: 'session-a' },
+        key,
+      )
+    ).status,
+    200,
+  );
+  // Handoff via explicit acquire, not permission alone.
+  await f.computer.releaseAgent('foreign-run', 'foreign-agent-1', 'foreign-child-1');
   await f.computer.enable({ sessionId: 'session-a', runId: 'fixture-run', cwd: f.cwd });
+  await f.computer.acquire(
+    fakeChild({
+      sessionId: 'session-a',
+      runId: 'fixture-run',
+      childSession: 'child-handoff-1',
+      agentId: 'agent-handoff-1',
+    }),
+  );
   cleanDto((await f.get('', key)).json);
   await f.computer.releaseRun('fixture-run');
   const released = await f.get('?sessionId=session-a', key);
@@ -403,7 +492,9 @@ test('foreign owner and stale frame/action metadata are redacted across handoff 
   assert.deepEqual(f.effects, []);
 });
 
-test('active text-only runs cannot gain Computer Use', async (t) => {
+test('active text-only runs may grant Computer Use permission (acquire still needs an image-capable child)', async (t) => {
+  // Delegation: the text main may grant permission; image capability is
+  // enforced at acquire time by the native child.
   const f = await fixture(t, { textOnly: true });
   const run = await f.start();
   const result = await f.set({
@@ -411,36 +502,32 @@ test('active text-only runs cannot gain Computer Use', async (t) => {
     expectedRevision: (await f.get()).json.revision,
     runId: run.id,
   });
-  assert.equal(result.status, 409);
-  assert.equal((await f.get()).json.enabled, false);
+  assert.equal(result.status, 200, JSON.stringify(result.json));
+  assert.equal(result.json.enabled, true);
+  assert.equal(result.json.owner, null);
+  assert.equal((await f.get()).json.enabled, true);
+  assert.equal((await f.get()).json.owner, null);
   assert.equal(f.runtime.controls[0].cancelCalls, 0);
   assert.deepEqual(f.effects, []);
 });
 
-for (const method of ['models', 'availability']) {
+for (const method of ['preferences', 'availability']) {
   for (const change of ['stop', 'foreign-owner', 'revoke-token']) {
     test(`delayed ${method} preflight rechecks ${change} before granting`, { timeout: 10000 }, async (t) => {
       const f = await fixture(t);
-      if (method === 'models') await f.start('session-a');
+      if (method === 'preferences') await f.start('session-a');
       const revision = (await f.get()).json.revision;
+      // Gate the actual awaited work: studio preferences vs backend availability.
+      // Hold it through the concurrent change so the grant cannot slip through.
       const gate = gateMethod(
-        method === 'models' ? f.runtime : f.computer,
-        method === 'models' ? 'getModels' : 'refreshBackends',
+        method === 'preferences' ? f.app.store : f.computer,
+        method === 'preferences' ? 'getStudioPreferences' : 'refreshBackends',
       );
-      const refreshing =
-        method === 'models' ? f.api('/api/models/refresh', { method: 'POST', body: {} }) : null;
-      if (refreshing) await gate.wait();
-      const routeGate = method === 'models' ? gateMethod(f.computer, 'refreshBackends') : null;
       const enabling = f.set({ enabled: true, expectedRevision: revision, sessionId: 'session-a' });
       // Revocation may close an already authenticated request: that is an unknown outcome, not success.
       enabling.catch(() => {});
       try {
         await gate.wait();
-        // Ensure the lease request itself has entered preflight, not only the catalog refresh.
-        if (routeGate) {
-          await routeGate.wait();
-          routeGate.release();
-        }
         if (change === 'stop') await f.computer.stop('fixture');
         if (change === 'foreign-owner') await f.computer.enable({ sessionId: 'session-b', cwd: f.cwd });
         if (change === 'revoke-token') {
@@ -466,18 +553,14 @@ for (const method of ['models', 'availability']) {
           const freshKey = (await f.token(['read'])).credential;
           assert.equal((await f.get('', freshKey)).json.enabled, false);
         }
-        assert.equal(
-          f.computer.status().owner?.sessionId ?? null,
-          change === 'foreign-owner' ? 'session-b' : null,
-        );
+        // Permission only: concurrent grants never create a holder.
+        assert.equal(f.computer.status().owner, null);
         assert.deepEqual(f.effects, []);
-        assert.equal(f.runtime.controls.length, method === 'models' ? 1 : 0);
+        assert.equal(f.runtime.controls.length, method === 'preferences' ? 1 : 0);
         for (const control of f.runtime.controls) assert.equal(control.cancelCalls, 0);
       } finally {
-        routeGate?.release();
         gate.release();
         await enabling.catch(() => {});
-        if (refreshing) await refreshing.catch(() => {});
       }
     });
   }
@@ -508,6 +591,9 @@ test('global CUA selection is honored without starting a worker', async (t) => {
 test('cleanup uncertainty blocks grants and reports safe lifecycle booleans', async (t) => {
   const f = await fixture(t);
   await f.computer.enable({ sessionId: 'session-a', cwd: f.cwd });
+  await f.computer.acquire(
+    fakeChild({ sessionId: 'session-a', runId: 'cleanup-run', childSession: 'child-cleanup-1' }),
+  );
   const driver = await f.computer.driver(); // Injected fake only: simulate an unconfirmed worker close.
   driver.close = async () => {
     throw new Error('PRIVATE cleanup failure');
@@ -540,7 +626,8 @@ test('busy is global even for an unrelated authorized target', async (t) => {
     assert.equal(state.json.enabled, false);
     assert.equal(state.json.busy, true);
     assert.equal(state.json.target.sessionId, 'session-a');
-    assert.equal(state.json.owner.sessionId, 'session-b');
+    // Permission only: no holder, busy is global inflight.
+    assert.equal(state.json.owner, null);
   } finally {
     gate.release();
     await busy;
@@ -575,7 +662,9 @@ test('runs:write alone cannot inherit a session Computer Use grant; explicit sco
   });
   assert.equal(allowed.status, 201, JSON.stringify(allowed.json));
   assert.equal(f.runtime.controls.length, 1);
-  assert.equal(f.computer.status().owner.runId, allowed.json.id);
+  // Permission granted for the resumed run; no holder yet, no worker.
+  assert.equal(f.computer.status({ runId: allowed.json.id, sessionId: 'session-a' }).enabled, true);
+  assert.equal(f.computer.status().owner, null);
   assert.deepEqual(f.effects, []);
 });
 

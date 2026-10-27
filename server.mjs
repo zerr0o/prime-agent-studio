@@ -336,23 +336,25 @@ export function createApp(options = {}) {
         ? { availabilityTtlMs: options.availabilityTtlMs }
         : {}),
     });
+  const computerIdentity = createRoadmapCallerResolver({
+    getRuns: () => [...runs.values()], store, agentHome, sessionDir,
+    readEdges: options.readInspectorEdges, includeModel: true,
+  });
   const computerBridge =
     options.computerBridge ||
     createComputerUseBridge({
       manager: computer,
-      resolveCaller: createRoadmapCallerResolver({
-        getRuns: () => [...runs.values()],
-        store,
-        agentHome,
-        sessionDir,
-        readEdges: options.readInspectorEdges,
-      }),
+      resolveCaller: async (identity) => {
+        const caller = await computerIdentity(identity);
+        return { ...caller, imageCapable: caller.agentId
+          ? modelSupportsImages(caller.model, await models()) : false };
+      },
       isOwnerActive: (id) => runs.get(id)?.status === 'running',
     });
   const withComputerFlag = (run) => {
     let computerUse = false;
     try {
-      computerUse = computer.status().owner?.runId === run.id;
+      computerUse = computer.status({ runId: run.id, sessionId: run.sessionId }).enabled === true;
     } catch {
       computerUse = false;
     }
@@ -742,7 +744,7 @@ export function createApp(options = {}) {
       const current = await studioPreferences().catch(() => null);
       if (!current || current.computerBackend !== wanted) {
         const state = computer.status();
-        if (state.owner) throw new HttpError(409, 'Turn off desktop to change the engine.');
+        if (state.enabled || state.owner) throw new HttpError(409, 'Turn off desktop permissions to change the engine.');
         if (state.cleanupPending === true || state.cleanupFailed === true)
           throw new HttpError(
             409,
@@ -796,6 +798,15 @@ export function createApp(options = {}) {
           throw new HttpError(400, tr('server.niveau_de_reflexion_invalide'));
       }
     }
+    // Catalog/backend preflight can yield while another conversation grants
+    // permission. Do not persist a global engine that contradicts those grants.
+    if ('computerBackend' in body) {
+      const current = await studioPreferences();
+      const state = computer.status();
+      if (body.computerBackend !== current.computerBackend &&
+          (state.enabled || state.owner || state.cleanupPending || state.cleanupFailed))
+        throw new HttpError(409, 'Turn off desktop permissions to change the engine.');
+    }
     return store.setStudioPreferences(body);
   }
   // The only engine-settings write left: reset (delete) every removed
@@ -811,6 +822,10 @@ export function createApp(options = {}) {
       .map(withComputerFlag);
   }
   function pushEvent(run, event) {
+    if (event.kind === 'subagent_idle') {
+      void computerBridge.releaseAgent(run.id, event.agentId).catch(() => {});
+      return;
+    }
     // Runs no longer carry budget or quota state: removed settings are never
     // re-attached here. Stored histories may still contain such data and keep
     // rendering through the generic message path.
@@ -897,15 +912,23 @@ export function createApp(options = {}) {
       run.clients.clear();
     }
   }
+  function computerRouting(preferences, run = {}) {
+    return {
+      computerModel: preferences?.computerModel || run.model || '',
+      computerThinking: preferences?.computerThinking || run.thinking || '',
+    };
+  }
+
   async function setComputerUse(
     body,
     { authorize, expectedRevision, allowTakeover = true, admission = computer.status().controlRevision } = {},
   ) {
     let resolvedRun = null;
     let resolvedModel = null;
+    const permissionAdmission = computer.revision;
     const rejectStaleGrant = () => {
       const state = computer.status();
-      if (state.controlRevision !== admission)
+      if (state.controlRevision !== admission || computer.revision !== permissionAdmission)
         throw Object.assign(
           new HttpError(
             409,
@@ -949,18 +972,14 @@ export function createApp(options = {}) {
       // used. The manager revalidates after an async CUA refresh at
       // admission, so a stale cache can never grant an unavailable backend.
       // Never silently falls back across backends.
+      const preferences = await studioPreferences();
       let backend = null;
       if (body.backend !== undefined) {
         if (!COMPUTER_USE_BACKENDS.includes(body.backend))
           throw new HttpError(400, 'Unknown Computer Use backend. Send native or cua.');
         backend = body.backend;
       } else {
-        try {
-          const prefs = await studioPreferences();
-          backend = prefs?.computerBackend === 'cua' ? 'cua' : 'native';
-        } catch {
-          backend = 'native';
-        }
+        backend = preferences?.computerBackend === 'cua' ? 'cua' : 'native';
       }
       if (backend) {
         if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
@@ -984,14 +1003,7 @@ export function createApp(options = {}) {
         if (sessionId && target.sessionId && target.sessionId !== sessionId)
           throw new HttpError(409, 'The run does not belong to the requested session.');
         cwd = target.cwd;
-        const catalog = await models();
         resolvedModel = target.model;
-        const capable = modelSupportsImages(resolvedModel, catalog);
-        if (!capable)
-          throw new HttpError(
-            409,
-            'The current model does not support images. Choose an image capable model to use Computer Use.',
-          );
         // A run without a native session yet binds by run only; the real
         // session arrives through the session event. A body sessionId is
         // never trusted over it.
@@ -1004,8 +1016,7 @@ export function createApp(options = {}) {
               runId,
               cwd,
               ...(backend ? { backend } : {}),
-              model: target.model || undefined,
-              imageCapable: capable,
+              ...computerRouting(preferences, target),
             },
             guard,
           );
@@ -1015,8 +1026,7 @@ export function createApp(options = {}) {
             runId,
             cwd,
             ...(backend ? { backend } : {}),
-            model: target.model || undefined,
-            imageCapable: capable,
+            ...computerRouting(preferences, target),
           },
           guard,
         );
@@ -1029,14 +1039,7 @@ export function createApp(options = {}) {
       );
       if (active) {
         resolvedRun = active;
-        const catalog = await models();
         resolvedModel = active.model;
-        const capable = modelSupportsImages(resolvedModel, catalog);
-        if (!capable)
-          throw new HttpError(
-            409,
-            'The current model does not support images. Choose an image capable model to use Computer Use.',
-          );
         rejectStaleGrant();
         return computer.enable(
           {
@@ -1044,14 +1047,13 @@ export function createApp(options = {}) {
             runId: active.id,
             cwd,
             ...(backend ? { backend } : {}),
-            model: active.model || undefined,
-            imageCapable: capable,
+            ...computerRouting(preferences, active),
           },
           guard,
         );
       }
       rejectStaleGrant();
-      return computer.enable({ sessionId, cwd, ...(backend ? { backend } : {}) }, guard);
+      return computer.enable({ sessionId, cwd, ...computerRouting(preferences, existing), ...(backend ? { backend } : {}) }, guard);
     }
     return computer.disable(
       {
@@ -1069,6 +1071,7 @@ export function createApp(options = {}) {
     // dropped while the requested run still starts; unrelated runs are
     // never touched.
     const computerAdmission = computer.status().controlRevision;
+    const computerPermissionAdmission = computer.revision;
     if (closing) throw new HttpError(503, tr('server.le_serveur_est_en_cours_d_arret'));
     await roadmapBridge.ready;
     if (activeRuns().length >= 8)
@@ -1204,49 +1207,14 @@ export function createApp(options = {}) {
     // to stored/default when usable; prefer resolved first for imported.
     // True explicit usable picks equal resolved, so no valid choice is
     // overwritten; true explicit unavailable (not echo) already 409s in gate.
-    // Global Computer Use model (Preferences > Tools, default same as conversation).
-    // When a run has Computer Use authorized it uses this model instead of the
-    // conversation model. The engine has no clean per-tool secondary vision
-    // delegation from the extension, so this is a run-level override, validated
-    // like any conversation model plus the image requirement.
-    let globals = null;
-    try {
-      globals = await studioPreferences();
-    } catch {
-      globals = null;
-    }
+    // Desktop permission never changes the conversation model or reasoning.
+    // The configured model is reserved for a native child on actual desktop use.
+    const globals = await studioPreferences().catch(() => null);
     const globalComputerBackend = globals?.computerBackend === 'cua' ? 'cua' : 'native';
-    // Decision thinking override (Preferences > Tools, default inherit).
-    // Stored values are PATCH-validated; an unexpected value stays lenient
-    // and inherits instead of failing the run.
-    const globalComputerThinking = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
-      globals?.computerThinking,
-    )
-      ? globals.computerThinking
-      : '';
-    const globalComputerModel =
-      typeof globals?.computerModel === 'string' ? globals.computerModel.trim() : '';
-    let selectedModel =
+    const selectedModel =
       (pastudioResolved ?? body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
-    const computerAuthorizedForModel =
-      body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled);
-    if (computerAuthorizedForModel && globalComputerModel) {
-      const override = catalog.models?.find((model) => model?.id === globalComputerModel);
-      if (!override) throw new HttpError(400, tr('server.ce_modele_n_est_pas_disponible_dans_prime_agent'));
-      if (override.availability === 'unavailable') throw new HttpError(409, tr('model.unavailableSelection'));
-      if (!modelSupportsImages(globalComputerModel, catalog))
-        throw Object.assign(
-          new Error('This model does not support images. Choose an image capable model to use Computer Use.'),
-          { status: 400, code: 'computer_use_no_image_model' },
-        );
-      selectedModel = globalComputerModel;
-    }
-    let selectedThinking =
+    const selectedThinking =
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
-    // Decision thinking applies to Computer Use runs the same way the
-    // conversation level does: it wins when explicitly set, even when the
-    // decision model itself stays the conversation model. Otherwise inherit.
-    if (computerAuthorizedForModel && globalComputerThinking) selectedThinking = globalComputerThinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
       throw new HttpError(400, tr('server.demande_invalide'));
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
@@ -1296,12 +1264,6 @@ export function createApp(options = {}) {
     runs.set(run.id, run);
     metrics.noteEvent(run, { kind: 'start' });
     try {
-      const computerImageCapable = modelSupportsImages(selectedModel, catalog);
-      if (body.computerUse === true && !computerImageCapable)
-        throw Object.assign(
-          new Error('This model does not support images. Choose an image capable model to use Computer Use.'),
-          { status: 400, code: 'computer_use_no_image_model' },
-        );
       if (body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled))
         await computerBridge.ready;
       // Public requests recheck their scopes before any desktop lease mutation.
@@ -1309,6 +1271,7 @@ export function createApp(options = {}) {
       // Check after the final preflight await, immediately before admission.
       if (
         computer.status().controlRevision === computerAdmission &&
+        computer.revision === computerPermissionAdmission &&
         (body.computerUse === true || (existing?.id && computer.status({ sessionId: existing.id }).enabled))
       ) {
         await computer.noteRunStarted({
@@ -1321,8 +1284,7 @@ export function createApp(options = {}) {
             : body.computerUseBackend
               ? { backend: body.computerUseBackend }
               : {}),
-          model: selectedModel || undefined,
-          imageCapable: computerImageCapable,
+          ...computerRouting(globals, run),
         });
       }
       run.prompt = appendFileMessage(run.prompt, await fileStore.save(files));

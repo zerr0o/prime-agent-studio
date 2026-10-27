@@ -6852,13 +6852,13 @@ export const messages = {
   },
   'computer.toolsTitle': { fr: 'Computer Use', en: 'Computer Use' },
   'computer.toolsNote': {
-    fr: 'Permet à l’agent de voir l’écran et d’utiliser la souris et le clavier, avec votre autorisation. Réglages communs à ce PC.',
-    en: 'Lets the agent view the screen and use the mouse and keyboard when you allow it. Settings apply to this PC.',
+    fr: 'Autorisation par conversation : permet au processus délégué de voir l’écran et d’utiliser la souris et le clavier. Ne change pas le modèle principal. Plusieurs conversations peuvent être autorisées ; le contrôleur reste vide jusqu’à ce qu’un processus agisse. Arrêt global explicite.',
+    en: 'Per-conversation permission: lets the delegated child view the screen and use the mouse and keyboard. It never changes the main model. Several conversations may stay allowed; the controller stays empty until a child acts. Stopping is always explicit.',
   },
   'computer.modelLabel': { fr: 'Modèle de décision Computer Use', en: 'Computer Use decision model' },
   'computer.modelNote': {
-    fr: 'Utilisé lorsque Computer Use est autorisé. Vide : même modèle que la conversation.',
-    en: 'Used when Computer Use is allowed. Empty: same as conversation.',
+    fr: 'Utilisé uniquement par le processus délégué quand Computer Use est autorisé. Vide : même modèle que la conversation, dans un processus séparé.',
+    en: 'Used only by the delegated child when Computer Use is allowed. Empty: same as conversation, in a separate child.',
   },
   'computer.sameAsConversation': { fr: 'Identique à la conversation', en: 'Same as conversation' },
   'computer.modelImageNote': {

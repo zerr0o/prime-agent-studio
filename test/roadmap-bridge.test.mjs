@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { createStore } from '../lib/store.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRoadmapBridge, createRoadmapCallerResolver } from '../lib/roadmap-bridge.mjs';
@@ -234,4 +235,48 @@ test('native resolver verifies root and deep child lineage, exact project and li
   run.status = 'stopping';
   await assert.rejects(resolveCaller(native('grandchild')), { status: 403 });
   assert.equal(await readFile(files.grandchild, 'utf8'), before);
+});
+
+test('CU model provenance follows the verified native selected branch, never wire hints', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cu-model-identity-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
+  const cwd = join(root, 'project'),
+    agentHome = join(root, 'agent'),
+    sessionDir = join(agentHome, 'sessions');
+  await Promise.all([mkdir(cwd, { recursive: true }), mkdir(sessionDir, { recursive: true })]);
+  const parent = join(sessionDir, 'parent.jsonl'),
+    child = join(sessionDir, 'child.jsonl');
+  await writeFile(parent, JSON.stringify({ type: 'session', id: 'parent', cwd }) + '\n');
+  const entries = [
+    { type: 'session', id: 'child', cwd },
+    { type: 'model_change', id: 'm1', parentId: null, provider: 'fixture', modelId: 'vision' },
+    { type: 'model_change', id: 'abandoned', parentId: 'm1', provider: 'fixture', modelId: 'wrong-branch' },
+    { type: 'thinking_level_change', id: 't1', parentId: 'm1', thinkingLevel: 'low' },
+  ];
+  await writeFile(child, entries.map(JSON.stringify).join('\n') + '\n');
+  const store = createStore({ dataDir: join(root, 'data'), agentHome, sessionDir });
+  const seen = [];
+  const resolver = createRoadmapCallerResolver({
+    getRuns: () => [{ id: 'run', sessionId: 'parent', cwd, status: 'running' }],
+    store: {
+      findProject: async () => ({ cwd }),
+      inspectFile: async (file) => {
+        seen.push(file);
+        return store.inspectFile(file);
+      },
+    },
+    agentHome,
+    sessionDir,
+    includeModel: true,
+    readEdges: async () => [{ parent, child, childId: 'native-child', name: 'worker' }],
+  });
+  const identity = { cwd, sessionId: 'child', sessionFile: child, model: 'forged/model', imageCapable: true };
+  assert.equal((await resolver(identity)).model, 'fixture/vision');
+  assert.equal(seen.length, 1);
+  entries.push({ type: 'model_change', id: 'm2', parentId: 't1', provider: 'fixture', modelId: 'other' });
+  await writeFile(child, entries.map(JSON.stringify).join('\n') + '\n');
+  assert.equal((await resolver(identity)).model, 'fixture/other');
+  const reads = seen.length;
+  await assert.rejects(resolver({ ...identity, sessionId: 'spoofed' }), { status: 403 });
+  assert.equal(seen.length, reads, 'unverified identity cannot trigger transcript reads');
 });

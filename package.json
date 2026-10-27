@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "4.4.6",
+  "version": "4.4.7-beta.1",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -33,7 +33,7 @@
     "test:knowledge:native": "node scripts/test-knowledge-native.mjs",
     "test:computer-use": "node --test test/computer-use*.test.mjs",
     "test:computer-use:ui": "node scripts/test-computer-use-ui.mjs && node scripts/test-computer-use-app.mjs",
-    "test:computer-use:native": "node scripts/test-computer-use-native.mjs && node scripts/test-computer-use-native-cua.mjs",
+    "test:computer-use:native": "node scripts/test-computer-use-native.mjs && node scripts/test-computer-use-native-cua.mjs && node scripts/test-computer-use-delegation-native.mjs",
     "test:computer-use:worker": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File runtime/computer-use-worker.ps1 -SelfTest",
     "test:knowledge:packaged": "node scripts/test-knowledge-packaged.mjs .desktop-build/studio",
     "test:roadmap": "node --test test/roadmap*.test.mjs && node scripts/test-roadmap-ui.mjs && node scripts/test-roadmap-compact-ui.mjs && node scripts/test-roadmap-remaining-ui.mjs && node scripts/test-roadmap-archive-ui.mjs && node scripts/test-roadmap-loading-ui.mjs && node scripts/test-roadmap-session-switch-ui.mjs",

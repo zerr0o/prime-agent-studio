@@ -229,6 +229,12 @@ const api = async (path, { method = 'GET', body } = {}) => {
     }
     return JSON.parse(JSON.stringify(window.__mock.prefs));
   }
+  // Permission-only mock (approved CU semantics): enabling/disabling a scoped
+  // session flag never creates, steals, or clears the global controller.
+  // The controller stays null until a dedicated child takes the desktop via
+  // __setController (with root sessionId/runId plus agentId/agentSessionId).
+  // Multiple sessions may stay enabled at once; only the explicit stop route
+  // clears the controller and every scoped flag.
   if (path === '/api/computer-use' && method === 'POST') {
     const enabled = body?.enabled === true;
     const sid = body?.sessionId || null;
@@ -238,14 +244,8 @@ const api = async (path, { method = 'GET', body } = {}) => {
       throw error;
     }
     if (sid) {
-      if (enabled) {
-        if (body?.backend === 'cua' || body?.backend === 'native') window.__mock.backend = body.backend;
-        window.__mock.enabledSessions[sid] = true;
-        window.__mock.controller = { sessionId: sid, runId: body?.runId || null, cwd: body?.cwd || null, name: 'Test Session' };
-      } else {
-        delete window.__mock.enabledSessions[sid];
-        if (window.__mock.controller?.sessionId === sid) window.__mock.controller = null;
-      }
+      if (enabled) window.__mock.enabledSessions[sid] = true;
+      else delete window.__mock.enabledSessions[sid];
       return snapshotFor(sid);
     }
     return snapshotFor(null);
@@ -367,10 +367,16 @@ try {
   await page.screenshot({ path: join(shotDir, 'computer-use-draft.png') });
 
   // Session switch clears stale enabled state, no leak into the new session.
+  // Holder uses the executing-child identity: root sess-A plus agent ids.
   await page.evaluate(() => {
     window.__ctx.sessionId = 'sess-A';
     window.__setSessionEnabled('sess-A', true);
-    window.__setController({ sessionId: 'sess-A', name: 'Test Session' });
+    window.__setController({
+      sessionId: 'sess-A',
+      agentSessionId: 'agent-A1',
+      agentId: 'child-A1',
+      name: 'Test Session',
+    });
     window.__mock.calls = [];
     window.__mock.delayMs = 0;
   });
@@ -431,7 +437,9 @@ try {
   if (afterRace.sessB !== false) throw new Error('new session flag must stay off');
   if (afterRace.include !== false) throw new Error('new session must not reuse stale permission');
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#computer-use-owner')).toHaveText('Test Session');
+  // Permission-only semantics: the discarded stale enable never creates or
+  // steals a controller, so no holder is shown for the new session.
+  await expect(page.locator('#computer-use-owner')).toHaveText('Aucun');
 
   // Existing session enable uses POST mode route.
   await page.evaluate(() => {
@@ -447,8 +455,25 @@ try {
     throw new Error('session switch must clear draft');
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
+  // Permission only: enabling never auto-creates the controller. Owner stays
+  // empty until a dedicated child takes the desktop, so no stop is offered yet.
+  await expect(page.locator('#computer-use-owner')).toHaveText('Aucun');
   await expect(page.locator('#allow-computer-use')).toBeChecked();
+  await expect(page.locator('#computer-use-stop')).toBeHidden();
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
+    throw new Error('own scoped permission must arm the run without a controller');
+  // A dedicated child of the same root takes the desktop (root ids stay the
+  // root conversation; agent ids name the executing child).
+  await page.evaluate(() => {
+    window.__setController({
+      sessionId: 'sess-A',
+      agentSessionId: 'agent-A1',
+      agentId: 'child-A1',
+      name: 'Test Session',
+    });
+  });
+  await page.evaluate(() => window.__cu.refresh());
+  await expect(page.locator('#computer-use-owner')).toHaveText('Cette session');
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   const modeCall = await page.evaluate(() =>
     window.__mock.calls.find((c) => c.path === '/api/computer-use' && c.method === 'POST'),
@@ -477,13 +502,21 @@ try {
   if (await page.evaluate(() => window.__mock.calls.some((c) => String(c.path || '').includes('/api/runs/'))))
     throw new Error('computer stop must not stop the agent run');
 
-  // Other owner keeps a visible global emergency stop.
+  // Other holder keeps a visible global emergency stop, while the own scoped
+  // permission stays independent: enabling/disabling never steals the holder
+  // and needs no takeover confirmation. Global busy always shows working.
   await page.evaluate(() => {
     window.__mock.calls = [];
     window.__mock.delayMs = 0;
     window.__mock.busy = true;
     window.__mock.lastAction = { type: 'click', x: 10, y: 20 };
-    window.__setController({ sessionId: 'other-999', name: 'Other session' });
+    window.__setSessionEnabled('sess-A', false);
+    window.__setController({
+      sessionId: 'other-999',
+      agentSessionId: 'agent-999',
+      agentId: 'child-999',
+      name: 'Other session',
+    });
   });
   await page.evaluate(() => window.__cu.refresh());
   await expect(page.locator('#computer-use-owner')).toContainText('Other session');
@@ -491,11 +524,56 @@ try {
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('title', 'Activer Computer Use');
   await expect(page.locator('#computer-use-stop')).toBeVisible();
   await expect(page.locator('#computer-use-stop')).toBeEnabled();
+  // Busy desktop stays displayed (live action) even with independent permission semantics.
+  if ((await page.evaluate(() => window.__cu.status?.busy)) !== true)
+    throw new Error('global busy must stay visible with a foreign holder');
+  await expect(page.locator('#computer-use-action')).toContainText('click');
   await page.screenshot({ path: join(shotDir, 'computer-use-other.png') });
   const beforeOther = await postCount();
+  // Enabling the own permission while a foreign child holds the desktop is
+  // allowed and must not steal that holder.
+  if ((await page.evaluate(() => window.__cu.setEnabled(true))) !== true)
+    throw new Error('independent permission must POST even with a foreign holder');
+  if ((await postCount()) !== beforeOther + 1) throw new Error('own enable must POST permission only');
+  if ((await page.evaluate(() => window.__mock.controller?.sessionId)) !== 'other-999')
+    throw new Error('enabling must never steal the other holder');
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
+    throw new Error('own scoped flag arms the run even with a foreign holder');
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  if ((await page.evaluate(() => window.__cu.status?.busy)) !== true)
+    throw new Error('global busy must stay visible with own permission');
+  await expect(page.locator('#computer-use-action')).toContainText('click');
+  // Same foreign holder stays visible from another session context: no
+  // permission leak, same child name, same global busy, stop still offered.
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-B';
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#computer-use-owner')).toContainText('Other session');
+  if ((await page.evaluate(() => window.__cu.status?.busy)) !== true)
+    throw new Error('global busy must stay visible from the other session');
+  await expect(page.locator('#computer-use-action')).toContainText('click');
+  await expect(page.locator('#computer-use-stop')).toBeVisible();
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
+    throw new Error('other session without permission must not arm a run');
+  await page.evaluate(() => {
+    window.__ctx.sessionId = 'sess-A';
+    window.__cu.onSessionChange();
+  });
+  await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#computer-use-owner')).toContainText('Other session');
+  if ((await page.evaluate(() => window.__cu.status?.busy)) !== true)
+    throw new Error('returning must keep global busy visible');
+  await expect(page.locator('#computer-use-action')).toContainText('click');
+  if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
+    throw new Error('returning to the allowed session must keep its permission');
+  // Disabling the own permission is equally allowed and leaves the holder.
   if ((await page.evaluate(() => window.__cu.setEnabled(false))) !== false)
-    throw new Error('must not disable another owner');
-  if ((await postCount()) !== beforeOther) throw new Error('other owner must not POST on disable');
+    throw new Error('own disable must clear the own flag');
+  if ((await postCount()) !== beforeOther + 2) throw new Error('own disable must POST permission only');
+  if ((await page.evaluate(() => window.__mock.controller?.sessionId)) !== 'other-999')
+    throw new Error('disabling must never clear the other holder');
   await page.locator('#computer-use-stop').click();
   await expect(page.locator('#computer-use-stop')).toBeHidden();
   if (!(await page.evaluate(() => window.__mock.calls.some((c) => c.path === '/api/computer-use/stop'))))
@@ -620,14 +698,12 @@ try {
   const prefsPatchCount = () =>
     page.evaluate(
       () =>
-        window.__mock.calls.filter(
-          (c) => c.path === '/api/studio-preferences' && c.method === 'PATCH',
-        ).length,
+        window.__mock.calls.filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH')
+          .length,
     );
   const cuPostCount = () =>
     page.evaluate(
-      () =>
-        window.__mock.calls.filter((c) => c.path === '/api/computer-use' && c.method === 'POST').length,
+      () => window.__mock.calls.filter((c) => c.path === '/api/computer-use' && c.method === 'POST').length,
     );
   const beforePrefs = await prefsPatchCount();
   const beforeCu = await cuPostCount();
@@ -639,9 +715,8 @@ try {
     throw new Error('backend select must not POST to the computer-use route');
   const patchedBackend = await page.evaluate(
     () =>
-      window.__mock.calls
-        .filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH')
-        .pop()?.body,
+      window.__mock.calls.filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH').pop()
+        ?.body,
   );
   if (patchedBackend?.computerBackend !== 'cua')
     throw new Error('global PATCH must carry computerBackend cua');
@@ -675,9 +750,10 @@ try {
   if ((await page.evaluate(() => window.__cp.getBackend())) !== 'cua')
     throw new Error('locked engine must keep the stored choice');
   const lockedPatch = await page.evaluate(() =>
-    window
-      .__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'native' } })
-      .then(() => 'ok', (error) => `fail:${error.status}`),
+    window.__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'native' } }).then(
+      () => 'ok',
+      (error) => `fail:${error.status}`,
+    ),
   );
   if (lockedPatch !== 'fail:409') throw new Error('owned desktop must refuse backend PATCH with 409');
   await page.evaluate(() => {
@@ -698,9 +774,10 @@ try {
   await expect(page.locator('#computer-backend-cua')).toBeDisabled();
   await expect(page.locator('#computer-backend-native')).toBeEnabled();
   const unavailablePatch = await page.evaluate(() =>
-    window
-      .__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } })
-      .then(() => 'ok', (error) => `fail:${error.status}:${error.message}`),
+    window.__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } }).then(
+      () => 'ok',
+      (error) => `fail:${error.status}:${error.message}`,
+    ),
   );
   if (!unavailablePatch.startsWith('fail:409:Install Cua Driver'))
     throw new Error('unavailable backend must fail closed with its reason');
@@ -724,9 +801,8 @@ try {
     throw new Error('global model getter must follow the picker');
   const patchedModel = await page.evaluate(
     () =>
-      window.__mock.calls
-        .filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH')
-        .pop()?.body,
+      window.__mock.calls.filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH').pop()
+        ?.body,
   );
   if (patchedModel?.computerModel !== 'test/vision-2')
     throw new Error('model choice must PATCH computerModel globally');
@@ -743,7 +819,10 @@ try {
   const unknownPatch = await page.evaluate(() =>
     window
       .__api('/api/studio-preferences', { method: 'PATCH', body: { computerModel: 'nope/missing' } })
-      .then(() => 'ok', (error) => `fail:${error.status}`),
+      .then(
+        () => 'ok',
+        (error) => `fail:${error.status}`,
+      ),
   );
   if (unknownPatch !== 'fail:400') throw new Error('unknown model must fail with 400');
 
@@ -761,16 +840,16 @@ try {
     throw new Error('decision thinking getter must follow the selector');
   const patchedThinking = await page.evaluate(
     () =>
-      window.__mock.calls
-        .filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH')
-        .pop()?.body,
+      window.__mock.calls.filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH').pop()
+        ?.body,
   );
   if (patchedThinking?.computerThinking !== 'high')
     throw new Error('thinking choice must PATCH computerThinking globally');
   const badThinking = await page.evaluate(() =>
-    window
-      .__api('/api/studio-preferences', { method: 'PATCH', body: { computerThinking: 'ultra' } })
-      .then(() => 'ok', (error) => `fail:${error.status}`),
+    window.__api('/api/studio-preferences', { method: 'PATCH', body: { computerThinking: 'ultra' } }).then(
+      () => 'ok',
+      (error) => `fail:${error.status}`,
+    ),
   );
   if (badThinking !== 'fail:400') throw new Error('unknown thinking level must fail with 400');
   if ((await page.evaluate(() => window.__cp.getThinking())) !== 'high')

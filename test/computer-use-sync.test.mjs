@@ -5,7 +5,27 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createComputerUseManager } from '../lib/computer-use.mjs';
 import { createComputerUseBridge } from '../lib/computer-use-bridge.mjs';
 
-const caller = { cwd: '/tmp/p', sessionId: 'sess-1', rootSessionId: 'sess-1', ownerId: 'run-1' };
+const CONFIGURED_MODEL = 'test-provider/test-cu-model';
+const CONFIGURED_THINKING = 'high';
+
+// Default legitimate child with configured CU model and image capability.
+const caller = {
+  cwd: '/tmp/p',
+  sessionId: 'child-1',
+  rootSessionId: 'sess-1',
+  ownerId: 'run-1',
+  agentId: 'agent-child-1',
+  name: 'CU helper',
+  model: CONFIGURED_MODEL,
+  imageCapable: true,
+};
+
+// Wire identity is hints only, never authorization.
+const legitIdentity = (overrides = {}) => ({
+  cwd: '/tmp/p',
+  sessionId: 'child-1',
+  ...overrides,
+});
 const target = { id: 'qobuz-1', processName: 'Qobuz', title: 'Qobuz - Player', foreground: true };
 const image = { data: Buffer.from('synthetic only').toString('base64'), mimeType: 'image/png' };
 
@@ -68,7 +88,13 @@ async function fixture(t, hook = () => undefined, driverGate) {
     const cleanup = await Promise.allSettled([bridge.close(), manager.close()]);
     for (const item of cleanup) if (item.status === 'rejected') throw item.reason;
   });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
   return {
     bridge,
     manager,
@@ -101,7 +127,7 @@ function call(bridge, action, params = {}, signal) {
     );
     req.setTimeout(4000, () => req.destroy(new Error('Test HTTP deadline')));
     req.on('error', reject);
-    req.end(JSON.stringify({ identity: { cwd: '/tmp/p', sessionId: 'sess-1' }, action, params }));
+    req.end(JSON.stringify({ identity: legitIdentity(), action, params }));
   });
 }
 
@@ -331,7 +357,7 @@ test('an in-flight slow listing cannot extend the wait deadline or deliver a lat
   }
 });
 
-for (const transition of ['stop', 'release', 'switch-owner', 'stop-and-reenable']) {
+for (const transition of ['stop', 'release', 'stop-and-reenable']) {
   test(`window wait is fenced by ${transition} even while a listing is pending`, async (t) => {
     const pending = gate(t);
     const entered = gate(t);
@@ -343,12 +369,16 @@ for (const transition of ['stop', 'release', 'switch-owner', 'stop-and-reenable'
       const waiting = call(env.bridge, 'windows', { action: 'wait', title: 'Qobuz', timeoutMs: 1500 });
       await entered.promise;
       if (transition === 'release') await env.manager.releaseInput();
-      else if (transition === 'switch-owner')
-        await env.manager.enable({ sessionId: 'sess-2', runId: 'run-2', cwd: '/tmp/p' });
       else {
         await env.manager.stop();
         if (transition === 'stop-and-reenable')
-          await env.manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+          await env.manager.enable({
+            sessionId: 'sess-1',
+            runId: 'run-1',
+            cwd: '/tmp/p',
+            computerModel: CONFIGURED_MODEL,
+            computerThinking: CONFIGURED_THINKING,
+          });
       }
       const result = await waiting;
       assert.equal(result.status, 409);
@@ -363,6 +393,103 @@ for (const transition of ['stop', 'release', 'switch-owner', 'stop-and-reenable'
     }
   });
 }
+
+test('a second enabled conversation does not fence an in-flight wait', async (t) => {
+  const pending = gate(t);
+  const entered = gate(t);
+  const env = await fixture(t, () => {
+    entered.resolve();
+    return pending.promise;
+  });
+  try {
+    const waiting = call(env.bridge, 'windows', { action: 'wait', title: 'Qobuz', timeoutMs: 1500 });
+    await entered.promise;
+    await env.manager.enable({
+      sessionId: 'sess-2',
+      runId: 'run-2',
+      cwd: '/tmp/p',
+      computerModel: CONFIGURED_MODEL,
+      computerThinking: CONFIGURED_THINKING,
+    });
+    pending.resolve({ windows: [target] });
+    const result = await waiting;
+    assert.equal(result.status, 200);
+    assert.equal(result.body.windows.length, 1);
+    assert.equal(env.manager.ownerInfo().runId, 'run-1');
+  } finally {
+    pending.resolve({ windows: [] });
+    entered.resolve();
+  }
+});
+
+test('main without agentId is denied with delegate_required and starts no worker', async (t) => {
+  const root = {
+    cwd: '/tmp/p',
+    sessionId: 'sess-1',
+    rootSessionId: 'sess-1',
+    ownerId: 'run-1',
+    name: 'Prime Agent',
+  };
+  const calls = [];
+  const { createComputerUseManager: createManager } = await import('../lib/computer-use.mjs');
+  const { createComputerUseBridge: createBridge } = await import('../lib/computer-use-bridge.mjs');
+  const manager = createManager({
+    createDriver: () => ({
+      async request(c) {
+        calls.push(c);
+        return { windows: [] };
+      },
+      async stop() {},
+      async close() {},
+    }),
+    isSupported: true,
+  });
+  const bridge = createBridge({ manager, resolveCaller: async () => root, isOwnerActive: () => true });
+  await bridge.ready;
+  t.after(() => bridge.close());
+  t.after(() => manager.close());
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
+  const denied = await call(bridge, 'windows', { action: 'list' });
+  // Default call identity is the legit child, so override with root provenance (no agentId).
+  void denied;
+  const { request: httpRequest } = await import('node:http');
+  const rootCall = (action, params = {}) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          socketPath: bridge.config.socketPath,
+          method: 'POST',
+          path: '/',
+          agent: false,
+          headers: { Authorization: `Bearer ${bridge.config.token}`, 'Content-Type': 'application/json' },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        },
+      );
+      req.on('error', reject);
+      req.end(
+        JSON.stringify({
+          identity: { cwd: '/tmp/p', sessionId: 'sess-1', model: CONFIGURED_MODEL, imageCapable: true },
+          action,
+          params,
+        }),
+      );
+    });
+  // Root has no agentId, so every desktop tool delegates even though permission exists.
+  const rootDenied = await rootCall('windows', { action: 'list' });
+  assert.equal(rootDenied.status, 409);
+  assert.equal(rootDenied.body.code, 'computer_use_delegate_required');
+  assert.equal(calls.length, 0);
+});
 
 test('client cancellation ends the wait without more polls or stopping the desktop lease', async (t) => {
   const entered = gate(t);

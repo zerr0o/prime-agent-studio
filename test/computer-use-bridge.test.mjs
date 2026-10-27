@@ -38,13 +38,42 @@ function fakeDriver(hooks = {}) {
   return driver;
 }
 
+const CONFIGURED_MODEL = 'test-provider/test-cu-model';
+const CONFIGURED_THINKING = 'high';
+
+// Default legitimate child: native sub-agent with configured CU model and
+// image capability. resolveCaller returns this verified child (agentId plus
+// child session distinct from rootSessionId). Model provenance travels in the
+// native identity ({model, imageCapable}), never in tool parameters.
 const caller = {
   cwd: '/tmp/p',
-  sessionId: 'sess-1',
+  sessionId: 'child-1',
   rootSessionId: 'sess-1',
   ownerId: 'run-1',
-  name: 'Prime Agent',
+  agentId: 'agent-child-1',
+  name: 'CU helper',
+  model: CONFIGURED_MODEL,
+  imageCapable: true,
 };
+
+// Wire identity is hints only, never authorization. Trusted model and
+// image capability come from resolveCaller (native resolver).
+const legitIdentity = (overrides = {}) => ({
+  cwd: '/tmp/p',
+  sessionId: 'child-1',
+  ...overrides,
+});
+
+async function enablePermission(manager, overrides = {}) {
+  return manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+    ...overrides,
+  });
+}
 
 async function fixture(t, { driver = fakeDriver(), resolveCaller = async () => caller } = {}) {
   const manager = createComputerUseManager({ createDriver: () => driver, isSupported: true });
@@ -57,7 +86,7 @@ async function fixture(t, { driver = fakeDriver(), resolveCaller = async () => c
 
 function call(bridge, action, params = {}, extras = {}) {
   return new Promise((resolve, reject) => {
-    const { token = bridge.config.token, identity = { cwd: '/tmp/p', sessionId: 'sess-1' } } = extras;
+    const { token = bridge.config.token, identity = legitIdentity() } = extras;
     const req = request(
       {
         socketPath: bridge.config.socketPath,
@@ -88,7 +117,7 @@ test('bridge rejects bad tokens and tools stay disabled with an enable hint', as
 
 test('observe assigns a frame and act maps screenshot pixels to physical pixels', async (t) => {
   const { bridge, driver, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   assert.equal(seen.status, 200);
   assert.equal(seen.body.image.mimeType, 'image/png');
@@ -106,7 +135,7 @@ test('observe assigns a frame and act maps screenshot pixels to physical pixels'
 
 test('act consumes its frame and rejects stale or ambiguous replays', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const frameId = seen.body.frame.frameId;
   assert.equal((await call(bridge, 'act', { frameId, actions: [{ type: 'wait', ms: 10 }] })).status, 200);
@@ -135,7 +164,7 @@ test('timed out actions invalidate frames instead of replaying', async (t) => {
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const failed = await call(bridge, 'act', {
     frameId: seen.body.frame.frameId,
@@ -146,19 +175,45 @@ test('timed out actions invalidate frames instead of replaying', async (t) => {
   assert.equal(manager.status().lastFrame, null);
 });
 
-test('child agents share the lease through native lineage, strangers are denied', async (t) => {
-  let current = {
+test('siblings never share the holder, strangers are denied', async (t) => {
+  let current = { ...caller };
+  const { bridge, manager } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  assert.equal((await call(bridge, 'windows', { action: 'list' })).status, 200);
+  assert.equal(manager.ownerInfo().agentId, 'agent-child-1');
+  // Sibling on the same root run (different agentId/session) never shares.
+  current = {
     cwd: '/tmp/p',
-    sessionId: 'child-1',
+    sessionId: 'child-2',
     rootSessionId: 'sess-1',
     ownerId: 'run-1',
-    name: 'helper',
+    agentId: 'agent-child-2',
+    name: 'sibling',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
   };
-  const { bridge, manager } = await fixture(t, { resolveCaller: async () => current });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
-  assert.equal((await call(bridge, 'windows', { action: 'list' })).status, 200);
-  current = { ...current, rootSessionId: 'unrelated', sessionId: 'stranger' };
-  assert.equal((await call(bridge, 'windows', { action: 'list' })).status, 403);
+  const siblingIdentity = legitIdentity({ sessionId: 'child-2' });
+  const busy = await call(bridge, 'windows', { action: 'list' }, { identity: siblingIdentity });
+  assert.equal(busy.status, 409);
+  assert.equal(busy.body.code, 'computer_use_busy');
+  // Unrelated conversation without permission stays disabled.
+  current = {
+    cwd: '/tmp/p',
+    sessionId: 'sess-9',
+    rootSessionId: 'unrelated',
+    ownerId: 'run-1',
+    name: 'stranger',
+  };
+  const stranger = await call(
+    bridge,
+    'windows',
+    { action: 'list' },
+    {
+      identity: { cwd: '/tmp/p', sessionId: 'sess-9', model: CONFIGURED_MODEL, imageCapable: true },
+    },
+  );
+  assert.equal(stranger.status, 409);
+  // Other run without permission stays disabled.
   current = {
     cwd: '/tmp/p',
     sessionId: 'sess-1',
@@ -166,20 +221,148 @@ test('child agents share the lease through native lineage, strangers are denied'
     ownerId: 'other-run',
     name: 'helper',
   };
-  assert.equal((await call(bridge, 'windows', { action: 'list' })).status, 409);
+  const other = await call(
+    bridge,
+    'windows',
+    { action: 'list' },
+    {
+      identity: { cwd: '/tmp/p', sessionId: 'sess-1', model: CONFIGURED_MODEL, imageCapable: true },
+    },
+  );
+  assert.equal(other.status, 409);
+});
+
+test('main without agentId is denied with delegate_required and starts no worker', async (t) => {
+  let current = {
+    cwd: '/tmp/p',
+    sessionId: 'sess-1',
+    rootSessionId: 'sess-1',
+    ownerId: 'run-1',
+    name: 'Prime Agent',
+  };
+  const { bridge, manager, driver } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  const rootIdentity = { cwd: '/tmp/p', sessionId: 'sess-1', model: CONFIGURED_MODEL, imageCapable: true };
+  for (const [action, params] of [
+    ['windows', { action: 'list' }],
+    ['observe', {}],
+    ['act', { frameId: 'f1', actions: [{ type: 'wait', ms: 1 }] }],
+  ]) {
+    const denied = await call(bridge, action, params, { identity: rootIdentity });
+    assert.equal(denied.status, 409, action);
+    assert.equal(denied.body.code, 'computer_use_delegate_required', action);
+  }
+  assert.equal(driver.calls.length, 0);
+  assert.equal(manager.ownerInfo(), null);
+});
+
+test('wrong configured model is denied without starting a worker', async (t) => {
+  let current = { ...caller, model: 'other/wrong-model' };
+  const { bridge, manager, driver } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  const denied = await call(bridge, 'observe', {});
+  assert.equal(denied.status, 409);
+  assert.equal(denied.body.code, 'computer_use_delegate_model');
+  assert.equal(driver.calls.length, 0);
+});
+
+test('forged wire model cannot override the trusted resolver', async (t) => {
+  let current = { ...caller, model: 'other/wrong-model' };
+  const { bridge, manager, driver } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  const forged = await call(
+    bridge,
+    'observe',
+    {},
+    {
+      identity: { cwd: '/tmp/p', sessionId: 'child-1', model: CONFIGURED_MODEL, imageCapable: true },
+    },
+  );
+  assert.equal(forged.status, 409);
+  assert.equal(forged.body.code, 'computer_use_delegate_model');
+  assert.equal(driver.calls.length, 0);
+  current = { ...caller };
+  const ignored = await call(
+    bridge,
+    'observe',
+    {},
+    {
+      identity: { cwd: '/tmp/p', sessionId: 'child-1', model: 'other/wrong-model', imageCapable: false },
+    },
+  );
+  assert.equal(ignored.status, 200);
+});
+
+test('foreign release is a noop and preserves the holder frame', async (t) => {
+  let current = { ...caller };
+  const { bridge, manager } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  const seen = await call(bridge, 'observe', {});
+  assert.equal(seen.status, 200);
+  current = {
+    cwd: '/tmp/p',
+    sessionId: 'child-2',
+    rootSessionId: 'sess-1',
+    ownerId: 'run-1',
+    agentId: 'agent-child-2',
+    name: 'sibling',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  };
+  const foreign = await call(bridge, 'release', {}, { identity: legitIdentity({ sessionId: 'child-2' }) });
+  assert.equal(foreign.status, 200);
+  assert.equal(foreign.body.released, false);
+  assert.equal(manager.ownerInfo().agentId, 'agent-child-1');
+  current = { ...caller };
+  const acted = await call(bridge, 'act', {
+    frameId: seen.body.frame.frameId,
+    actions: [{ type: 'wait', ms: 1 }],
+  });
+  assert.equal(acted.status, 200);
+});
+
+test('status never starts a worker and returns routing, delegated and mine', async (t) => {
+  const { bridge, manager, driver } = await fixture(t);
+  await enablePermission(manager);
+  const idle = await call(bridge, 'status', {});
+  assert.equal(idle.status, 200);
+  assert.equal(idle.body.enabled, true);
+  assert.equal(idle.body.delegated, true);
+  assert.equal(idle.body.mine, false);
+  assert.deepEqual(idle.body.routing, { model: CONFIGURED_MODEL, thinking: CONFIGURED_THINKING });
+  assert.equal(idle.body.driver, null);
+  assert.equal(driver.calls.length, 0);
 });
 
 test('models without image support get a descriptive observe error', async (t) => {
-  const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p', imageCapable: false });
+  let current = { ...caller, imageCapable: false };
+  const { bridge, manager } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   assert.equal(seen.status, 409);
   assert.equal(seen.body.code, 'computer_use_no_image_model');
 });
 
+test('forged wire imageCapable cannot override the trusted resolver', async (t) => {
+  let current = { ...caller, imageCapable: false };
+  const { bridge, manager, driver } = await fixture(t, { resolveCaller: async () => current });
+  await enablePermission(manager);
+  const forged = await call(
+    bridge,
+    'observe',
+    {},
+    {
+      identity: { cwd: '/tmp/p', sessionId: 'child-1', model: CONFIGURED_MODEL, imageCapable: true },
+    },
+  );
+  assert.equal(forged.status, 409);
+  assert.equal(forged.body.code, 'computer_use_no_image_model');
+  assert.equal(driver.calls.length, 0);
+});
+
 test('release discards frames while keeping the lease', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   assert.equal((await call(bridge, 'release', {})).status, 200);
   assert.equal(manager.status().lastFrame, null);
@@ -188,7 +371,7 @@ test('release discards frames while keeping the lease', async (t) => {
 
 test('coordinates on the far image edge are rejected', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const frameId = seen.body.frame.frameId;
   assert.equal(
@@ -207,7 +390,7 @@ test('coordinates on the far image edge are rejected', async (t) => {
 
 test('acting invalidates every previous frame, not just the used one', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const first = await call(bridge, 'observe', {});
   const second = await call(bridge, 'observe', {});
   assert.notEqual(first.body.frame.frameId, second.body.frame.frameId);
@@ -225,7 +408,7 @@ test('acting invalidates every previous frame, not just the used one', async (t)
 
 test('focusing a window discards older screenshots', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   assert.equal((await call(bridge, 'windows', { action: 'focus', windowId: 'w1' })).status, 200);
   assert.equal(
@@ -262,7 +445,7 @@ test('acting verifies the observed window is still present and focused', async (
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', { windowId: 'w1' });
   assert.equal(
     (await call(bridge, 'act', { frameId: seen.body.frame.frameId, actions: [{ type: 'wait', ms: 1 }] }))
@@ -287,7 +470,7 @@ test('acting verifies the observed window is still present and focused', async (
   assert.match(blurred.body.error, /focused/i);
 });
 
-test('concurrent root and child batches run one at a time', async (t) => {
+test('concurrent batches from the same holder run one at a time', async (t) => {
   const order = [];
   const driver = fakeDriver({
     onRequest(command) {
@@ -307,29 +490,14 @@ test('concurrent root and child batches run one at a time', async (t) => {
     order.push(`end-${command.params.actions[0].ms}`);
     return { executed: 1 };
   };
-  let current = {
-    cwd: '/tmp/p',
-    sessionId: 'sess-1',
-    rootSessionId: 'sess-1',
-    ownerId: 'run-1',
-    name: 'Prime Agent',
-  };
+  const current = { ...caller };
   const { bridge, manager } = await fixture(t, { driver, resolveCaller: async () => current });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const first = await call(bridge, 'observe', {});
   const second = await call(bridge, 'observe', {});
   const pending = [
     call(bridge, 'act', { frameId: first.body.frame.frameId, actions: [{ type: 'wait', ms: 1 }] }),
-    (async () => {
-      current = {
-        cwd: '/tmp/p',
-        sessionId: 'child-1',
-        rootSessionId: 'sess-1',
-        ownerId: 'run-1',
-        name: 'helper',
-      };
-      return call(bridge, 'act', { frameId: second.body.frame.frameId, actions: [{ type: 'wait', ms: 2 }] });
-    })(),
+    call(bridge, 'act', { frameId: second.body.frame.frameId, actions: [{ type: 'wait', ms: 2 }] }),
   ];
   const [a, b] = await Promise.all(pending);
   assert.equal(a.status, 200);
@@ -339,9 +507,44 @@ test('concurrent root and child batches run one at a time', async (t) => {
   assert.deepEqual(order, ['start-1', 'end-1']);
 });
 
+test('concurrent sibling batches never share the holder', async (t) => {
+  const { bridge, manager } = await fixture(t);
+  await enablePermission(manager);
+  const first = await call(bridge, 'observe', {});
+  assert.equal(first.status, 200);
+  let current = {
+    cwd: '/tmp/p',
+    sessionId: 'child-2',
+    rootSessionId: 'sess-1',
+    ownerId: 'run-1',
+    agentId: 'agent-child-2',
+    name: 'sibling',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  };
+  const { bridge: bridge2 } = await (async () => ({ bridge }))();
+  void bridge2;
+  const { createComputerUseBridge: createBridge2 } = await import('../lib/computer-use-bridge.mjs');
+  const siblingBridge = createBridge2({
+    manager,
+    resolveCaller: async () => current,
+    isOwnerActive: () => true,
+  });
+  await siblingBridge.ready;
+  t.after(() => siblingBridge.close());
+  const siblingCall = (action, params = {}) =>
+    call(siblingBridge, action, params, {
+      identity: legitIdentity({ sessionId: 'child-2' }),
+    });
+  const denied = await siblingCall('observe', {});
+  assert.equal(denied.status, 409);
+  assert.equal(denied.body.code, 'computer_use_busy');
+});
+
 test('release stops in-flight input and keeps the lease', async (t) => {
   const { bridge, manager, driver } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
+  assert.equal((await call(bridge, 'observe', {})).status, 200);
   await manager.driver();
   assert.equal((await call(bridge, 'release', {})).status, 200);
   assert.deepEqual(driver.stopped, ['release']);
@@ -359,7 +562,13 @@ test('a stop racing driver creation cannot leak into new input', async (t) => {
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => computer.close());
-  await computer.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await computer.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
   const watched = new Promise((resolve, reject) => {
     const req = request(
       {
@@ -378,7 +587,7 @@ test('a stop racing driver creation cannot leak into new input', async (t) => {
     req.on('error', reject);
     req.end(
       JSON.stringify({
-        identity: { cwd: '/tmp/p', sessionId: 'sess-1' },
+        identity: legitIdentity(),
         action: 'windows',
         params: { action: 'list' },
         epoch: 'e',
@@ -417,7 +626,7 @@ test('act forwards stored native geometry as expectedFrame', async (t) => {
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', { windowId: 'w1' });
   assert.deepEqual(seen.body.frame.desktopBounds, { x: 0, y: 0, width: 1920, height: 1080 });
   assert.equal(seen.body.frame.foregroundWindowId, 'w1');
@@ -468,7 +677,7 @@ test('native worker errors map to model-actionable statuses', async (t) => {
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const invalid = await call(bridge, 'act', {
     frameId: seen.body.frame.frameId,
@@ -505,7 +714,7 @@ test('a dead worker is dropped so the next request spawns fresh', async (t) => {
     driver: Object.assign(inner, {}),
   });
   void creations;
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   assert.equal(seen.status, 200);
   const dead = await call(bridge, 'act', {
@@ -519,7 +728,7 @@ test('a dead worker is dropped so the next request spawns fresh', async (t) => {
 
 test('bridge rejects zero waits, long key names and empty scrolls', async (t) => {
   const { bridge, manager } = await fixture(t);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const frameId = seen.body.frame.frameId;
   assert.equal((await call(bridge, 'act', { frameId, actions: [{ type: 'wait', ms: 0 }] })).status, 400);
@@ -568,7 +777,8 @@ test('driver hotkey availability reaches routine status polling', async (t) => {
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
+  assert.equal((await call(bridge, 'observe', {})).status, 200);
   assert.equal((await call(bridge, 'status', {})).status, 200);
   assert.equal(manager.status().hotkeyError, null);
   hotkeyRegistered = false;
@@ -591,7 +801,7 @@ test('release during an in-flight act fails the batch instead of replaying it', 
     },
   });
   const { bridge, manager } = await fixture(t, { driver });
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+  await enablePermission(manager);
   const seen = await call(bridge, 'observe', {});
   const acting = call(bridge, 'act', {
     frameId: seen.body.frame.frameId,
@@ -635,7 +845,7 @@ for (const windowCapture of [false, true]) {
       },
     });
     const { bridge, manager } = await fixture(t, { driver });
-    await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
+    await enablePermission(manager);
     const seen = await call(bridge, 'observe', windowCapture ? { windowId: foregroundWindowId } : {});
     assert.equal(seen.status, 200);
     assert.deepEqual(seen.body.frame.desktopBounds, desktopBounds);

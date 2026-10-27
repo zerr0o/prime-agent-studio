@@ -46,8 +46,11 @@ export function __resetSharedComputerForTests() {
 
 // Global Computer Use preferences (Preferences > Tools, one global setting
 // persisted server-side via /api/studio-preferences). The desktop engine radio
-// group and the Computer Use model live here, not in the Computer Use
-// header. Changes apply only when the desktop is off and not owned; the
+// group and the Computer Use decision model+thinking live here, not in the
+// Computer Use header. They apply only to the delegated desktop child, never
+// to the main conversation model+thinking (main stays unchanged). Empty model
+// means same as conversation but still in a separate child (no paid pick is
+// forced). Changes apply only when the desktop is off and not owned; the
 // backend default is native with no silent fallback.
 export function createComputerPreferences({
   api,
@@ -109,10 +112,14 @@ export function createComputerPreferences({
     return typeof reason === 'string' && reason ? reason : null;
   }
 
+  // Documented contract: permission snapshots pin the engine. Unscoped
+  // `enabled` is true while any session keeps mere permission, so the engine
+  // changes only when permissions are OFF and there is no holder/cleanup.
+  // This is not desktop ownership: owner/busy add their own lock below.
   function computerOn() {
     if (!status) return false;
     if (status.enabled === true) return true;
-    return Boolean(status.owner);
+    return Boolean(status.owner) || status.busy === true;
   }
 
   function cleanupBlocked() {
@@ -143,9 +150,11 @@ export function createComputerPreferences({
     return [];
   }
 
-  // The model row reuses the shared Studio model picker (openModelPicker,
-  // the same menu as the conversation model). No filtering happens here:
-  // image support is validated server-side (400 for text-only models).
+  // The decision model row reuses the shared Studio model picker
+  // (openModelPicker, the same menu as the conversation model). No filtering
+  // happens here: image support is validated server-side (400 for text-only
+  // models) because it belongs to the dedicated image-reading child, not to
+  // the main permission toggle.
   function modelDisplay(models, draft, emptyName, emptyDetail) {
     const current = typeof draft === 'string' ? draft : '';
     const found = models.find((entry) => entry?.id === current);
@@ -483,11 +492,9 @@ export function createComputerPreferences({
     saveThinking,
     // Getters prefer the module-shared confirmed snapshot so the primary
     // (used by sendMessage) never sends a stale global after a clone update.
-    getBackend: () =>
-      typeof sharedComputer?.backend === 'string' ? sharedComputer.backend : backend,
+    getBackend: () => (typeof sharedComputer?.backend === 'string' ? sharedComputer.backend : backend),
     getModel: () => (typeof sharedComputer?.model === 'string' ? sharedComputer.model : model),
-    getThinking: () =>
-      typeof sharedComputer?.thinking === 'string' ? sharedComputer.thinking : thinking,
+    getThinking: () => (typeof sharedComputer?.thinking === 'string' ? sharedComputer.thinking : thinking),
     get backend() {
       return backend;
     },

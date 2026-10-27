@@ -2,16 +2,16 @@
 
 [Français](../computer-use.md) · [Documentation](../../README.md#documentation)
 
-Computer Use is an expert mode for the **real Windows desktop**. Once you enable it for a conversation, its agent can inspect the screen, switch applications, and use the mouse and keyboard. It uses the existing agent and model, not a separate remote desktop session or a virtual machine.
+Computer Use is an expert mode for the **real Windows desktop**. Enable it for a conversation to let the main agent delegate desktop tasks to ordinary native subagents. The main agent keeps its own model and reasoning level. There is no separate remote desktop session or virtual machine.
 
 ## Enable and stop
 
-1. Open a project conversation and select an image-capable model.
+1. Open a project conversation. Choose an image-capable **Computer Use decision model** in Preferences if the main model cannot read images.
 2. Check **Allow Computer Use** in the composer, next to **Allow questions**. The checkbox is off by default. For a new conversation, the choice takes effect when you send the first message.
-3. Give the agent a concrete task. No additional approval is requested for each application or click.
+3. Give the agent a concrete task. A subagent is created or reused only when desktop interaction is needed. Enabling the checkbox alone creates no subagent or desktop worker. No additional approval is requested for each application or click.
 4. Use the separate **Stop Computer Use** control, or **Ctrl+Alt+Shift+F10**, to stop desktop control. This does not stop Studio or cancel unrelated agent runs.
 
-The mode is off by default and is not restored after a server restart. A conversation may retain its choice between turns within the same server process. Stop clears the active desktop authorization. Only one controller can use the shared desktop at a time. Read-only remote access cannot enable or stop it.
+The mode is off by default and is not restored after a server restart. A conversation may retain its permission between turns within the same server process. Several conversations may hold permission, but only one exact agent can control the shared desktop at a time. **Stop Computer Use** clears all permissions and stops the current controller. Unchecking a conversation revokes only its permission; it does not interrupt an unrelated controller. Read-only remote access cannot enable or stop it.
 
 ## Choose a global engine
 
@@ -20,15 +20,17 @@ Open **Preferences > Tools > Computer Use**. The engine is one global setting fo
 - **Original integration (Windows)** is the default. It uses our PowerShell/.NET worker and supports the full multi-monitor desktop, regions and native window focus.
 - **Cua Driver (beta)** uses the pinned **0.28.2** Windows x64 driver, with private Studio-owned processes. It adds window accessibility inspection and element-targeted actions. It does not replace the agent or model and needs no user-managed MCP connection.
 
-Selecting an engine does not enable control. Changing it needs the desktop off with no owner: the control stays locked while Computer Use is on, cleaning up, or in failed cleanup. An unavailable engine shows a reason; Studio never silently falls back or replays an action with another engine. The old per-session selection is gone: every conversation uses the same global engine. The native Windows guard still provides desktop exclusivity and the stop shortcut for CUA. CUA refuses to start if that shortcut is not registered. If process termination or input cleanup cannot be verified, new control remains blocked. Use Stop to retry cleanup; an off authorization state alone is not proof that cleanup finished.
+Selecting an engine does not enable control. Changing it requires all Computer Use permissions to be off and no desktop owner: the control stays locked while any permission remains, while cleanup is running, or after cleanup fails. Permission alone still does not acquire the desktop or start a worker. An unavailable engine shows a reason; Studio never silently falls back or replays an action with another engine. The old per-session selection is gone: every conversation uses the same global engine. The native Windows guard still provides desktop exclusivity and the stop shortcut for CUA. CUA refuses to start if that shortcut is not registered. If process termination or input cleanup cannot be verified, new control remains blocked. Use Stop to retry cleanup; an off authorization state alone is not proof that cleanup finished.
 
 ## Computer Use decision model
 
-**Preferences > Tools > Computer Use decision model** selects the model for runs with desktop authorized. The default **Same as conversation** keeps the conversation model. A named model replaces it at run start, only for turns with Computer Use authorized.
+**Preferences > Tools > Computer Use decision model** selects the model for the **subagent that performs the desktop task**, never for the main conversation. **Same as conversation** uses the same model in a separate subagent. A named model overrides general subagent defaults for desktop tasks only.
 
-The list comes from the same catalog as the main picker, in the same menu as the conversation model picker. Models that read images are required: a model without images is refused both at save time and at run start, with no silent switch. An unavailable model is refused too. The extension gives desktop tools to the authorized run’s agent, with no separate screenshot-analysis agent.
+The list comes from the same catalog as the main picker. The desktop model must read images. Before desktop access, Studio verifies the child’s model from its native session and checks image support in the catalog. A wrong or unsupported model cannot acquire the desktop; Studio never silently switches it. A text-only main agent can therefore delegate to an image-capable Computer Use model.
 
-The **Reasoning** selector next to the model offers the same levels as the conversation selector (**Same as conversation** by default). When set, that level applies to runs with desktop authorized exactly like the conversation level, even when the model stays the conversation model. Otherwise the conversation level is kept.
+The **Reasoning** selector applies only to the desktop subagent. **Same as conversation** takes the main conversation’s level for that child, without changing the main agent’s own settings.
+
+The main agent uses the existing `rlm.spawn` and `agent_message` mechanisms. It can reuse an idle child with its context, or create a fresh child for another task. There is no automatic specialist per conversation, mandatory role, or reserved name. The child reports a result or blocker; desktop screenshots remain in its own conversation unless explicitly shared. Reuse may preserve provider caching, but cache hits and speed gains are not guaranteed.
 
 CUA has a narrower pixel surface in this beta. Prefer a specific `windowId`. It supports full-window images, but not region crops. Its desktop capture covers the primary display at native resolution; if either dimension exceeds 2000 pixels, choose a window instead. `maxWidth` is a long-edge limit for CUA window images, not a desktop downscaler. Multi-point drags and window-local pointer moves are refused rather than approximated. A refused focus operation is not permission to relaunch the application.
 
@@ -51,7 +53,7 @@ The original backend waits briefly for minimized windows to restore and makes bo
 - Move, click, double-click, drag, scroll, press key combinations, and type Unicode text.
 - Take another observation to verify the result before continuing.
 
-The native tools are `computer_status`, `computer_windows`, `computer_observe`, `computer_inspect`, `computer_act`, and `computer_release`. The capabilities below depend on the selected backend. Tools cannot enable the mode themselves. Root agents and their native subagents share the same conversation authorization and desktop controller.
+The native tools are `computer_status`, `computer_windows`, `computer_observe`, `computer_inspect`, `computer_act`, and `computer_release`. The capabilities below depend on the selected backend. Tools cannot enable the mode themselves. The main agent delegates desktop work rather than driving it. Native children inherit the conversation permission, **not the desktop lock**. The first desktop operation acquires that lock for the exact child; siblings and agents from other conversations receive a busy refusal. `computer_status` does not acquire the lock or start a worker. The lock is released when the child finishes, stops, is removed, or calls `computer_release`; old frames are invalidated. A recoverable tool refusal does not hand control to another agent. Reusing a child requires a new acquisition and a fresh observation.
 
 `computer_observe` returns an actual image to the model, plus its dimensions and a frame identifier. Actions use coordinates from that image. For the original backend, Studio maps them to physical screen pixels, including scaled captures and negative monitor origins. CUA keeps its own snapshot-bound coordinate space. Each action batch requires a fresh observation. If an action times out, the agent must observe the current state rather than blindly replay it. Every screenshot is point-in-time and can show loading or unsettled UI, not settled UI.
 
@@ -76,7 +78,9 @@ Do not use the mouse or keyboard at the same time as the agent. Keep sensitive w
 
 ## Development and validation
 
-The Node driver starts its hidden native helper lazily. A session-scoped manager owns authorization and frames. A private native bridge binds tool calls to the real run and native subagent ledger. The extension sends image content through the existing provider pipeline.
+The Node driver starts its hidden native helper lazily. The manager keeps conversation permissions separate from a global holder identified by run, agent and native session. A private native bridge verifies lineage against the native subagent ledger and the model against the selected session branch and catalog; model hints in tool requests cannot grant access. The extension sends image content through the existing provider pipeline.
+
+The delegation proof covers an ordinary turn with Computer Use enabled but no child or driver, a real native child, exclusive ownership, automatic release, and reuse of that same child with a fresh frame. It uses only a loopback model provider and fake desktop. The delegation change does not resolve every temporary-window, partial native-action or historical-image retention issue; existing focus, cancellation and no-replay safeguards remain in force.
 
 To prepare the pinned CUA files in a development checkout, run `npm run cua:prepare`. The command verifies a cached archive or downloads the pinned release, stages the driver and its license, and never executes it. Windows x64 builds require the verified sidecar; other platforms do not bundle it.
 

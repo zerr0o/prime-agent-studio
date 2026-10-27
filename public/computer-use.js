@@ -69,6 +69,10 @@ export function normalizeComputerBackends(raw, supportedFallback = true) {
 export function ownerDisplayName(owner) {
   if (!owner || typeof owner !== 'object') return '';
   if (typeof owner.name === 'string' && owner.name.trim()) return owner.name.trim().slice(0, 60);
+  if (typeof owner.agentSessionId === 'string' && owner.agentSessionId.trim())
+    return `#${owner.agentSessionId.trim().slice(0, 8)}`;
+  if (typeof owner.agentId === 'string' && owner.agentId.trim())
+    return `#${owner.agentId.trim().slice(0, 8)}`;
   if (typeof owner.sessionId === 'string' && owner.sessionId.trim())
     return `#${owner.sessionId.trim().slice(0, 8)}`;
   if (typeof owner.runId === 'string' && owner.runId.trim()) return `#${owner.runId.trim().slice(0, 8)}`;
@@ -102,6 +106,10 @@ export function summarizeComputerAction(action) {
 
 export function normalizeComputerStatus(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  // Owner keeps the root session/run plus the executing child identity:
+  // sessionId/runId stay the root conversation, while agentId/agentSessionId
+  // and name identify the dedicated desktop child once it takes the desktop.
+  // Owner stays null until that child acts; mere permission never creates one.
   const owner =
     source.owner && typeof source.owner === 'object'
       ? {
@@ -109,6 +117,10 @@ export function normalizeComputerStatus(raw) {
           ...(typeof source.owner.runId === 'string' ? { runId: source.owner.runId } : {}),
           ...(typeof source.owner.cwd === 'string' ? { cwd: source.owner.cwd } : {}),
           ...(typeof source.owner.name === 'string' ? { name: source.owner.name } : {}),
+          ...(typeof source.owner.agentId === 'string' ? { agentId: source.owner.agentId } : {}),
+          ...(typeof source.owner.agentSessionId === 'string'
+            ? { agentSessionId: source.owner.agentSessionId }
+            : {}),
         }
       : null;
   const supported = source.supported !== false;
@@ -164,6 +176,9 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     return `${ctx.sessionId || ''}|${ctx.runId || ''}`;
   };
 
+  // Owner sessionId/runId stay the root conversation; agentId/agentSessionId
+  // identify the executing child. A pane is "mine" when its root matches the
+  // holder root, regardless of which dedicated child currently acts.
   function isMine(ctx = context(), status = lastStatus) {
     const owner = status?.owner;
     if (!owner) return false;
@@ -177,12 +192,15 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     return Boolean(lastStatus?.owner) && !isMine();
   }
 
+  // Explicit global stop surface: mere scoped permission (enabled without an
+  // owner) never shows a stop; only an actual holder, live action, or
+  // pending/failed cleanup does. Multiple conversations may stay enabled
+  // while owner is null until a dedicated child takes the desktop.
   function hasController() {
     if (!lastStatus || lastStatus.supported === false) return false;
     return Boolean(
       lastStatus.owner ||
       lastStatus.busy ||
-      lastStatus.enabled ||
       lastStatus.cleanupPending === true ||
       lastStatus.cleanupFailed === true,
     );
@@ -208,6 +226,9 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     getDetailTargets ? getDetailTargets() : [{ getElement: $, getContext: context }];
   const shouldRefresh = () => isVisible() || detailTargets().some((target) => isVisible(target.getContext()));
 
+  // Independent permission display: own scoped enabled (isOn) outranks a
+  // foreign holder, and global busy always shows working so permission
+  // holders see the live action. Owner details still name the other holder.
   function statusText() {
     const ctx = context();
     if (ctx.online === false) return tr('computer.offline');
@@ -216,10 +237,10 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     if (lastStatus.cleanupFailed === true) return tr('computer.cleanupFailed');
     if (stopBusy || busyAction) return tr('computer.working');
     if (lastStatus.cleanupPending === true) return tr('computer.cleanupPending');
-    if (lastStatus.busy && isMine()) return tr('computer.working');
+    if (lastStatus.busy === true) return tr('computer.working');
     if (isMine()) return tr('computer.onMine');
-    if (isOther()) return tr('computer.onOther', { value1: ownerDisplayName(lastStatus.owner) || '?' });
     if (isOn()) return tr('computer.draftOn');
+    if (isOther()) return tr('computer.onOther', { value1: ownerDisplayName(lastStatus.owner) || '?' });
     return tr('computer.off');
   }
 
@@ -319,10 +340,10 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
               ? 'cleanup'
               : mine
                 ? 'mine'
-                : isOther()
-                  ? 'other'
-                  : on
-                    ? 'draft'
+                : on
+                  ? 'draft'
+                  : isOther()
+                    ? 'other'
                     : 'off';
     }
     const stopBtn = $('computer-use-stop');
@@ -393,7 +414,9 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
       return true;
     }
     if (lastStatus == null || lastStatus.supported === false) return false;
-    if (lastStatus.owner && !isMine() && next === false) return false;
+    // Permission only: enabling or disabling the own scoped flag never steals
+    // another holder and needs no takeover confirmation. The global desktop
+    // is stopped only through the explicit stop action.
     const turn = ++generation;
     const key = queryKey();
     // No per-session backend: the server applies the global engine from
@@ -460,11 +483,14 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     }
   }
 
+  // Scoped permission: the own session/run flag alone decides. Other holders
+  // never block it; multiple conversations may stay enabled while the owner
+  // is null until a dedicated child takes the desktop.
   function shouldIncludeInRun() {
     const ctx = context();
     if (ctx.readOnly === true) return false;
     if (lastStatus == null || lastStatus.supported === false) return false;
-    if (ctx.sessionId || ctx.runId) return lastStatus.enabled === true && (isMine() || !lastStatus.owner);
+    if (ctx.sessionId || ctx.runId) return lastStatus.enabled === true;
     return draftEnabled === true;
   }
 

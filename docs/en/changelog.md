@@ -4,6 +4,13 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.7-beta.1
+
+- **On-demand delegation**: the main agent keeps its model and reasoning level. Desktop tasks use ordinary native subagents with the configured Computer Use model and effort. No child or desktop worker is created just by enabling permission. An idle child can be reused, or a new one created for another task.
+- **Exclusive desktop**: several conversations can be authorized, but only one exact agent holds the desktop. Siblings cannot share its lock. Finishing, stopping or releasing the child frees the desktop and invalidates old frames. A busy desktop is refused without takeover or automatic replay.
+- **Verified access**: the child's model comes from its native session and image support from the model catalog, not tool-call hints. Permission revocation and worker creation remain safe across concurrent requests. Tool errors expose bounded diagnostic details to the model.
+- **Scope**: this is the delegation change, not a claim that every temporary-window, partial-action or screenshot-retention issue is resolved. Real-desktop acceptance remains separate from automated fake-desktop tests.
+
 ## 4.4.6
 
 - **GPT-6.1 Terra**: added to the OpenAI API and Codex catalogs with verified model metadata and reasoning levels. Codex availability still depends on your account; your default model is unchanged.

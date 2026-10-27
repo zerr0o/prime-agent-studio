@@ -11,7 +11,27 @@ import { createCuaComputerUseDriver } from '../lib/cua-computer-use-driver.mjs';
 import { createComputerUseManager } from '../lib/computer-use.mjs';
 import { createComputerUseBridge } from '../lib/computer-use-bridge.mjs';
 
-const CALLER = { cwd: '/tmp/cua-integration', sessionId: 'int-s', rootSessionId: 'int-s', ownerId: 'int-r' };
+const CONFIGURED_MODEL = 'test-provider/test-cu-model';
+const CONFIGURED_THINKING = 'high';
+
+// Default legitimate child: verified native agent with configured CU model.
+const CALLER = {
+  cwd: '/tmp/cua-integration',
+  sessionId: 'int-child-1',
+  rootSessionId: 'int-s',
+  ownerId: 'int-r',
+  agentId: 'agent-int-1',
+  name: 'CU helper',
+  model: CONFIGURED_MODEL,
+  imageCapable: true,
+};
+
+// Wire identity is hints only, never authorization.
+const legitIdentity = (overrides = {}) => ({
+  cwd: '/tmp/cua-integration',
+  sessionId: 'int-child-1',
+  ...overrides,
+});
 const FAKE_DRIVER_PATH = 'C:\\fake\\cua-integration\\cua-driver.exe';
 const PNG_SMALL = (() => {
   const b = Buffer.alloc(33);
@@ -366,7 +386,7 @@ function integrationCall(bridge, action, params = {}) {
     );
     req.setTimeout(4000, () => req.destroy(new Error('integration request deadline')));
     req.on('error', reject);
-    req.end(JSON.stringify({ identity: { sessionId: CALLER.sessionId }, action, params }));
+    req.end(JSON.stringify({ identity: legitIdentity(), action, params }));
   });
 }
 
@@ -409,7 +429,14 @@ async function integrationStack(t, { factoryHook, transportOpts, guardianOpts, b
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => manager.close());
-  await manager.enable({ sessionId: CALLER.sessionId, runId: CALLER.ownerId, cwd: CALLER.cwd, backend });
+  await manager.enable({
+    sessionId: CALLER.rootSessionId,
+    runId: CALLER.ownerId,
+    cwd: CALLER.cwd,
+    backend,
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
   return { manager, bridge, guardian, fake, captured };
 }
 
@@ -721,10 +748,12 @@ test('integration close failure retains same orphan and retry closes it', { time
     return manager.close().catch(() => {});
   });
   await manager.enable({
-    sessionId: CALLER.sessionId,
+    sessionId: CALLER.rootSessionId,
     runId: CALLER.ownerId,
     cwd: CALLER.cwd,
     backend: 'cua',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
   });
   const shot = await integrationCall(bridge, 'observe', { windowId: '844:10725' });
   assert.equal(
@@ -743,10 +772,12 @@ test('integration close failure retains same orphan and retry closes it', { time
   assert.equal(wrappers.length, 1, 'no new wrapper while orphan retained');
   // Orphan surfaces on next driver use (observe), not on enable alone.
   await manager.enable({
-    sessionId: CALLER.sessionId,
+    sessionId: CALLER.rootSessionId,
     runId: CALLER.ownerId,
     cwd: CALLER.cwd,
     backend: 'cua',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
   });
   const orphaned = await integrationCall(bridge, 'observe', { windowId: '844:10725' });
   assert.equal(
@@ -764,10 +795,12 @@ test('integration close failure retains same orphan and retry closes it', { time
   assert.ok(wrappers[0].closes >= 2, 'same wrapper close retried, got ' + wrappers[0].closes);
   // After verified retry, a fresh observe succeeds.
   await manager.enable({
-    sessionId: CALLER.sessionId,
+    sessionId: CALLER.rootSessionId,
     runId: CALLER.ownerId,
     cwd: CALLER.cwd,
     backend: 'cua',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
   });
   const recovered = await integrationCall(bridge, 'observe', { windowId: '844:10725' });
   assert.equal(
@@ -776,3 +809,75 @@ test('integration close failure retains same orphan and retry closes it', { time
     'post-retry observe must succeed, got ' + JSON.stringify(recovered.body).slice(0, 600),
   );
 });
+
+test(
+  'integration root without agentId is denied with delegate_required and mints no transport',
+  { timeout: 15000 },
+  async (t) => {
+    const { createComputerUseManager: createManager } = await import('../lib/computer-use.mjs');
+    const { createComputerUseBridge: createBridge } = await import('../lib/computer-use-bridge.mjs');
+    const { request: httpRequest } = await import('node:http');
+    let created = 0;
+    const m = createManager({
+      isSupported: true,
+      cuaAvailability: { available: true, supported: true },
+      createDriver: () => {
+        created += 1;
+        throw new Error('root must not create a driver');
+      },
+    });
+    const b = createBridge({
+      manager: m,
+      resolveCaller: async () => ({
+        cwd: '/tmp/cua-integration',
+        sessionId: 'int-s',
+        rootSessionId: 'int-s',
+        ownerId: 'int-r',
+        name: 'root',
+      }),
+    });
+    await b.ready;
+    t.after(() => b.close());
+    t.after(() => m.close());
+    await m.enable({
+      sessionId: 'int-s',
+      runId: 'int-r',
+      cwd: '/tmp/cua-integration',
+      backend: 'cua',
+      computerModel: CONFIGURED_MODEL,
+      computerThinking: CONFIGURED_THINKING,
+    });
+    const denied = await new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          socketPath: b.config.socketPath,
+          method: 'POST',
+          path: '/',
+          agent: false,
+          headers: { Authorization: `Bearer ${b.config.token}`, 'Content-Type': 'application/json' },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (c) => (body += c));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        },
+      );
+      req.on('error', reject);
+      req.end(
+        JSON.stringify({
+          identity: {
+            cwd: '/tmp/cua-integration',
+            sessionId: 'int-s',
+            model: CONFIGURED_MODEL,
+            imageCapable: true,
+          },
+          action: 'observe',
+          params: { windowId: '844:10725' },
+        }),
+      );
+    });
+    assert.equal(denied.status, 409);
+    assert.equal(denied.body.code, 'computer_use_delegate_required');
+    assert.equal(created, 0);
+  },
+);

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { createAgentRuntime, discoverCli, agentEnvironment } from '../lib/agent.mjs';
 import { createStore } from '../lib/store.mjs';
 import { createRoadmapCallerResolver } from '../lib/roadmap-bridge.mjs';
-import { createComputerUseManager } from '../lib/computer-use.mjs';
+import { createComputerUseManager, modelSupportsImages } from '../lib/computer-use.mjs';
 import { createComputerUseBridge, toPhysicalCoordinates } from '../lib/computer-use-bridge.mjs';
 
 const EXPECTED_TOOLS = [
@@ -35,6 +35,9 @@ const FRAME_GEOM = {
 const MODEL_X = 200;
 const MODEL_Y = 150;
 const EXPECTED_PHYSICAL = { x: 500, y: 380 };
+const CU_MODEL = 'fixture/computer';
+const CU_THINKING = 'off';
+const MAIN_MODEL = 'fixture/parent';
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -445,7 +448,28 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
   };
   const bridge = createComputerUseBridge({
     manager,
-    resolveCaller: createRoadmapCallerResolver({ getRuns: () => [run], store, agentHome, sessionDir }),
+    resolveCaller: (() => {
+      const verified = createRoadmapCallerResolver({
+        getRuns: () => [run],
+        store,
+        agentHome,
+        sessionDir,
+        includeModel: true,
+      });
+      const trustedCatalog = {
+        models: [
+          { id: MAIN_MODEL, input: ['text'] },
+          { id: CU_MODEL, input: ['text', 'image'] },
+        ],
+      };
+      return async (identity) => {
+        const caller = await verified(identity);
+        return {
+          ...caller,
+          imageCapable: caller.agentId ? modelSupportsImages(caller.model, trustedCatalog) : false,
+        };
+      };
+    })(),
     isOwnerActive: (id) => run.id === id && run.status === 'running',
   });
   await bridge.ready;
@@ -456,6 +480,10 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
   const evidence = { imageStages: [], mapping: null, toolDiscovery: null };
   let runtime = null;
   let observedFrameId = null;
+  let childFinished = false;
+  let childAgentId = null;
+  const CHILD_NAME = 'cu-child-1';
+  const CHILD_TASK = 'CU_NATIVE_CHILD_TASK';
   const RUN2 = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
   const RUN3 = 'cccccccc-dddd-4eee-8fff-000000000000';
   let resumeArmed = false;
@@ -472,8 +500,8 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
         runId: run.id,
         cwd,
         name: 'native-proof-' + label,
-        imageCapable: true,
-        model: 'fixture/computer',
+        computerModel: CU_MODEL,
+        computerThinking: CU_THINKING,
       });
       calls.push(label + ':test-enabled-lease');
     }
@@ -485,6 +513,11 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw);
       const role = body.model || 'computer';
+      {
+        const known = new Set([MAIN_MODEL, 'fixture/parent', 'parent', CU_MODEL, 'computer']);
+        if (!known.has(role))
+          throw Object.assign(new Error('unexpected native provider role: ' + String(role)), { role });
+      }
       requests.push(body);
       const names = (body.tools || []).map((tool) => tool.function.name);
       for (const name of EXPECTED_TOOLS)
@@ -505,9 +538,10 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
             label + ': resumed status must report enabled, got ' + text.slice(0, 300),
           );
           assert.ok(
-            parsed.owner && parsed.owner.runId === RUN2,
-            label + ': resumed status must bind the new run',
+            parsed && parsed.enabled === true,
+            label + ': resumed status must stay enabled, got ' + text.slice(0, 300),
           );
+          assert.ok(parsed.owner && parsed.owner.runId === RUN2, label + ': resumed status must bind RUN2');
           calls.push(label + ':resume-status-verified');
         } else {
           calls.push(label + ':resume-finished');
@@ -554,177 +588,275 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
         };
       const step = stage.get(role) || 0;
       let tool = null;
-      if (step === 0) {
-        tool = { name: 'computer_status', arguments: {} };
-      } else if (step === 1) {
-        const text = lastToolText(body.messages);
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = null;
-        }
-        if (parsed && typeof parsed.enabled === 'boolean') {
-          assert.equal(parsed.enabled, false, label + ': status must report disabled before enable');
-          calls.push(label + ':status-disabled-json');
-        } else {
+      const isChild = role === CU_MODEL || role === 'computer';
+      if (calls.length < 40) calls.push(label + ':saw-' + String(role) + '-' + String(step));
+      if (!isChild) {
+        // Parent (MAIN_MODEL): permission only, never holds.
+        if (step === 0) {
+          tool = { name: 'computer_status', arguments: {} };
+        } else if (step === 1) {
+          const text = lastToolText(body.messages);
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          if (parsed && typeof parsed.enabled === 'boolean') {
+            assert.equal(parsed.enabled, false, label + ': status must report disabled before enable');
+            calls.push(label + ':status-disabled-json');
+          } else {
+            assert.match(
+              text,
+              /off|Enable it in Studio/i,
+              label + ': disabled status must refuse with enable hint, got ' + text.slice(0, 300),
+            );
+            calls.push(label + ':status-disabled-refusal');
+          }
+          tool = { name: 'computer_observe', arguments: {} };
+        } else if (step === 2) {
+          const text = lastToolText(body.messages);
           assert.match(
             text,
             /off|Enable it in Studio/i,
-            label + ': disabled status must refuse with enable hint, got ' + text.slice(0, 300),
+            label + ': disabled observe must refuse with enable hint, got ' + text.slice(0, 300),
           );
-          calls.push(label + ':status-disabled-refusal');
+          calls.push(label + ':observe-disabled-refusal');
+          await ensureEnabled();
+          tool = { name: 'computer_status', arguments: {} };
+        } else if (step === 3) {
+          const text = lastToolText(body.messages);
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          assert.ok(
+            parsed && parsed.enabled === true,
+            label + ': enabled status must report enabled JSON, got ' + text.slice(0, 300),
+          );
+          assert.equal(parsed.delegated, false, label + ': main must report delegated=false');
+          assert.equal(
+            parsed.routing && parsed.routing.model,
+            CU_MODEL,
+            label + ': routing must advertise CU model',
+          );
+          assert.equal(parsed.owner, null, label + ': permission only, no holder yet');
+          calls.push(label + ':status-enabled-json');
+          tool = { name: 'computer_observe', arguments: {} };
+        } else if (step === 4) {
+          const text = lastToolText(body.messages);
+          assert.match(text, /delegate/i, label + ': main observe must delegate, got ' + text.slice(0, 300));
+          calls.push(label + ':main-delegate-required');
+          tool = {
+            name: 'ipython',
+            arguments: {
+              code:
+                'import rlm\nchild = await rlm.spawn(' +
+                JSON.stringify(
+                  'Prove Computer Use via delegated child. Observe window, wait for fake app, click center, release.',
+                ) +
+                ', name=' +
+                JSON.stringify(CHILD_NAME) +
+                ', model=' +
+                JSON.stringify(CU_MODEL) +
+                ', thinking=' +
+                JSON.stringify(CU_THINKING) +
+                ')\nprint("CU_CHILD_SPAWNED:" + child.rlm_child_id)',
+            },
+          };
+        } else if (step === 5) {
+          const text = lastToolText(body.messages);
+          assert.match(
+            text,
+            /CU_CHILD_SPAWNED/,
+            label + ': child admission must be reported, got ' + text.slice(0, 300),
+          );
+          calls.push(label + ':child-admitted');
+          const deadline = Date.now() + 60000;
+          while (!childFinished && Date.now() < deadline) await sleep(100);
+          assert.ok(childFinished, label + ': delegated child must finish');
+          assert.equal(
+            manager.ownerInfo(),
+            null,
+            label + ': child release must clear holder, permission preserved',
+          );
+          assert.ok(
+            manager.status({ sessionId: run.sessionId }).enabled,
+            label + ': permission preserved after child',
+          );
+          calls.push(label + ':child-delegated-verified');
+        } else {
+          calls.push(label + ':finished');
         }
-        tool = { name: 'computer_observe', arguments: {} };
-      } else if (step === 2) {
-        const text = lastToolText(body.messages);
-        assert.match(
-          text,
-          /off|Enable it in Studio/i,
-          label + ': disabled observe must refuse with enable hint, got ' + text.slice(0, 300),
-        );
-        calls.push(label + ':observe-disabled-refusal');
-        await ensureEnabled();
-        tool = { name: 'computer_status', arguments: {} };
-      } else if (step === 3) {
-        const text = lastToolText(body.messages);
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = null;
-        }
-        assert.ok(
-          parsed && parsed.enabled === true,
-          label + ': enabled status must report enabled JSON, got ' + text.slice(0, 300),
-        );
-        assert.ok(
-          parsed.owner && parsed.owner.runId === run.id,
-          label + ': enabled status must bind the test run owner',
-        );
-        calls.push(label + ':status-enabled-json');
-        tool = { name: 'computer_observe', arguments: { windowId: FAKE_WINDOW.id, maxWidth: 800 } };
-      } else if (step === 4) {
-        const found = parseFrameFromTools(body.messages);
-        assert.ok(found.frame, label + ': enabled observe must return frame metadata');
-        assert.equal(found.frame.width, FRAME_GEOM.width, label + ': frame width must match fake driver');
-        assert.equal(found.frame.height, FRAME_GEOM.height, label + ': frame height must match fake driver');
-        assert.equal(found.frame.windowId, FAKE_WINDOW.id, label + ': frame must carry the fake window id');
-        assert.deepEqual(
-          found.frame.desktopBounds,
-          FAKE_DESKTOP_BOUNDS,
-          label + ': frame must carry fake desktop bounds',
-        );
-        assert.equal(
-          found.frame.foregroundWindowId,
-          FAKE_FOREGROUND_WINDOW,
-          label + ': frame must carry the fake foreground window',
-        );
-        observedFrameId = found.frame.frameId;
-        assert.ok(observedFrameId, label + ': frameId is required for act');
-        const seen = imageEvidence(body.messages, pngPrefix);
-        evidence.imageStages.push({ stage: 'after-observe', ...seen });
-        assert.ok(seen.hasBase64, label + ': observe pixels must reach the next model request');
-        assert.ok(
-          seen.hasImagePart,
-          label +
-            ': observe must arrive as an image part, not JSON text only. parts=' +
-            seen.partTypes.join(','),
-        );
-        calls.push(label + ':observe-image-in-request');
-        tool = {
-          name: 'computer_windows',
-          arguments: { action: 'wait', processName: 'FAKE', title: 'fake app', timeoutMs: 1000 },
-        };
-      } else if (step === 5) {
-        const text = lastToolText(body.messages);
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = null;
-        }
-        const windows = (parsed && parsed.windows) || [];
-        assert.ok(
-          windows.some((entry) => entry && entry.id === 'fake-main'),
-          label + ': windows list must return the fake driver window, got ' + text.slice(0, 300),
-        );
-        assert.equal(parsed.found, true, label + ': bounded window wait must find the fake app');
-        assert.equal(parsed.timedOut, false);
-        assert.equal(parsed.window.id, FAKE_WINDOW.id);
-        assert.match(parsed.note, /does not confirm application readiness/);
-        evidence.windowWait = parsed;
-        calls.push(label + ':window-wait-verified');
-        tool = {
-          name: 'computer_act',
-          arguments: {
-            frameId: observedFrameId,
-            actions: [{ type: 'click', x: MODEL_X, y: MODEL_Y }],
-            observeAfter: true,
-            ...(interactive ? { observeOptions: { windowId: FAKE_WINDOW.id, maxWidth: 1024 } } : {}),
-          },
-        };
-      } else if (step === 6) {
-        const text = lastToolText(body.messages);
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = null;
-        }
-        assert.ok(
-          parsed && (parsed.executed === 1 || parsed.observe),
-          label + ': act must report execution, got ' + text.slice(0, 300),
-        );
-        assert.equal(
-          totals().acts,
-          1,
-          label + ': fake workers must receive exactly one act batch in aggregate',
-        );
-        assert.equal(
-          parsed.applicationState,
-          'unverified',
-          label + ': sent input is not application readiness',
-        );
-        const captureOptions = { windowId: FAKE_WINDOW.id, maxWidth: interactive ? 1024 : 800 };
-        assert.deepEqual(
-          driverInstances.flatMap((instance) => instance.calls.observes).at(-1),
-          captureOptions,
-        );
-        assert.deepEqual(parsed.frame.captureOptions, captureOptions);
-        evidence.verificationCapture = { captureOptions, applicationState: parsed.applicationState };
-        const actCall = driverInstances.flatMap((instance) => instance.calls.acts)[0];
-        const received = actCall.actions[0];
-        assert.equal(received.x, EXPECTED_PHYSICAL.x, label + ': screenshot x must map to physical x');
-        assert.equal(received.y, EXPECTED_PHYSICAL.y, label + ': screenshot y must map to physical y');
-        assert.deepEqual(
-          actCall.expectedFrame,
-          {
-            windowId: FAKE_WINDOW.id,
-            bounds: FRAME_GEOM.bounds,
-            desktopBounds: FAKE_DESKTOP_BOUNDS,
-            foregroundWindowId: FAKE_FOREGROUND_WINDOW,
-            requireForeground: false,
-          },
-          label + ': bridge must forward the observed geometry as expectedFrame',
-        );
-        evidence.mapping = { sent: { x: MODEL_X, y: MODEL_Y }, received: { x: received.x, y: received.y } };
-        evidence.expectedFrame = actCall.expectedFrame;
-        const seen = imageEvidence(body.messages, pngPrefix);
-        evidence.imageStages.push({ stage: 'after-act-observeAfter', ...seen });
-        assert.ok(
-          seen.hasBase64 && seen.hasImagePart,
-          label + ': verification screenshot must reach the model as image',
-        );
-        calls.push(label + ':act-frame-mapped');
-        tool = { name: 'computer_release', arguments: {} };
-      } else if (step === 7) {
-        const text = lastToolText(body.messages);
-        const parsed = JSON.parse(text);
-        assert.equal(parsed.released, true, label + ': release must confirm');
-        calls.push(label + ':release');
       } else {
-        calls.push(label + ':finished');
+        // Child (CU_MODEL): exact holder, preserves image/coordinate/history semantics.
+        if (step === 0) {
+          tool = { name: 'computer_status', arguments: {} };
+        } else if (step === 1) {
+          const text = lastToolText(body.messages);
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          assert.ok(
+            parsed && parsed.enabled === true,
+            label + ': child status must report enabled, got ' + text.slice(0, 300),
+          );
+          assert.equal(parsed.delegated, true, label + ': child must report delegated=true');
+          assert.equal(
+            parsed.routing && parsed.routing.model,
+            CU_MODEL,
+            label + ': child routing must advertise CU model',
+          );
+          assert.equal(parsed.owner, null, label + ': status alone never acquires holder');
+          calls.push(label + ':status-enabled-json');
+          tool = { name: 'computer_observe', arguments: { windowId: FAKE_WINDOW.id, maxWidth: 800 } };
+        } else if (step === 2) {
+          const found = parseFrameFromTools(body.messages);
+          assert.ok(found.frame, label + ': enabled observe must return frame metadata');
+          assert.equal(found.frame.width, FRAME_GEOM.width, label + ': frame width must match fake driver');
+          assert.equal(
+            found.frame.height,
+            FRAME_GEOM.height,
+            label + ': frame height must match fake driver',
+          );
+          assert.equal(found.frame.windowId, FAKE_WINDOW.id, label + ': frame must carry the fake window id');
+          assert.deepEqual(
+            found.frame.desktopBounds,
+            FAKE_DESKTOP_BOUNDS,
+            label + ': frame must carry fake desktop bounds',
+          );
+          assert.equal(
+            found.frame.foregroundWindowId,
+            FAKE_FOREGROUND_WINDOW,
+            label + ': frame must carry the fake foreground window',
+          );
+          observedFrameId = found.frame.frameId;
+          assert.ok(observedFrameId, label + ': frameId is required for act');
+          {
+            const holderAfterObserve = manager.ownerInfo();
+            assert.ok(
+              holderAfterObserve && holderAfterObserve.agentId,
+              label + ': observe must acquire holder',
+            );
+            childAgentId = holderAfterObserve.agentId;
+          }
+          const seen = imageEvidence(body.messages, pngPrefix);
+          evidence.imageStages.push({ stage: 'after-observe', ...seen });
+          assert.ok(seen.hasBase64, label + ': observe pixels must reach the next model request');
+          assert.ok(
+            seen.hasImagePart,
+            label +
+              ': observe must arrive as an image part, not JSON text only. parts=' +
+              seen.partTypes.join(','),
+          );
+          calls.push(label + ':observe-image-in-request');
+          tool = {
+            name: 'computer_windows',
+            arguments: { action: 'wait', processName: 'FAKE', title: 'fake app', timeoutMs: 1000 },
+          };
+        } else if (step === 3) {
+          const text = lastToolText(body.messages);
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          const windows = (parsed && parsed.windows) || [];
+          assert.ok(
+            windows.some((entry) => entry && entry.id === 'fake-main'),
+            label + ': windows list must return the fake driver window, got ' + text.slice(0, 300),
+          );
+          assert.equal(parsed.found, true, label + ': bounded window wait must find the fake app');
+          assert.equal(parsed.timedOut, false);
+          assert.equal(parsed.window.id, FAKE_WINDOW.id);
+          assert.match(parsed.note, /does not confirm application readiness/);
+          evidence.windowWait = parsed;
+          calls.push(label + ':window-wait-verified');
+          tool = {
+            name: 'computer_act',
+            arguments: {
+              frameId: observedFrameId,
+              actions: [{ type: 'click', x: MODEL_X, y: MODEL_Y }],
+              observeAfter: true,
+              ...(interactive ? { observeOptions: { windowId: FAKE_WINDOW.id, maxWidth: 1024 } } : {}),
+            },
+          };
+        } else if (step === 4) {
+          const text = lastToolText(body.messages);
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          assert.ok(
+            parsed && (parsed.executed === 1 || parsed.observe),
+            label + ': act must report execution, got ' + text.slice(0, 300),
+          );
+          assert.equal(
+            totals().acts,
+            1,
+            label + ': fake workers must receive exactly one act batch in aggregate',
+          );
+          assert.equal(
+            parsed.applicationState,
+            'unverified',
+            label + ': sent input is not application readiness',
+          );
+          const captureOptions = { windowId: FAKE_WINDOW.id, maxWidth: interactive ? 1024 : 800 };
+          assert.deepEqual(
+            driverInstances.flatMap((instance) => instance.calls.observes).at(-1),
+            captureOptions,
+          );
+          assert.deepEqual(parsed.frame.captureOptions, captureOptions);
+          evidence.verificationCapture = { captureOptions, applicationState: parsed.applicationState };
+          const actCall = driverInstances.flatMap((instance) => instance.calls.acts)[0];
+          const received = actCall.actions[0];
+          assert.equal(received.x, EXPECTED_PHYSICAL.x, label + ': screenshot x must map to physical x');
+          assert.equal(received.y, EXPECTED_PHYSICAL.y, label + ': screenshot y must map to physical y');
+          assert.deepEqual(
+            actCall.expectedFrame,
+            {
+              windowId: FAKE_WINDOW.id,
+              bounds: FRAME_GEOM.bounds,
+              desktopBounds: FAKE_DESKTOP_BOUNDS,
+              foregroundWindowId: FAKE_FOREGROUND_WINDOW,
+              requireForeground: false,
+            },
+            label + ': bridge must forward the observed geometry as expectedFrame',
+          );
+          evidence.mapping = { sent: { x: MODEL_X, y: MODEL_Y }, received: { x: received.x, y: received.y } };
+          evidence.expectedFrame = actCall.expectedFrame;
+          const seen = imageEvidence(body.messages, pngPrefix);
+          evidence.imageStages.push({ stage: 'after-act-observeAfter', ...seen });
+          assert.ok(
+            seen.hasBase64 && seen.hasImagePart,
+            label + ': verification screenshot must reach the model as image',
+          );
+          calls.push(label + ':act-frame-mapped');
+          tool = { name: 'computer_release', arguments: {} };
+        } else if (step === 5) {
+          const text = lastToolText(body.messages);
+          const parsed = JSON.parse(text);
+          assert.equal(parsed.released, true, label + ': release must confirm');
+          calls.push(label + ':release');
+          childFinished = true;
+          tool = {
+            name: 'ipython',
+            arguments: {
+              code: 'import agent_message\nawait agent_message.send("CU_CHILD_DONE", receiver_role="parent")\nprint("CU_CHILD_SENT")',
+            },
+          };
+        } else {
+          childFinished = true;
+          calls.push(label + ':finished');
+        }
       }
       stage.set(role, step + 1);
       if (tool) calls.push(label + ':' + tool.name);
@@ -849,7 +981,7 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
       handle = await runtime.start({
         cwd,
         message: 'Prove Computer Use tools with the fake desktop driver. Start with status, then observe.',
-        model: 'fixture/computer',
+        model: MAIN_MODEL,
         thinking: 'off',
         allowQuestions: interactive,
         onEvent: (event) => {
@@ -861,7 +993,15 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
       done = await Promise.race([
         handle.done,
         new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error(label + ' native run timed out after 120s')), 120000);
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  label + ' native run timed out after 120s calls=' + JSON.stringify(calls).slice(0, 2000),
+                ),
+              ),
+            120000,
+          );
         }),
       ]).finally(() => clearTimeout(timer));
     }
@@ -879,10 +1019,13 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
     for (const expected of [
       label + ':observe-disabled-refusal',
       label + ':status-enabled-json',
+      label + ':main-delegate-required',
+      label + ':child-admitted',
       label + ':observe-image-in-request',
       label + ':window-wait-verified',
       label + ':act-frame-mapped',
       label + ':release',
+      label + ':child-delegated-verified',
     ])
       assert.ok(
         calls.includes(expected),
@@ -919,8 +1062,19 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
       runId: RUN2,
       cwd,
       name: 'rebind-check',
+      computerModel: CU_MODEL,
+      computerThinking: CU_THINKING,
+    });
+    // Explicit test holder for worker lifecycle (not main spoofing).
+    await manager.acquire({
+      ownerId: RUN2,
+      rootSessionId: run.sessionId,
+      sessionId: 'child-rebind-1',
+      agentSessionId: 'child-rebind-1',
+      agentId: 'agent-rebind-1',
+      cwd,
+      model: CU_MODEL,
       imageCapable: true,
-      model: 'fixture/computer',
     });
     const instancesBeforeRebind = driverInstances.length;
     const secondWorker = await manager.driver();
@@ -1001,7 +1155,7 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
         cwd,
         sessionId: run.sessionId,
         message: 'Confirm Computer Use status on the resumed session.',
-        model: 'fixture/computer',
+        model: MAIN_MODEL,
         thinking: 'off',
         ...(interactive ? { allowQuestions: true } : {}),
         onEvent: (event) => {
@@ -1036,7 +1190,9 @@ async function runPhase({ label, interactive, pngBase64, pngPrefix, resultsDir, 
     );
     calls.push(label + ':resume-new-lifecycle');
     await manager.releaseRun(RUN2);
-    assert.equal(manager.status().enabled, false, label + ': run completion must release the controller');
+    // Delegation: run completion releases the holder, session permission survives for the next turn.
+    assert.equal(manager.ownerInfo(), null, label + ': run completion must release the holder');
+    assert.equal(manager.status().enabled, true, label + ': session permission survives for the next turn');
     await manager.noteRunStarted({ runId: RUN3, sessionId: run.sessionId, cwd });
     assert.equal(
       manager.status({ sessionId: run.sessionId }).enabled,

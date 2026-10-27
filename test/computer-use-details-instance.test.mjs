@@ -158,10 +158,10 @@ test('visible pinned details keep exactly one existing status poller alive', asy
   assert.equal(clears.mock.callCount(), 1);
 });
 
-
 test('conversation changes retain desktop details but invalidate scoped controls and stale replies', async (t) => {
   const main = scope(['computer-use', 'allow-computer-use', 'computer-use-toggle', 'computer-use-status']);
-  const pinned = scope(detailIds), following = scope(detailIds);
+  const pinned = scope(detailIds),
+    following = scope(detailIds);
   const previous = globalThis.document;
   globalThis.document = {
     hidden: false,
@@ -174,7 +174,8 @@ test('conversation changes retain desktop details but invalidate scoped controls
   });
   const active = { projectCwd: '/A', sessionId: 'sess-a', online: true, readOnly: false };
   const locked = { ...active };
-  const requests = [], pending = [];
+  const requests = [],
+    pending = [];
   const ui = createComputerUse({
     api: (path, options = {}) => {
       requests.push({ path, method: options.method || 'GET', signal: options.signal });
@@ -192,8 +193,11 @@ test('conversation changes retain desktop details but invalidate scoped controls
   assert.equal(pinned('computer-use-warning').textContent, tr('computer.loading'));
   assert.equal(pinned('computer-use-owner').textContent, '-');
   const snapshot = {
-    supported: true, enabled: true, owner: { sessionId: 'sess-a', name: 'Alpha' },
-    lastAction: 'Known action', hotkey: 'Esc',
+    supported: true,
+    enabled: true,
+    owner: { sessionId: 'sess-a', name: 'Alpha' },
+    lastAction: 'Known action',
+    hotkey: 'Esc',
   };
   const initial = ui.refresh();
   pending.shift().resolve(snapshot);
@@ -235,7 +239,10 @@ test('conversation changes retain desktop details but invalidate scoped controls
 
   const recovered = ui.refresh();
   pending.shift().resolve({
-    ...snapshot, enabled: false, owner: { sessionId: 'sess-c', name: 'Gamma' }, lastAction: 'New action',
+    ...snapshot,
+    enabled: false,
+    owner: { sessionId: 'sess-c', name: 'Gamma' },
+    lastAction: 'New action',
   });
   await recovered;
   assert.equal(pinned('computer-use-owner').textContent, 'Gamma');
@@ -253,4 +260,131 @@ test('conversation changes retain desktop details but invalidate scoped controls
   assert.equal(pinned('computer-use-details').hidden, true, 'Unavailable target never inherits another');
   assert.ok(requests.every((request) => request.method === 'GET'));
   assert.equal(requests.length, 4, 'Navigation keeps the single existing fetch path');
+});
+
+test('scoped permission stays independent when another session holds the desktop', async (t) => {
+  const main = scope(['computer-use', 'allow-computer-use', 'computer-use-toggle', 'computer-use-status']);
+  const previous = globalThis.document;
+  globalThis.document = {
+    hidden: false,
+    getElementById: main,
+    createTextNode: (data) => ({ nodeType: 3, data, parentNode: null }),
+  };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  });
+  const ctx = { projectCwd: '/A', sessionId: 'sess-a', online: true, readOnly: false };
+  const requests = [];
+  // Own session allowed, but the desktop is held by another root's child.
+  let current = {
+    supported: true,
+    enabled: true,
+    owner: { sessionId: 'sess-other', agentSessionId: 'agent-9', agentId: 'child-9', name: 'Other child' },
+    busy: false,
+    hotkey: 'Esc',
+  };
+  const ui = createComputerUse({
+    api: async (path, options = {}) => {
+      const method = options?.method || 'GET';
+      requests.push({ path, method, body: options?.body });
+      if (method === 'POST') {
+        if (options?.body?.enabled === true) current = { ...current, enabled: true };
+        else current = { ...current, enabled: false };
+        return { ...current };
+      }
+      return { ...current };
+    },
+    toast: () => assert.fail('No toast expected for permission-only toggle'),
+    getContext: () => ctx,
+  });
+  t.after(() => ui.destroy());
+  await ui.refresh();
+  assert.equal(ui.shouldIncludeInRun(), true, 'Own scoped flag arms the run even with a foreign holder');
+  assert.equal(
+    main('allow-computer-use').checked,
+    true,
+    'Toggle reflects own permission, not the foreign owner',
+  );
+  // Disabling the own flag is always allowed and never steals the other owner.
+  assert.equal(await ui.setEnabled(false), false, 'Disabling clears the own flag (enabled false)');
+  assert.equal(requests.filter((r) => r.method === 'POST').length, 1, 'Own permission change must POST');
+  assert.equal(current.owner?.sessionId, 'sess-other', 'Other holder is never stolen by permission change');
+  assert.equal(ui.shouldIncludeInRun(), false);
+  // Re-enabling while the other holder is still active is also allowed (no takeover confirmation).
+  assert.equal(await ui.setEnabled(true), true);
+  assert.equal(requests.filter((r) => r.method === 'POST').length, 2);
+  assert.equal(current.owner?.sessionId, 'sess-other');
+  assert.equal(ui.shouldIncludeInRun(), true);
+});
+
+test('busy desktop shows working and owner keeps the executing child identity', async (t) => {
+  const { normalizeComputerStatus, ownerDisplayName } = await import('../public/computer-use.js');
+  const status = normalizeComputerStatus({
+    supported: true,
+    enabled: true,
+    owner: {
+      sessionId: 'sess-a',
+      runId: 'run-a',
+      agentSessionId: 'agent-1',
+      agentId: 'child-1',
+      name: 'Desktop child',
+    },
+    busy: true,
+  });
+  assert.equal(status.owner?.sessionId, 'sess-a', 'Root session stays the root conversation');
+  assert.equal(status.owner?.agentSessionId, 'agent-1', 'Agent session identifies the executing child');
+  assert.equal(status.owner?.agentId, 'child-1');
+  assert.equal(status.owner?.name, 'Desktop child');
+  assert.equal(ownerDisplayName(status.owner), 'Desktop child', 'Child name is displayed when present');
+  assert.equal(
+    ownerDisplayName({ agentSessionId: 'agent-abcdef123456' }),
+    '#agent-ab',
+    'Agent session falls back to a short id',
+  );
+
+  const main = scope(['computer-use', 'allow-computer-use', 'computer-use-toggle', 'computer-use-status']);
+  const previous = globalThis.document;
+  globalThis.document = {
+    hidden: false,
+    getElementById: main,
+    createTextNode: (data) => ({ nodeType: 3, data, parentNode: null }),
+  };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  });
+  const ctx = { projectCwd: '/A', sessionId: 'sess-a', online: true, readOnly: false };
+  const ui = createComputerUse({
+    api: async () => ({
+      supported: true,
+      enabled: true,
+      owner: { sessionId: 'sess-other', name: 'Other child' },
+      busy: true,
+      hotkey: 'Esc',
+    }),
+    toast() {},
+    getContext: () => ctx,
+  });
+  t.after(() => ui.destroy());
+  await ui.refresh();
+  assert.equal(ui.shouldIncludeInRun(), true, 'Busy foreign holder never blocks own permission');
+  assert.equal(
+    main('computer-use-status').textContent,
+    tr('computer.working'),
+    'Global busy shows working even with independent permission',
+  );
+});
+
+test('main send keeps the origin conversation model (Computer Use is permission only)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.ok(
+    source.includes('originTriple?.model'),
+    'sendMessage must keep the origin conversation triple as the main model',
+  );
+  assert.ok(
+    !source.includes('globalComputerModel'),
+    'sendMessage must not override the main model with the global Computer Use preference',
+  );
 });

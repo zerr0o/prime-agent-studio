@@ -48,6 +48,88 @@ const ctx = {
   sessionManager: { getSessionId: () => 'sess-1', getSessionFile: () => '/tmp/p/sess-1.jsonl' },
 };
 
+const COMPUTER_MODEL = 'acme/vis-model';
+const COMPUTER_THINKING = 'high';
+const childCaller = {
+  cwd: '/tmp/p',
+  sessionId: 'sess-child-1',
+  rootSessionId: 'sess-1',
+  ownerId: 'run-1',
+  agentId: 'agent-1',
+  name: 'child',
+  // Trusted native provenance: bridge authorizes caller.model/imageCapable only.
+  // Extension identity.model/imageCapable is hint-only and ignored for auth.
+  model: COMPUTER_MODEL,
+  imageCapable: true,
+};
+const mainCaller = {
+  cwd: '/tmp/p',
+  sessionId: 'sess-1',
+  rootSessionId: 'sess-1',
+  ownerId: 'run-1',
+  name: 'Prime Agent',
+  model: 'other/model',
+  imageCapable: false,
+};
+const childCtx = {
+  cwd: '/tmp/p',
+  sessionManager: {
+    getSessionId: () => 'sess-child-1',
+    getSessionFile: () => '/tmp/p/sess-child-1.jsonl',
+  },
+  model: { provider: 'acme', id: 'vis-model', input: ['text', 'image'] },
+};
+const mainCtx = {
+  cwd: '/tmp/p',
+  sessionManager: { getSessionId: () => 'sess-1', getSessionFile: () => '/tmp/p/sess-1.jsonl' },
+  model: { provider: 'other', id: 'model', input: ['text'] },
+};
+
+async function startCodedStubBridge(t, handler) {
+  const { createServer } = await import('node:http');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { unlink } = await import('node:fs/promises');
+  const token = `stub-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const socketPath =
+    process.platform === 'win32'
+      ? `\\\\.\\pipe\\prime-test-coded-${Date.now()}-${Math.random().toString(16).slice(2)}`
+      : join(tmpdir(), `prime-test-coded-${Date.now()}-${Math.random().toString(16).slice(2)}.sock`);
+  const calls = [];
+  const server = createServer(async (req, res) => {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      calls.push(input);
+      const out = await handler(input, calls);
+      if (out && typeof out === 'object' && Number.isInteger(out.status) && 'body' in out) {
+        res.writeHead(out.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out.body));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out));
+      }
+    } catch (error) {
+      const status = Number.isInteger(error?.status) ? error.status : 500;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: String(error?.message || error),
+          code: error?.code || 'computer_use_failed',
+        }),
+      );
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  if (process.platform !== 'win32') t.after(() => unlink(socketPath).catch(() => {}));
+  return { config: { socketPath, token }, calls };
+}
+
 async function loadExtension(t, config) {
   process.env.PRIME_STUDIO_COMPUTER_USE_CONFIG = JSON.stringify(config);
   t.after(() => {
@@ -103,7 +185,7 @@ async function startStubBridge(t, handler) {
 
 test('extension registers desktop tools and returns ImageContent for observe', async (t) => {
   const manager = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
-  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => caller });
+  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => childCaller });
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => manager.close());
@@ -118,9 +200,15 @@ test('extension registers desktop tools and returns ImageContent for observe', a
     assert.ok(tools.has(name), `missing ${name}`);
 
   const observe = tools.get('computer_observe');
-  await assert.rejects(observe.execute('id', {}, null, null, ctx), /Enable it in Studio/);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
-  const shot = await observe.execute('id', {}, null, null, ctx);
+  await assert.rejects(observe.execute('id', {}, null, null, mainCtx), /Enable it in Studio/);
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: COMPUTER_MODEL,
+    computerThinking: COMPUTER_THINKING,
+  });
+  const shot = await observe.execute('id', {}, null, null, childCtx);
   assert.equal(shot.content[0].type, 'image');
   assert.equal(shot.content[0].mimeType, 'image/jpeg');
   assert.equal(typeof shot.content[0].data, 'string');
@@ -133,7 +221,7 @@ test('extension registers desktop tools and returns ImageContent for observe', a
     { frameId: shot.details.frame.frameId, actions: [{ type: 'click', x: 10, y: 10 }] },
     null,
     null,
-    ctx,
+    childCtx,
   );
   assert.match(JSON.stringify(done), /executed/);
   await assert.rejects(
@@ -142,7 +230,7 @@ test('extension registers desktop tools and returns ImageContent for observe', a
       { frameId: shot.details.frame.frameId, actions: [{ type: 'click', x: 10, y: 10 }] },
       null,
       null,
-      ctx,
+      childCtx,
     ),
     /stale/i,
   );
@@ -150,13 +238,19 @@ test('extension registers desktop tools and returns ImageContent for observe', a
 
 test('extension act with observeAfter returns a verification ImageContent', async (t) => {
   const manager = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
-  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => caller });
+  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => childCaller });
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => manager.close());
   const { tools } = await loadExtension(t, bridge.config);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
-  const shot = await tools.get('computer_observe').execute('id', {}, null, null, ctx);
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: COMPUTER_MODEL,
+    computerThinking: COMPUTER_THINKING,
+  });
+  const shot = await tools.get('computer_observe').execute('id', {}, null, null, childCtx);
   const result = await tools
     .get('computer_act')
     .execute(
@@ -164,7 +258,7 @@ test('extension act with observeAfter returns a verification ImageContent', asyn
       { frameId: shot.details.frame.frameId, actions: [{ type: 'wait', ms: 5 }], observeAfter: true },
       null,
       null,
-      ctx,
+      childCtx,
     );
   assert.equal(result.content[0].type, 'image');
   assert.ok(result.details.frame.frameId !== shot.details.frame.frameId);
@@ -192,21 +286,27 @@ test('computer status reports the true off state without spawning the worker', a
 
 test('extension rejects over-cap wait, path and scroll values', async (t) => {
   const manager = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
-  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => caller });
+  const bridge = createComputerUseBridge({ manager, resolveCaller: async () => childCaller });
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => manager.close());
   const { tools } = await loadExtension(t, bridge.config);
-  await manager.enable({ sessionId: 'sess-1', runId: 'run-1', cwd: '/tmp/p' });
-  const shot = await tools.get('computer_observe').execute('id', {}, null, null, ctx);
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: COMPUTER_MODEL,
+    computerThinking: COMPUTER_THINKING,
+  });
+  const shot = await tools.get('computer_observe').execute('id', {}, null, null, childCtx);
   const frameId = shot.details.frame.frameId;
   const act = tools.get('computer_act');
   await assert.rejects(
-    act.execute('id', { frameId, actions: [{ type: 'wait', ms: 5001 }] }, null, null, ctx),
+    act.execute('id', { frameId, actions: [{ type: 'wait', ms: 5001 }] }, null, null, childCtx),
     /5000/,
   );
   await assert.rejects(
-    act.execute('id', { frameId, actions: [{ type: 'scroll', deltaY: 101 }] }, null, null, ctx),
+    act.execute('id', { frameId, actions: [{ type: 'scroll', deltaY: 101 }] }, null, null, childCtx),
     /100/,
   );
   await assert.rejects(
@@ -218,7 +318,7 @@ test('extension rejects over-cap wait, path and scroll values', async (t) => {
       },
       null,
       null,
-      ctx,
+      childCtx,
     ),
     /20/,
   );
@@ -503,7 +603,10 @@ test('context hook removes oversized historical screenshots and guards user imag
   Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(smallPng);
   smallPng.writeUInt32BE(640, 16);
   smallPng.writeUInt32BE(480, 20);
-  const smallUser = { role: 'user', content: [{ type: 'image', data: smallPng.toString('base64'), mimeType: 'image/png' }] };
+  const smallUser = {
+    role: 'user',
+    content: [{ type: 'image', data: smallPng.toString('base64'), mimeType: 'image/png' }],
+  };
   assert.equal(await events.get('context')({ messages: [smallUser] }), undefined);
 });
 
@@ -568,4 +671,339 @@ test('CUA image verification retains partial action evidence and does not duplic
   assert.equal(text.elements[0].label, 'Play');
   assert.equal(result.details.partial, true);
   assert.ok(!JSON.stringify(text).includes(IMAGE));
+});
+
+test('main receives on-demand delegation instructions only when enabled, never auto-spawns', async (t) => {
+  const routing = { model: COMPUTER_MODEL, thinking: COMPUTER_THINKING };
+  const stub = await startStubBridge(t, async (input) => {
+    if (input.action === 'release') return { released: false };
+    if (input.action === 'status')
+      return { enabled: true, mine: false, delegated: false, routing, owner: null, busy: false };
+    return {};
+  });
+  const { events, tools } = await loadExtension(t, stub.config);
+  assert.equal(typeof events.get('before_agent_start'), 'function');
+  const out = await events.get('before_agent_start')({ systemPrompt: 'BASE', prompt: 'do desktop' }, mainCtx);
+  assert.ok(out && typeof out.systemPrompt === 'string');
+  assert.match(out.systemPrompt, /BASE/);
+  assert.match(out.systemPrompt, /on-demand/i);
+  assert.match(out.systemPrompt, /await rlm\.spawn\(/);
+  assert.match(out.systemPrompt, /name="/);
+  assert.match(out.systemPrompt, new RegExp(COMPUTER_MODEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(out.systemPrompt, /overrides general subagent defaults/i);
+  // Exact native shape is Python kwargs, never JS object syntax.
+  assert.ok(
+    !/rlm\.spawn\(prompt,\s*\{/.test(out.systemPrompt),
+    'must not use JS rlm.spawn(prompt, {name:}) shape',
+  );
+  assert.ok(!/\{name:/.test(out.systemPrompt), 'must not use JS {name:} object syntax');
+  assert.match(out.systemPrompt, /do not auto-create/i);
+  assert.match(out.systemPrompt, /parent messages/i);
+  assert.match(out.systemPrompt, /do not poll/i);
+  assert.match(out.systemPrompt, /computer_use_delegate_required/);
+  // No auto-spawn: hook only returns prompt, never calls desktop actions itself.
+  const kinds = stub.calls.map((c) => c.action).sort();
+  assert.ok(kinds.includes('status'), 'hook must fetch status over local IPC');
+  assert.ok(kinds.includes('release'), 'hook releases leftover hold before new mission');
+  assert.ok(
+    !kinds.includes('observe') && !kinds.includes('act'),
+    'main prompt must not auto-spawn desktop work',
+  );
+
+  // Disabled permission appends nothing.
+  const offStub = await startStubBridge(t, async (input) => {
+    if (input.action === 'release') return { released: false };
+    if (input.action === 'status') return { enabled: false, mine: false, delegated: false, routing: null };
+    return {};
+  });
+  const offLoaded = await loadExtension(t, offStub.config);
+  const offOut = await offLoaded.events.get('before_agent_start')({ systemPrompt: 'BASE' }, mainCtx);
+  assert.equal(offOut, undefined);
+  // Schemas unchanged: status stays parameter-free, descriptions explain delegation.
+  assert.deepEqual(Object.keys(tools.get('computer_status').parameters.properties || {}), []);
+  assert.match(tools.get('computer_status').description, /delegated/i);
+  assert.match(tools.get('computer_status').description, /routing/i);
+});
+
+test('delegated child with matching model may use desktop; mismatched child must delegate', async (t) => {
+  const routing = { model: COMPUTER_MODEL, thinking: COMPUTER_THINKING };
+  const stub = await startStubBridge(t, async (input) => {
+    if (input.action === 'release') return { released: false };
+    if (input.action === 'status')
+      return { enabled: true, mine: false, delegated: true, routing, owner: null, busy: false };
+    return {};
+  });
+  const { events } = await loadExtension(t, stub.config);
+  const matched = await events.get('before_agent_start')({ systemPrompt: 'BASE' }, childCtx);
+  assert.ok(matched && typeof matched.systemPrompt === 'string');
+  assert.match(matched.systemPrompt, /ONLY if this task requires desktop interaction/i);
+  assert.match(matched.systemPrompt, /Otherwise use normal tools/i);
+  assert.match(matched.systemPrompt, /First desktop use acquires the exclusive lock/i);
+  // Model match alone never assigns a CU specialist role or mandates desktop work.
+  assert.ok(!/You are the delegated Computer Use subagent/i.test(matched.systemPrompt));
+  assert.ok(!/you must use desktop tools/i.test(matched.systemPrompt));
+
+  const otherCtx = {
+    cwd: '/tmp/p',
+    sessionManager: {
+      getSessionId: () => 'sess-child-2',
+      getSessionFile: () => '/tmp/p/sess-child-2.jsonl',
+    },
+    model: { provider: 'other', id: 'model', input: ['text'] },
+  };
+  const mismatched = await events.get('before_agent_start')({ systemPrompt: 'BASE' }, otherCtx);
+  assert.ok(mismatched && typeof mismatched.systemPrompt === 'string');
+  assert.match(mismatched.systemPrompt, /not the configured/i);
+  assert.match(mismatched.systemPrompt, new RegExp(COMPUTER_MODEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(mismatched.systemPrompt, /do not.*switch/i);
+  assert.match(mismatched.systemPrompt, /computer_use_delegate_required/);
+});
+
+test('different native sessions keep isolated hold state', async (t) => {
+  const stub = await startStubBridge(t, async (input) => {
+    if (input.action === 'release') return { released: true };
+    if (input.action === 'status') return { enabled: true, mine: false, delegated: false, routing: null };
+    return { ok: true };
+  });
+  const { tools, events } = await loadExtension(t, stub.config);
+  const ctxA = {
+    cwd: '/tmp/p',
+    sessionManager: { getSessionId: () => 'sess-A', getSessionFile: () => '/tmp/p/sess-A.jsonl' },
+    model: { provider: 'acme', id: 'vis-model', input: ['text', 'image'] },
+  };
+  const ctxB = {
+    cwd: '/tmp/p',
+    sessionManager: { getSessionId: () => 'sess-B', getSessionFile: () => '/tmp/p/sess-B.jsonl' },
+    model: { provider: 'acme', id: 'vis-model', input: ['text', 'image'] },
+  };
+  await events.get('agent_start')(null, ctxA);
+  await events.get('agent_start')(null, ctxB);
+  await tools.get('computer_status').execute('id', {}, null, null, ctxA);
+  await tools.get('computer_status').execute('id', {}, null, null, ctxB);
+  const ids = stub.calls.filter((c) => c.action === 'status').map((c) => c.identity.sessionId);
+  assert.ok(ids.includes('sess-A'));
+  assert.ok(ids.includes('sess-B'));
+  assert.notEqual(
+    stub.calls.find((c) => c.identity.sessionId === 'sess-A').identity,
+    stub.calls.find((c) => c.identity.sessionId === 'sess-B').identity,
+  );
+  // Ending A must not block B.
+  await events.get('agent_end')(null, ctxA);
+  const again = await tools.get('computer_status').execute('id', {}, null, null, ctxB);
+  assert.equal(JSON.parse(again.content[0].text).enabled, true);
+  await assert.rejects(tools.get('computer_status').execute('id', {}, null, null, ctxA), /ended/i);
+});
+
+test('agent_end and session_shutdown release exactly once via raw send and stay idempotent', async (t) => {
+  const stub = await startStubBridge(t, async (input) => {
+    if (input.action === 'status')
+      return {
+        enabled: true,
+        mine: true,
+        delegated: true,
+        routing: { model: COMPUTER_MODEL, thinking: COMPUTER_THINKING },
+      };
+    if (input.action === 'release') return { released: true };
+    return {};
+  });
+  const { events, tools } = await loadExtension(t, stub.config);
+  await events.get('agent_start')(null, childCtx);
+  await tools.get('computer_status').execute('id', {}, null, null, childCtx);
+  const before = stub.calls.filter((c) => c.action === 'release').length;
+  await events.get('agent_end')(null, childCtx);
+  await events.get('session_shutdown')(null, childCtx);
+  const releases = stub.calls.filter((c) => c.action === 'release');
+  assert.ok(releases.length >= before + 2, 'both lifecycle hooks must best-effort release');
+  for (const r of releases) assert.equal(r.identity.sessionId, 'sess-child-1');
+  // After end, further tool use is blocked (state ended), but release itself already went out.
+  await assert.rejects(tools.get('computer_status').execute('id', {}, null, null, childCtx), /ended/i);
+});
+
+test('failed lifecycle release never masks the task result', async (t) => {
+  const stub = await startCodedStubBridge(t, async (input) => {
+    if (input.action === 'release') {
+      const err = new Error('socket hang up');
+      err.status = 500;
+      err.code = 'computer_use_failed';
+      throw err;
+    }
+    if (input.action === 'status') return { enabled: true, mine: false, delegated: false, routing: null };
+    return {};
+  });
+  const { events } = await loadExtension(t, stub.config);
+  await events.get('agent_start')(null, childCtx);
+  // Must not throw even though release IPC fails.
+  await events.get('agent_end')(null, childCtx);
+  await events.get('session_shutdown')(null, childCtx);
+  assert.ok(stub.calls.some((c) => c.action === 'release'));
+});
+
+test('native identity stays minimal (no wire model hints) and bridge errors stay visible with code', async (t) => {
+  const stub = await startStubBridge(t, async (input) => {
+    return { enabled: true };
+  });
+  const { tools } = await loadExtension(t, stub.config);
+  await tools.get('computer_status').execute('id', {}, null, null, childCtx);
+  // Bridge ignores wire hints: only native cwd/sessionId/sessionFile are sent.
+  assert.deepEqual(Object.keys(stub.calls[0].identity).sort(), ['cwd', 'sessionFile', 'sessionId']);
+  assert.ok(!('model' in stub.calls[0].identity));
+  assert.ok(!('imageCapable' in stub.calls[0].identity));
+
+  const noModelCtx = {
+    cwd: '/tmp/p',
+    sessionManager: { getSessionId: () => 'sess-nomodel', getSessionFile: () => '/tmp/p/sess-nomodel.jsonl' },
+  };
+  await tools.get('computer_status').execute('id', {}, null, null, noModelCtx);
+  const nomodel = stub.calls.find((c) => c.identity.sessionId === 'sess-nomodel');
+  assert.ok(nomodel);
+  assert.deepEqual(Object.keys(nomodel.identity).sort(), ['cwd', 'sessionFile', 'sessionId']);
+
+  // Even with a model in ctx, identity never carries it; local guidance uses modelRefOf only.
+  await tools.get('computer_status').execute('id', {}, null, null, mainCtx);
+  const mainCall = stub.calls.find((c) => c.identity.sessionId === 'sess-1');
+  assert.ok(mainCall);
+  assert.ok(!('model' in mainCall.identity));
+  assert.ok(!('imageCapable' in mainCall.identity));
+
+  // Bridge 409 with code stays visible (isError via throw, code in message + details).
+  const coded = await startCodedStubBridge(t, async (input) => {
+    if (input.action === 'observe')
+      return {
+        status: 409,
+        body: {
+          error:
+            'Delegate this desktop task to a normal rlm.spawn subagent using the configured Computer Use model.',
+          code: 'computer_use_delegate_required',
+        },
+      };
+    return { enabled: true };
+  });
+  const codedLoaded = await loadExtension(t, coded.config);
+  const err = await codedLoaded.tools
+    .get('computer_observe')
+    .execute('id', {}, null, null, mainCtx)
+    .then(
+      () => assert.fail('expected delegate_required'),
+      (e) => e,
+    );
+  assert.equal(err.code, 'computer_use_delegate_required');
+  assert.match(String(err.message), /computer_use_delegate_required/);
+  assert.match(String(err.message), /Delegate this desktop task/);
+  assert.equal(err.details.code, 'computer_use_delegate_required');
+});
+
+test('real bridge: main is delegated-required, matching child acquires, release is holder-scoped', async (t) => {
+  const manager = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  const seen = [];
+  const bridge = createComputerUseBridge({
+    manager,
+    resolveCaller: async (identity) => {
+      seen.push(identity);
+      if (identity.sessionId === 'sess-child-1') return childCaller;
+      return mainCaller;
+    },
+  });
+  await bridge.ready;
+  t.after(() => bridge.close());
+  t.after(() => manager.close());
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: COMPUTER_MODEL,
+    computerThinking: COMPUTER_THINKING,
+  });
+  const { tools, events } = await loadExtension(t, bridge.config);
+  // Main desktop action is delegated-required with code preserved.
+  const mainErr = await tools
+    .get('computer_observe')
+    .execute('id', {}, null, null, mainCtx)
+    .then(
+      () => assert.fail('main must not observe'),
+      (e) => e,
+    );
+  assert.equal(mainErr.code, 'computer_use_delegate_required');
+  assert.match(String(mainErr.message), /computer_use_delegate_required/);
+  // Matching child can observe.
+  const shot = await tools.get('computer_observe').execute('id', {}, null, null, childCtx);
+  assert.equal(shot.content[0].type, 'image');
+  // Status for child is delegated with routing; for main it is not delegated.
+  const childStatus = JSON.parse(
+    (await tools.get('computer_status').execute('id', {}, null, null, childCtx)).content[0].text,
+  );
+  assert.equal(childStatus.enabled, true);
+  assert.equal(childStatus.delegated, true);
+  assert.equal(childStatus.routing.model, COMPUTER_MODEL);
+  assert.equal(childStatus.routing.thinking, COMPUTER_THINKING);
+  const mainStatus = JSON.parse(
+    (await tools.get('computer_status').execute('id', {}, null, mainCtx)).content[0].text,
+  );
+  assert.equal(mainStatus.enabled, true);
+  assert.equal(mainStatus.delegated, false);
+  // Lifecycle release for holder clears; non-holder release is a no-op success.
+  await events.get('agent_end')(null, childCtx);
+  assert.equal(manager.status().owner, null);
+});
+
+test('bridge error details are visible inside thrown message, not only Error properties', async (t) => {
+  const coded = await startCodedStubBridge(t, async (input) => {
+    if (input.action === 'act')
+      return {
+        status: 409,
+        body: {
+          error: 'The desktop focus changed during this batch. Observe again before acting.',
+          code: 'computer_use_stale_frame',
+          details: { stage: 'verify-focus', expectedWindowId: '42', actualForeground: '99' },
+        },
+      };
+    if (input.action === 'status') return { enabled: true };
+    return {};
+  });
+  const { tools } = await loadExtension(t, coded.config);
+  const err = await tools
+    .get('computer_act')
+    .execute('id', { frameId: 'f1', actions: [{ type: 'wait', ms: 5 }] }, null, null, childCtx)
+    .then(
+      () => assert.fail('expected stale focus error'),
+      (e) => e,
+    );
+  assert.equal(err.code, 'computer_use_stale_frame');
+  // Native wrapping ignores Error.details, so values must be inside message/content text.
+  assert.match(String(err.message), /verify-focus/);
+  assert.match(String(err.message), /42/);
+  assert.match(String(err.message), /99/);
+  assert.match(String(err.message), /computer_use_stale_frame/);
+});
+test('real bridge ignores spoofed identity model, trusts resolver provenance only', async (t) => {
+  const manager = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  const bridge = createComputerUseBridge({
+    manager,
+    resolveCaller: async (identity) => {
+      if (identity.sessionId === 'sess-child-1') return childCaller;
+      return mainCaller;
+    },
+  });
+  await bridge.ready;
+  t.after(() => bridge.close());
+  t.after(() => manager.close());
+  await manager.enable({
+    sessionId: 'sess-1',
+    runId: 'run-1',
+    cwd: '/tmp/p',
+    computerModel: COMPUTER_MODEL,
+    computerThinking: COMPUTER_THINKING,
+  });
+  const { tools } = await loadExtension(t, bridge.config);
+  // Spoofed identity: same holder session but wrong model in native ctx (hint-only).
+  // Authorization must still succeed because resolver returns the trusted model.
+  const spoofedCtx = {
+    cwd: '/tmp/p',
+    sessionManager: {
+      getSessionId: () => 'sess-child-1',
+      getSessionFile: () => '/tmp/p/sess-child-1.jsonl',
+    },
+    model: { provider: 'other', id: 'model', input: ['text'] },
+  };
+  const shot = await tools.get('computer_observe').execute('id', {}, null, null, spoofedCtx);
+  assert.equal(shot.content[0].type, 'image');
 });

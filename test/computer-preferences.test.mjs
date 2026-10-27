@@ -17,7 +17,12 @@ function fakeComputerDriver() {
       if (command.method === 'observe')
         return {
           image: { data: IMAGE, mimeType: 'image/png' },
-          frame: { width: 200, height: 150, bounds: { x: 0, y: 0, width: 200, height: 150 }, capturedAt: 't' },
+          frame: {
+            width: 200,
+            height: 150,
+            bounds: { x: 0, y: 0, width: 200, height: 150 },
+            capturedAt: 't',
+          },
         };
       if (command.method === 'act') return { executed: command.params.actions.length };
       throw new Error(`unexpected ${command.method}`);
@@ -30,15 +35,13 @@ function fakeComputerDriver() {
 
 function fakeRuntime(models = null) {
   const controls = [];
-  const catalog =
-    models ||
-    ({
-      models: [
-        { id: 'openai/gpt-5.6-luna', name: 'Luna', provider: 'openai', input: ['text', 'image'] },
-        { id: 'openai/other-vision', name: 'Other', provider: 'openai', input: ['text', 'image'] },
-      ],
-      default: { model: 'openai/gpt-5.6-luna', thinking: 'medium' },
-    });
+  const catalog = models || {
+    models: [
+      { id: 'openai/gpt-5.6-luna', name: 'Luna', provider: 'openai', input: ['text', 'image'] },
+      { id: 'openai/other-vision', name: 'Other', provider: 'openai', input: ['text', 'image'] },
+    ],
+    default: { model: 'openai/gpt-5.6-luna', thinking: 'medium' },
+  };
   return {
     controls,
     async getStatus() {
@@ -206,15 +209,12 @@ test('PATCH cua without an available driver fails closed', async (t) => {
 });
 
 test('PATCH cua succeeds when the backend is available', async (t) => {
-  const { api } = await fixture(
-    t,
-    {
-      computerBackends: [
-        { id: 'native', supported: true, available: true },
-        { id: 'cua', supported: true, available: true },
-      ],
-    },
-  );
+  const { api } = await fixture(t, {
+    computerBackends: [
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: true },
+    ],
+  });
   const res = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
   assert.equal(res.status, 200);
   assert.equal(res.json.computerBackend, 'cua');
@@ -252,7 +252,7 @@ test('PATCH computer model refuses text-only models', async (t) => {
   assert.match(res.json.error, /image/i);
 });
 
-test('runs with desktop authorized use the global computer model', async (t) => {
+test('desktop permission keeps the main model and reserves the configured model for children', async (t) => {
   const { api, runtime, cwd } = await fixture(t);
   const saved = await api('/api/studio-preferences', {
     method: 'PATCH',
@@ -261,9 +261,9 @@ test('runs with desktop authorized use the global computer model', async (t) => 
   assert.equal(saved.status, 200);
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(started.status, 201);
-  assert.equal(started.json.model, 'openai/other-vision');
+  assert.equal(started.json.model, 'openai/gpt-5.6-luna');
   assert.equal(started.json.computerUse, true);
-  assert.equal(runtime.controls[0].input.model, 'openai/other-vision');
+  assert.equal(runtime.controls[0].input.model, 'openai/gpt-5.6-luna');
   runtime.controls[0].finish();
 });
 
@@ -288,28 +288,32 @@ test('PATCH thinking level validates like run thinking', async (t) => {
   assert.equal(bad.status, 400);
 });
 
-test('decision thinking applies to desktop runs like the conversation level', async (t) => {
-  const { api, runtime, cwd } = await fixture(t);
+test('dedicated model and thinking never replace the main conversation settings', async (t) => {
+  const { app, api, runtime, cwd } = await fixture(t);
   await api('/api/studio-preferences', {
     method: 'PATCH',
     body: { computerModel: 'openai/other-vision', computerThinking: 'high' },
   });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(started.status, 201);
-  assert.equal(started.json.model, 'openai/other-vision');
-  assert.equal(started.json.thinking, 'high');
-  assert.equal(runtime.controls[0].input.thinking, 'high');
+  assert.equal(started.json.model, 'openai/gpt-5.6-luna');
+  assert.equal(started.json.thinking, 'medium');
+  assert.equal(runtime.controls[0].input.thinking, 'medium');
+  assert.equal(app.computer.ownerInfo(), null);
+  const grant = app.computer.permissionFor({ ownerId: started.json.id });
+  assert.equal(grant.computerModel, 'openai/other-vision');
+  assert.equal(grant.computerThinking, 'high');
   runtime.controls[0].finish();
 });
 
-test('decision thinking overrides alone while the model stays the conversation model', async (t) => {
+test('dedicated thinking does not replace the main thinking even without a model override', async (t) => {
   const { api, runtime, cwd } = await fixture(t);
   await api('/api/studio-preferences', { method: 'PATCH', body: { computerThinking: 'low' } });
   const desktop = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(desktop.status, 201);
   assert.equal(desktop.json.model, 'openai/gpt-5.6-luna');
-  assert.equal(desktop.json.thinking, 'low');
-  assert.equal(runtime.controls[0].input.thinking, 'low');
+  assert.equal(desktop.json.thinking, 'medium');
+  assert.equal(runtime.controls[0].input.thinking, 'medium');
   runtime.controls[0].finish();
   const plain = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi' } });
   assert.equal(plain.status, 201);
@@ -327,15 +331,12 @@ test('runs without desktop keep the conversation model', async (t) => {
 });
 
 test('enabling without a backend uses the global engine', async (t) => {
-  const { api, cwd } = await fixture(
-    t,
-    {
-      computerBackends: [
-        { id: 'native', supported: true, available: true },
-        { id: 'cua', supported: true, available: true },
-      ],
-    },
-  );
+  const { api, cwd } = await fixture(t, {
+    computerBackends: [
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: true },
+    ],
+  });
   const saved = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
   assert.equal(saved.status, 200);
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
@@ -344,7 +345,7 @@ test('enabling without a backend uses the global engine', async (t) => {
   assert.equal(status.json.backend, 'cua');
 });
 
-test('a stored text-only computer model fails the run with a clear error, never a silent switch', async (t) => {
+test('an unusable stored desktop model does not block an ordinary main turn', async (t) => {
   const runtime = fakeRuntime({
     models: [
       { id: 'text/only', name: 'Only', provider: 'text', input: ['text'] },
@@ -355,25 +356,35 @@ test('a stored text-only computer model fails the run with a clear error, never 
   const { app, api, cwd } = await fixture(t, { runtime });
   await app.store.setStudioPreferences({ computerModel: 'text/only' });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
-  assert.equal(started.status, 400);
-  assert.match(started.json.error, /image/i);
-  assert.equal(runtime.controls.length, 0);
+  assert.equal(started.status, 201);
+  assert.equal(started.json.model, 'openai/gpt-5.6-luna');
+  assert.equal(app.computer.ownerInfo(), null);
+  assert.equal(app.computer.permissionFor({ ownerId: started.json.id }).computerModel, 'text/only');
+  runtime.controls[0].finish();
 });
 
-test('a stored unknown computer model fails the run instead of falling back', async (t) => {
+test('an unknown stored desktop model never replaces the main model', async (t) => {
   const { app, api, cwd } = await fixture(t);
   await app.store.setStudioPreferences({ computerModel: 'nope/missing' });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
-  assert.equal(started.status, 400);
+  assert.equal(started.status, 201);
+  assert.equal(app.computer.ownerInfo(), null);
+  assert.equal(app.computer.permissionFor({ ownerId: started.json.id }).computerModel, 'nope/missing');
   const plain = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi' } });
   assert.equal(plain.status, 201);
   assert.equal(plain.json.model, 'openai/gpt-5.6-luna');
 });
 
-test('a stored unavailable computer model fails the run with 409', async (t) => {
+test('an unavailable stored desktop model does not block ordinary conversation', async (t) => {
   const runtime = fakeRuntime({
     models: [
-      { id: 'gone/model', name: 'Gone', provider: 'gone', input: ['text', 'image'], availability: 'unavailable' },
+      {
+        id: 'gone/model',
+        name: 'Gone',
+        provider: 'gone',
+        input: ['text', 'image'],
+        availability: 'unavailable',
+      },
       { id: 'openai/gpt-5.6-luna', name: 'Luna', provider: 'openai', input: ['text', 'image'] },
     ],
     default: { model: 'openai/gpt-5.6-luna', thinking: 'medium' },
@@ -381,22 +392,28 @@ test('a stored unavailable computer model fails the run with 409', async (t) => 
   const { app, api, cwd } = await fixture(t, { runtime });
   await app.store.setStudioPreferences({ computerModel: 'gone/model' });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
-  assert.equal(started.status, 409);
-  assert.equal(runtime.controls.length, 0);
+  assert.equal(started.status, 201);
+  assert.equal(app.computer.ownerInfo(), null);
+  assert.equal(app.computer.permissionFor({ ownerId: started.json.id }).computerModel, 'gone/model');
 });
 
 test('backend changes are refused while the desktop is owned', async (t) => {
-  const { api, runtime, cwd } = await fixture(
-    t,
-    {
-      computerBackends: [
-        { id: 'native', supported: true, available: true },
-        { id: 'cua', supported: true, available: true },
-      ],
-    },
-  );
+  const { app, api, runtime, cwd } = await fixture(t, {
+    computerBackends: [
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: true },
+    ],
+  });
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(started.status, 201);
+  assert.equal(app.computer.ownerInfo(), null);
+  await app.computer.acquire({
+    ownerId: started.json.id,
+    rootSessionId: 'root-native',
+    sessionId: 'child-native',
+    agentId: 'desktop-worker',
+    cwd,
+  });
   const refused = await api('/api/studio-preferences', {
     method: 'PATCH',
     body: { computerBackend: 'cua' },
@@ -408,4 +425,66 @@ test('backend changes are refused while the desktop is owned', async (t) => {
     body: { computerBackend: 'cua' },
   });
   assert.equal(after.status, 200);
+});
+
+test('a permission without a holder pins the global engine until disabled', async (t) => {
+  const { app, api, cwd } = await fixture(t, {
+    computerBackends: [
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: true },
+    ],
+  });
+  await app.computer.enable({ sessionId: 'allowed-session', cwd, backend: 'native' });
+  assert.equal(app.computer.ownerInfo(), null);
+  const refused = await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerBackend: 'cua' },
+  });
+  assert.equal(refused.status, 409);
+  assert.equal((await app.store.getStudioPreferences()).computerBackend, 'native');
+  assert.equal(app.computer.ownerInfo(), null);
+  await app.computer.disable({ sessionId: 'allowed-session' });
+  assert.equal(
+    (
+      await api('/api/studio-preferences', {
+        method: 'PATCH',
+        body: { computerBackend: 'cua' },
+      })
+    ).status,
+    200,
+  );
+});
+
+test('engine preflight rechecks a permission granted while availability is pending', async (t) => {
+  const { app, api, cwd } = await fixture(t, {
+    computerBackends: [
+      { id: 'native', supported: true, available: true },
+      { id: 'cua', supported: true, available: true },
+    ],
+  });
+  let entered, release;
+  const seen = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const original = app.computer.refreshBackends.bind(app.computer);
+  app.computer.refreshBackends = async () => {
+    entered();
+    await pending;
+    return original();
+  };
+  const changing = api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
+  try {
+    await seen;
+    await app.computer.enable({ sessionId: 'concurrent-permission', cwd, backend: 'native' });
+    release();
+    assert.equal((await changing).status, 409);
+    assert.equal((await app.store.getStudioPreferences()).computerBackend, 'native');
+    assert.equal(app.computer.ownerInfo(), null);
+  } finally {
+    release();
+    app.computer.refreshBackends = original;
+  }
 });

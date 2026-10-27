@@ -4,7 +4,27 @@ import { request } from 'node:http';
 import { createComputerUseManager } from '../lib/computer-use.mjs';
 import { createComputerUseBridge } from '../lib/computer-use-bridge.mjs';
 
-const caller = { cwd: '/tmp/p', sessionId: 's', rootSessionId: 's', ownerId: 'r' };
+const CONFIGURED_MODEL = 'test-provider/test-cu-model';
+const CONFIGURED_THINKING = 'high';
+
+// Default legitimate child: verified native agent with configured CU model.
+const caller = {
+  cwd: '/tmp/p',
+  sessionId: 'child-cua-1',
+  rootSessionId: 's',
+  ownerId: 'r',
+  agentId: 'agent-cua-1',
+  name: 'CU helper',
+  model: CONFIGURED_MODEL,
+  imageCapable: true,
+};
+
+// Wire identity is hints only, never authorization.
+const legitIdentity = (overrides = {}) => ({
+  cwd: '/tmp/p',
+  sessionId: 'child-cua-1',
+  ...overrides,
+});
 function pngHeader(width, height) {
   const bytes = Buffer.alloc(24);
   Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(bytes);
@@ -89,7 +109,14 @@ async function fixture(t, { backend = 'cua', onRequest, onResolve } = {}) {
   await bridge.ready;
   t.after(() => bridge.close());
   t.after(() => manager.close());
-  await manager.enable({ sessionId: 's', runId: 'r', cwd: '/tmp/p', backend });
+  await manager.enable({
+    sessionId: 's',
+    runId: 'r',
+    cwd: '/tmp/p',
+    backend,
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
   return { manager, bridge, calls };
 }
 function call(bridge, action, params = {}) {
@@ -111,7 +138,7 @@ function call(bridge, action, params = {}) {
     );
     req.setTimeout(4000, () => req.destroy(new Error('test request deadline')));
     req.on('error', reject);
-    req.end(JSON.stringify({ identity: { sessionId: 's', testAction: action }, action, params }));
+    req.end(JSON.stringify({ identity: { ...legitIdentity(), testAction: action }, action, params }));
   });
 }
 const windowId = '432:198738';
@@ -371,7 +398,13 @@ test('stop and same-owner re-enable during native focus preflight cannot revive 
   await entered.promise;
   try {
     await manager.stop();
-    await manager.enable({ sessionId: 's', runId: 'r', cwd: '/tmp/p' });
+    await manager.enable({
+      sessionId: 's',
+      runId: 'r',
+      cwd: '/tmp/p',
+      computerModel: CONFIGURED_MODEL,
+      computerThinking: CONFIGURED_THINKING,
+    });
   } finally {
     proceed.resolve();
   }
@@ -416,6 +449,8 @@ for (const action of ['windows', 'observe', 'inspect']) {
         runId: 'r',
         cwd: '/tmp/p',
         backend: action === 'inspect' ? 'cua' : 'native',
+        computerModel: CONFIGURED_MODEL,
+        computerThinking: CONFIGURED_THINKING,
       });
     } finally {
       proceed.resolve();
@@ -493,12 +528,29 @@ test('late failed driver status cannot claim a replacement foreign owner or cach
       throw new Error('late old driver failure');
     },
   });
+  // Acquire as the exact holder so status queries the driver and blocks.
+  const seen = await call(bridge, 'observe', { windowId });
+  assert.equal(seen.status, 200);
   const pending = call(bridge, 'status');
   try {
     await entered.promise;
     await manager.enable({
       sessionId: 'foreign',
       runId: 'foreign-run',
+      cwd: '/tmp/other',
+      backend: 'native',
+      computerModel: CONFIGURED_MODEL,
+      computerThinking: CONFIGURED_THINKING,
+    });
+    // Release the old holder and let a foreign agent acquire: permission
+    // alone never switches the holder, only an exact acquire does.
+    await manager.releaseAgent('r', 'agent-cua-1', 'child-cua-1');
+    await manager.acquire({
+      ownerId: 'foreign-run',
+      rootSessionId: 'foreign',
+      sessionId: 'foreign-child-1',
+      agentSessionId: 'foreign-child-1',
+      agentId: 'foreign-agent-1',
       cwd: '/tmp/other',
       backend: 'native',
     });
@@ -510,4 +562,164 @@ test('late failed driver status cannot claim a replacement foreign owner or cach
   assert.equal(result.body.mine, false);
   assert.equal(result.body.driver, null);
   assert.equal(result.body.owner.runId, 'foreign-run');
+});
+
+test('CUA sibling observe is busy while the holder owns the desktop', async (t) => {
+  let current = { ...caller };
+  const { createComputerUseManager: createManager } = await import('../lib/computer-use.mjs');
+  const { createComputerUseBridge: createBridge } = await import('../lib/computer-use-bridge.mjs');
+  const calls = [];
+  const driver = {
+    async request(command) {
+      calls.push(command);
+      if (command.method === 'status') return { supported: true, hotkeyRegistered: true, hotkeyError: 0 };
+      if (command.method === 'windows') return { windows: [{ id: '432:198738', foreground: false }] };
+      if (['observe', 'inspect'].includes(command.method)) {
+        return {
+          ...(command.method === 'observe'
+            ? { image: { mimeType: 'image/png', data: pngHeader(800, 450) } }
+            : {}),
+          frame: {
+            width: 800,
+            height: 450,
+            windowId: command.params.windowId,
+            bounds: { x: 0, y: 0, width: 800, height: 450 },
+          },
+          driverFrame: {
+            backend: 'cua',
+            kind: 'screenshot',
+            pid: 432,
+            windowId: 198738,
+            snapshotId: 's00000001',
+            sessionLabel: 'private',
+          },
+          elements: [{ elementId: 's00000001:1', role: 'button', label: 'Play', enabled: true }],
+          timing: { driverMs: 1 },
+        };
+      }
+      if (command.method === 'act') return { executed: 1, results: [{ index: 0, effect: 'confirmed' }] };
+      throw new Error(command.method);
+    },
+    async stop() {},
+    async close() {},
+  };
+  const manager = createManager({
+    isSupported: true,
+    createDriver: () => driver,
+    cuaAvailability: { available: true, supported: true },
+  });
+  const bridge = createBridge({ manager, resolveCaller: async () => current });
+  await bridge.ready;
+  t.after(() => bridge.close());
+  t.after(() => manager.close());
+  await manager.enable({
+    sessionId: 's',
+    runId: 'r',
+    cwd: '/tmp/p',
+    backend: 'cua',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
+  const siblingBridge = createBridge({ manager, resolveCaller: async () => current });
+  await siblingBridge.ready;
+  t.after(() => siblingBridge.close());
+  const holderCall = (action, params = {}) => call(bridge, action, params);
+  // First holder acquires via observe.
+  current = { ...caller };
+  const first = await holderCall('observe', { windowId });
+  assert.equal(first.status, 200);
+  // Sibling with a different agentId on the same run is busy.
+  current = {
+    cwd: '/tmp/p',
+    sessionId: 'child-cua-2',
+    rootSessionId: 's',
+    ownerId: 'r',
+    agentId: 'agent-cua-2',
+    name: 'sibling',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  };
+  const { request: httpRequest } = await import('node:http');
+  const siblingCall = (action, params = {}) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          socketPath: siblingBridge.config.socketPath,
+          method: 'POST',
+          path: '/',
+          agent: false,
+          headers: {
+            Authorization: `Bearer ${siblingBridge.config.token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (c) => (body += c));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        },
+      );
+      req.on('error', reject);
+      req.end(JSON.stringify({ identity: legitIdentity({ sessionId: 'child-cua-2' }), action, params }));
+    });
+  const busy = await siblingCall('observe', { windowId });
+  assert.equal(busy.status, 409);
+  assert.equal(busy.body.code, 'computer_use_busy');
+});
+
+test('CUA forged wire model cannot override the trusted resolver', async (t) => {
+  let current = { ...caller, model: 'other/wrong-model' };
+  const { createComputerUseManager: createManager } = await import('../lib/computer-use.mjs');
+  const { createComputerUseBridge: createBridge } = await import('../lib/computer-use-bridge.mjs');
+  const manager = createManager({
+    isSupported: true,
+    createDriver: () => ({
+      async request() {
+        throw new Error('must not drive');
+      },
+      async stop() {},
+      async close() {},
+    }),
+    cuaAvailability: { available: true, supported: true },
+  });
+  const bridge = createBridge({ manager, resolveCaller: async () => current });
+  await bridge.ready;
+  t.after(() => bridge.close());
+  t.after(() => manager.close());
+  await manager.enable({
+    sessionId: 's',
+    runId: 'r',
+    cwd: '/tmp/p',
+    backend: 'cua',
+    computerModel: CONFIGURED_MODEL,
+    computerThinking: CONFIGURED_THINKING,
+  });
+  const { request: httpRequest } = await import('node:http');
+  const wireCall = (identity) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          socketPath: bridge.config.socketPath,
+          method: 'POST',
+          path: '/',
+          agent: false,
+          headers: { Authorization: `Bearer ${bridge.config.token}`, 'Content-Type': 'application/json' },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (c) => (body += c));
+          res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        },
+      );
+      req.on('error', reject);
+      req.end(JSON.stringify({ identity, action: 'observe', params: { windowId } }));
+    });
+  const forged = await wireCall({
+    cwd: '/tmp/p',
+    sessionId: 'child-cua-1',
+    model: CONFIGURED_MODEL,
+    imageCapable: true,
+  });
+  assert.equal(forged.status, 409);
+  assert.equal(forged.body.code, 'computer_use_delegate_model');
 });

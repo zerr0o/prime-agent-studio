@@ -4101,14 +4101,13 @@ async function sendMessage(event) {
     return;
   }
   const computerUse = computerUseUI?.shouldIncludeInRun() === true;
-  // Global Computer Use model (Preferences > Tools): when a run has desktop
-  // authorized it uses this model instead of the conversation model. The
-  // engine stays global, so no per-run backend is sent; the server applies
-  // the stored backend with no silent fallback.
-  const globalComputerModel =
-    computerUse && typeof settingsUI?.getComputerModel === 'function' ? settingsUI.getComputerModel() : '';
+  // Computer Use is a permission only: the main run always keeps the origin
+  // conversation model+thinking unchanged. The Preferences > Tools decision
+  // model+thinking (empty means same as conversation, in a separate child)
+  // apply only to the delegated desktop child, never to this main model.
+  // No per-run backend is sent; the server applies the stored backend.
   const effectiveModel =
-    globalComputerModel || originTriple?.model || $('model-select').value || state.modelCatalogDefault || '';
+    originTriple?.model || $('model-select').value || state.modelCatalogDefault || '';
   // Immediate feedback: the sent text stays visible but locked until the
   // server accepts it, so an edit can never be lost or sent twice.
   const originForm = originUnits?.nodes?.form || $('composer-form');
