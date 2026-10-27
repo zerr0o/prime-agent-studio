@@ -4,7 +4,13 @@ import { t as tr, bindText } from './i18n.js';
 // agent and subagent default models served by a connected provider: the
 // engine's built-in default model fails with a 401 without credentials.
 // Pure on purpose so the rule is unit-tested without a browser.
-export function setupState({ configuredProviders, models, mainModel, subagentModel }) {
+export function setupState({
+  configuredProviders,
+  models,
+  mainModel,
+  subagentModel,
+  subagentDefaultsSupported = true,
+}) {
   // Older servers did not report connected providers: never block them.
   if (!Array.isArray(configuredProviders)) return { complete: true, unknown: true };
   const connected = new Set(configuredProviders);
@@ -16,7 +22,7 @@ export function setupState({ configuredProviders, models, mainModel, subagentMod
   const providers = [...new Set(usable.map((model) => model.provider))];
   const provider = providers.length > 0,
     main = provider && servable(mainModel),
-    subagent = main && servable(subagentModel);
+    subagent = main && (subagentDefaultsSupported === false || servable(subagentModel));
   return { provider, main, subagent, providers, complete: provider && main && subagent };
 }
 
@@ -60,6 +66,8 @@ export function createSetupGate({
     for (const id of STEPS) {
       const row = gate.querySelector(`[data-setup-step="${id}"]`);
       if (!row) continue;
+      row.hidden = id === 'subagent' && view.subagentDefaultsSupported === false;
+      if (row.hidden) continue;
       const done = Boolean(setup[id]),
         current = id === firstOpen;
       row.dataset.state = done ? 'done' : current ? 'current' : 'pending';
