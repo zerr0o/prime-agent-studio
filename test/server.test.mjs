@@ -167,6 +167,41 @@ test('image turns stay refused on text-only models when only a legacy imageModel
   assert.equal('imageModel' in (await f.api('/api/models')).json, false);
 });
 
+test('Rust admission saves files and requires the selected model to accept images', async (t) => {
+  const runtime = fakeRuntime();
+  runtime.engine = 'rust';
+  runtime.getModels = async () => ({
+    models: [
+      { id: 'test/text', provider: 'test', input: ['text'], availability: 'available' },
+      { id: 'test/vision', provider: 'test', input: ['text', 'image'], availability: 'available' },
+    ],
+    default: { model: 'test/text', thinking: 'low' },
+  });
+  const f = await fixture(t, { runtime });
+  const file = await f.run({
+    message: 'Read the attachment',
+    files: [{ name: 'notes.txt', data: Buffer.from('A bounded test attachment').toString('base64') }],
+  });
+  assert.equal(file.status, 201, file.text);
+  const match = runtime.controls[0].input.message.match(
+    /<prime_studio_files>\n([^\n]+)\n<\/prime_studio_files>/,
+  );
+  assert.ok(match);
+  const [saved] = JSON.parse(match[1]);
+  assert.equal(saved.name, 'notes.txt');
+  assert.equal(saved.size, 25);
+  assert.equal(await readFile(saved.path, 'utf8'), 'A bounded test attachment');
+  const images = [{ type: 'image', mimeType: 'image/png', data: PNG_BASE64 }];
+  assert.equal((await f.run({ model: 'test/text', message: 'Look', images })).status, 400);
+  await writeFile(join(f.agentHome, 'settings.json'), JSON.stringify({ imageModel: 'test/vision' }), 'utf8');
+  assert.equal((await f.run({ model: 'test/text', message: 'Look', images })).status, 400);
+  assert.equal(runtime.controls.length, 1, 'Legacy image routing cannot admit a native text-only model');
+  const routed = await f.run({ model: 'test/vision', message: 'Look', images });
+  assert.equal(routed.status, 201, routed.text);
+  assert.equal(runtime.controls[1].input.model, 'test/vision');
+  assert.deepEqual(runtime.controls[1].input.images, images);
+});
+
 test('manual catalogue refresh and provider model failures invalidate the cached list', async (t) => {
   const runtime = fakeRuntime(),
     requests = [];
@@ -391,7 +426,7 @@ async function fixture(t, extraOptions = {}) {
       .map((entry) => JSON.stringify(entry))
       .join('\n') + '\n',
   );
-  const runtime = fakeRuntime();
+  const runtime = extraOptions.runtime || fakeRuntime();
   const app = createApp({ agentHome, sessionDir, dataDir, initialCwd: cwd, runtime, ...extraOptions });
   await new Promise((done) => app.server.listen(0, '127.0.0.1', done));
   const port = app.server.address().port;
@@ -1057,4 +1092,35 @@ test('sessions saved with quota and budget data still open', async (t) => {
   assert.ok(texts.some((text) => String(text).includes('Run budget reached')));
 
   assert.ok(history.json.messages.length >= 3);
+});
+
+
+test('Rust Computer Use status advertises its unsupported boundary without enabling control', async (t) => {
+  const runtime = fakeRuntime();
+  runtime.engine = 'rust';
+  const f = await fixture(t, { runtime });
+  const status = await f.api('/api/computer-use');
+  assert.equal(status.status, 200, status.text);
+  assert.equal(status.json.supported, false);
+  assert.match(status.json.unsupportedReason, /official Rust daemon/);
+  const grant = await f.api('/api/computer-use', { method: 'POST', body: { enabled: true } });
+  assert.equal(grant.status, 409, grant.text);
+  assert.equal(runtime.controls.length, 0);
+});
+
+test('bootstrap advertises the native subagent setup boundary without enabling policy writes', async (t) => {
+  const legacy = await fixture(t);
+  assert.equal((await legacy.api('/api/bootstrap')).json.subagentDefaultsSupported, true);
+  assert.equal((await legacy.api('/api/bootstrap?light=1')).json.subagentDefaultsSupported, true);
+  const runtime = fakeRuntime();
+  runtime.engine = 'rust';
+  const native = await fixture(t, { runtime });
+  assert.equal((await native.api('/api/bootstrap')).json.subagentDefaultsSupported, false);
+  assert.equal((await native.api('/api/bootstrap?light=1')).json.subagentDefaultsSupported, false);
+  const policy = (await native.api('/api/subagent-defaults')).json;
+  assert.equal(policy.supported, false);
+  assert.equal((await native.api('/api/subagent-defaults', {
+    method: 'POST', body: { revision: policy.revision, policy: { model: 'test/text', thinking: '' } },
+  })).status, 409);
+  assert.equal(runtime.controls.length, 0);
 });

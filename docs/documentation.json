@@ -43,8 +43,8 @@
       "fr": "README.fr.md",
       "en": "README.md",
       "reviewed": {
-        "fr": "07d4cb91de739d5962840c5dc9eb3a2b22e1e1810fd26b74b09d7b6d5a2d5d2b",
-        "en": "0ff44c0d6ffb9a97e8766e3b992ae13c53e4b1d65c1af5462f9800dec669d51e"
+        "fr": "33e12dee08bb7b274e2ecc2f2791f81ae7d2a75a82f341599dad82768901faa8",
+        "en": "3901b2d090c84411cd01c58e0a6e20ed3b23360655ce2877baf42236ceb69203"
       }
     },
     {
@@ -171,6 +171,24 @@
       "reviewed": {
         "fr": "a89af2b81deab051d39b88fd86471827cace1f161328da992ba87f31417fbe77",
         "en": "8c2496868c8db0dc707f0573767de9c0345fd4c7775bac71adab6d9d5e5019d6"
+      }
+    },
+    {
+      "id": "rust-runtime",
+      "fr": "docs/rust-runtime.md",
+      "en": "docs/en/rust-runtime.md",
+      "reviewed": {
+        "fr": "b6f1b5ce7fce0ce7c60896cd4e015aa7d11a5350dd3919ced3830d04127a3ca3",
+        "en": "bd6a571a9a7278ece747ebdbd63c6e64b79b4333dc7b4ec169df0150d847fe0c"
+      }
+    },
+    {
+      "id": "rust-studio-tools",
+      "fr": "docs/rust-studio-tools.md",
+      "en": "docs/en/rust-studio-tools.md",
+      "reviewed": {
+        "fr": "36e6ecce08c06072e9d78b6f33eb76c9cc321be8b40b378e8d05b4dcfff35e54",
+        "en": "e4df5ee54a6a92e37390fa9747fe23b80410642de88284139f02efb4d1a7a245"
       }
     }
   ]

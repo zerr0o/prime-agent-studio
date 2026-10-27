@@ -692,13 +692,14 @@ function computeSetup() {
   // While the catalog loads the gate stays neutral: an empty loading list
   // must neither demand setup nor look configured.
   state.setup =
-    state.modelsLoading || state.readOnly || state.subagentModel === undefined
+    state.modelsLoading || state.readOnly || (state.subagentDefaultsSupported !== false && state.subagentModel === undefined)
       ? { complete: true, unknown: true }
       : setupState({
           configuredProviders: state.configuredProviders,
           models: state.models,
           mainModel: state.modelCatalogDefault,
           subagentModel: state.subagentModel,
+          subagentDefaultsSupported: state.subagentDefaultsSupported,
         });
   return state.setup;
 }
@@ -709,6 +710,7 @@ const welcomeOf = (view) => view?.shell?.welcome || $('welcome');
 async function refreshSubagentDefault() {
   try {
     const data = await api('/api/subagent-defaults');
+    state.subagentDefaultsSupported = data?.supported !== false;
     state.subagentModel = typeof data?.global?.model === 'string' ? data.global.model : '';
   } catch {
     // Read-only or older servers: an unknown setting never blocks sending.
@@ -751,6 +753,7 @@ const setupGate = createSetupGate({
     models: state.models,
     mainModel: state.modelCatalogDefault,
     subagentModel: state.subagentModel,
+    subagentDefaultsSupported: state.subagentDefaultsSupported,
     readOnly: state.readOnly,
     providersAvailable: state.providersAvailable,
   }),
@@ -4601,6 +4604,7 @@ function applyBootstrapCore(data) {
   for (const run of data.runs || []) state.runs.set(run.id, run);
   // Known before the first render: the setup steps never flash or lag.
   state.subagentModel = typeof data.subagentModel === 'string' ? data.subagentModel : undefined;
+  state.subagentDefaultsSupported = data.subagentDefaultsSupported !== false;
 }
 function renderEngineState() {
   bindText($('cli-version'), () => (state.version?.version ? `v${state.version.version}` : ''));
@@ -4626,7 +4630,7 @@ async function hydrateBootstrap(id) {
         const value = await apiWithTimeout('/api/version', { timeoutMs: HYDRATE_TIMEOUT_MS });
         if (!bootGuard.isCurrent(id)) return;
         state.version = value || {};
-      state.versionLoading = false;
+        state.versionLoading = false;
         renderEngineState();
         updateComposer();
         return;

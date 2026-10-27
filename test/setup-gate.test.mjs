@@ -47,3 +47,13 @@ test('subagents need their own usable model, possibly from another provider', ()
   // Steps stay ordered: no subagent step without a main model.
   assert.equal(state({ subagentModel: 'openai/gpt' }).subagent, false);
 });
+
+test('native setup omits unsupported Studio subagent defaults but still requires provider and main model', () => {
+  const native = { subagentDefaultsSupported: false };
+  assert.equal(state({ ...native, mainModel: 'anthropic/sonnet' }).complete, true);
+  assert.equal(state({ ...native, mainModel: 'groq/llama' }).complete, false);
+  assert.equal(state({ ...native, mainModel: 'openai/retired' }).complete, false);
+  assert.equal(state({ ...native, mainModel: '' }).complete, false);
+  assert.equal(state({ ...native, configuredProviders: [], mainModel: 'anthropic/sonnet' }).complete, false);
+  assert.equal(state({ subagentDefaultsSupported: null, mainModel: 'anthropic/sonnet' }).complete, false);
+});
