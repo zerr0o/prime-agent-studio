@@ -35,7 +35,8 @@ function fixture(options = {}) {
     async waitForHello() {
       return { supervisorPid: options.wrongPid ? 99 : 11, socketPath };
     }
-    supportsServerCapability() {
+    supportsServerCapability(capability) {
+      if (capability === 'session_scoped_preferences') return options.sessionScopedPreferences === true;
       return options.mutationSupported !== false;
     }
     close() {
@@ -145,6 +146,7 @@ function fixture(options = {}) {
   const client = createLiveSessionClient(
     {
       packageDir: resolve('test/fake-prime'),
+      ...(options.engine ? { engine: options.engine } : {}),
       socketPath,
       supervisorPid: 11,
       resolveOwner: async () => ({ ...owner, ...options.owner }),
@@ -170,6 +172,21 @@ test('live thinking targets the verified owner and returns the native effective 
   await assert.rejects(fixture({ sendThrows: true }).client.setThinking(sessionId, cwd, 'low'), {
     code: 'delivery_uncertain',
   });
+});
+
+test('Rust live thinking requires a session-scoped preference capability', async () => {
+  const stock = fixture({ engine: 'rust' });
+  await assert.rejects(stock.client.setThinking(sessionId, cwd, 'high'), {
+    code: 'session_scoped_preferences_unsupported',
+  });
+  assert.ok(!stock.calls.some((call) => call.type === 'set_thinking_level'));
+  assert.equal((await stock.client.getSnapshot(sessionId, cwd)).capabilities.sessionScopedPreferences, false);
+  const patched = fixture({ engine: 'rust', sessionScopedPreferences: true });
+  assert.equal(await patched.client.setThinking(sessionId, cwd, 'high'), 'max');
+  assert.equal(
+    (await patched.client.getSnapshot(sessionId, cwd)).capabilities.sessionScopedPreferences,
+    true,
+  );
 });
 
 test('snapshot observes the exact native header without lifecycle commands or private metadata', async () => {
