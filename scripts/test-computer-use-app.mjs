@@ -219,11 +219,15 @@ try {
   if (!draftBody?.model) throw new Error('draft send must carry the conversation model');
   await expect(page.locator('#computer-use-stop')).toBeHidden();
   {
-    const st = await page.evaluate(() => fetch('/api/computer-use').then((r) => r.json()).catch(() => null));
+    const st = await page.evaluate(() =>
+      fetch('/api/computer-use')
+        .then((r) => r.json())
+        .catch(() => null),
+    );
     if (st?.owner) throw new Error('permission alone must not create a holder');
   }
   if (driverCalls.length) throw new Error('permission alone must not drive the desktop');
-  await expect(page.locator('#computer-backend-native')).toBeHidden();
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
   report.push('Draft activation carries computerUse true with no per-run backend on POST /api/runs');
   await page.screenshot({
     path: join(shotDir, 'computer-use-app-desktop.png'),
@@ -263,19 +267,21 @@ try {
       name: 'Desktop child',
     });
     if (holder?.agentId !== 'agent-child-draft') throw new Error('fake native child must hold the desktop');
-    if (holder?.agentSessionId !== 'agent-sess-draft') throw new Error('holder must keep the executing child session');
-    if (holder?.sessionId !== runningA.sessionId) throw new Error('holder root must stay the conversation session');
+    if (holder?.agentSessionId !== 'agent-sess-draft')
+      throw new Error('holder must keep the executing child session');
+    if (holder?.sessionId !== runningA.sessionId)
+      throw new Error('holder root must stay the conversation session');
   }
   await expect(page.locator('#computer-use-owner')).toHaveText('Cette session', { timeout: 15000 });
   await page.locator('#open-settings').click();
   await page.locator('#settings-tab-tools').click();
-  await expect(page.locator('#computer-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
-  await expect(page.locator('#computer-backend-hint')).toContainText('Désactivez');
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-cua')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-hint')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-dialog')).toBeHidden();
   await expect(page.locator('#computer-use-stop')).toBeEnabled();
-  report.push('Fake native child holds the desktop: owner shown, engine locked, stop offered');
+  report.push('Fake native child holds the desktop: owner shown, stop offered');
   // Global stop is explicit and separate from the agent run.
   await page.locator('#computer-use-stop').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
@@ -291,8 +297,7 @@ try {
   await page.locator('#stop-button').click();
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
 
-  // Contract setup: permission snapshots pin the engine, so neutralize every
-  // permission before the backend-sensitive checks below (no holder active).
+  // Setup: neutralize every permission before the checks below (no holder active).
   for (const sid of app.computer._debug().prefs) await app.computer.disable({ sessionId: sid });
   if (app.computer._debug().prefs.length) throw new Error('permission neutralization must clear every grant');
   // Existing session toggle uses the mode route, then switching never leaks.
@@ -301,24 +306,21 @@ try {
   await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   await page.locator('#open-settings').click();
   await page.locator('#settings-tab-tools').click();
-  await expect(page.locator('#computer-backend-native')).toBeVisible();
-  await expect(page.locator('#computer-backend-cua')).toBeVisible();
-  await expect(page.locator('#computer-backend-native')).toBeChecked();
-  await expect(page.locator('#computer-backend-hint')).not.toBeEmpty();
-  {
-    const cuaAvailable = await page.evaluate(() =>
-      fetch('/api/computer-use')
-        .then((r) => r.json())
-        .then((s) => s?.backends?.find((b) => b?.id === 'cua')?.available === true)
-        .catch(() => false),
-    );
-    if (cuaAvailable) {
-      await expect(page.locator('#computer-backend-cua')).toBeEnabled();
-      await expect(page.locator('#computer-backend-hint')).toContainText('Windows x64');
-    } else {
-      await expect(page.locator('#computer-backend-cua')).toBeDisabled();
-    }
+  // No engine choice: native only, no picker, no hint.
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-cua')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-hint')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-label')).toHaveText('Computer Use');
+  async function expectComputerControlsStacked() {
+    const model = await page.locator('#computer-model-button').boundingBox();
+    const thinking = await page.locator('#computer-thinking').boundingBox();
+    expect(model).not.toBeNull();
+    expect(thinking).not.toBeNull();
+    expect(thinking.y).toBeGreaterThanOrEqual(model.y + model.height + 6);
+    expect(Math.abs(thinking.x - model.x)).toBeLessThanOrEqual(1);
   }
+  await expect(page.locator('#computer-model-button')).toBeVisible();
+  await expectComputerControlsStacked();
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-dialog')).toBeHidden();
   const enableCalls = [];
@@ -335,21 +337,22 @@ try {
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   if (!enableCalls.length) throw new Error('session enable must POST to the mode route');
   if (enableCalls[enableCalls.length - 1]?.backend !== undefined)
-    throw new Error('session enable must not POST a per-session backend, the server applies the global engine');
-  // Documented contract: the permission snapshot pins the engine, so the
-  // radios lock with mere permission. Still no holder, no stop offered,
-  // and nothing drives the desktop until a child acquires it.
+    throw new Error(
+      'session enable must not POST a per-session backend, the server applies the global engine',
+    );
+  // Still no holder, no stop offered, and nothing drives the desktop
+  // until a child acquires it. Opening Tools shows no engine choice.
   await expect(page.locator('#computer-use-owner')).toHaveText('Aucun');
   await expect(page.locator('#computer-use-stop')).toBeHidden();
   await page.locator('#open-settings').click();
   await page.locator('#settings-tab-tools').click();
-  await expect(page.locator('#computer-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
-  await expect(page.locator('#computer-backend-hint')).toContainText('Désactivez');
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-cua')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-hint')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-dialog')).toBeHidden();
   if (driverCalls.length) throw new Error('permission alone must not drive the desktop');
-  report.push('Session enable posts no backend and locks the engine with mere permission (no holder, no stop, no driving)');
+  report.push('Session enable posts no backend with no engine choice (no holder, no stop, no driving)');
   await page.locator('#session-list').getByText('Session B', { exact: true }).click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#allow-computer-use')).not.toBeChecked();
@@ -398,7 +401,7 @@ try {
     throw new Error('returning must not send a per-run backend, the server applies the global engine');
   await page.locator('#stop-button').click();
   await expect(page.locator('#stop-button')).toBeHidden({ timeout: 10000 });
-  report.push('Session pref with no owner restores backend on return');
+  report.push('Session pref with no owner restores permission on return');
 
   // New session after a switch carries no stale opt-in.
   await page.keyboard.press('Control+n');
@@ -458,32 +461,22 @@ try {
   await new Promise((done) => gateway.close(done));
   report.push('Read only consultation never mutates');
 
-  // Contract: turn OFF every permission before changing the global engine,
-  // so no grant stays pinned to the old backend (a later send would 409).
+  // Turn OFF every permission before the global preference checks below.
   // No holder or cleanup is active at this point.
   for (const sid of app.computer._debug().prefs) await app.computer.disable({ sessionId: sid });
-  if (app.computer._debug().prefs.length) throw new Error('engine change requires permissions OFF');
-  // Global engine and model live in Preferences > Tools, one setting for every run.
+  if (app.computer._debug().prefs.length) throw new Error('preference checks require permissions OFF');
+  // Global model and thinking live in Preferences > Tools, one setting for
+  // every run. No engine choice exists: the stored engine stays native.
   await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
   await page.locator('#open-settings').click();
   await page.locator('#settings-tab-tools').click();
-  await expect(page.locator('#computer-backend-native')).toBeVisible();
-  await expect(page.locator('#computer-backend-cua')).toBeVisible();
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-cua')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-hint')).toHaveCount(0);
   await expect(page.locator('#computer-model-button')).toBeVisible();
   await expect(page.locator('#computer-model-name')).toContainText('Identique');
   {
-    const cuaAvailable = await page.evaluate(() =>
-      fetch('/api/computer-use')
-        .then((r) => r.json())
-        .then((s) => s?.backends?.find((b) => b?.id === 'cua')?.available === true)
-        .catch(() => false),
-    );
-    const patched = await page.evaluate(async (wantCua) => {
-      const setBackend = await fetch('/api/studio-preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ computerBackend: wantCua ? 'cua' : 'native' }),
-      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+    const patched = await page.evaluate(async () => {
       const badModel = await fetch('/api/studio-preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -494,17 +487,13 @@ try {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ computerModel: 'test/text-only' }),
       }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
-      return { setBackend, badModel, textModel };
-    }, cuaAvailable);
-    if (cuaAvailable) {
-      if (patched.setBackend.status !== 200 || patched.setBackend.json?.computerBackend !== 'cua')
-        throw new Error('available CUA backend must PATCH globally');
-    } else if (patched.setBackend.status !== 409) {
-      throw new Error('unavailable CUA backend must fail closed with 409');
-    }
+      return { badModel, textModel };
+    });
     if (patched.badModel !== 400) throw new Error('unknown Computer Use model must fail with 400');
     if (patched.textModel.status !== 400 || !/image/i.test(patched.textModel.json?.error || ''))
-      throw new Error('text-only Computer Use model must fail with a clear image error, never a silent switch');
+      throw new Error(
+        'text-only Computer Use model must fail with a clear image error, never a silent switch',
+      );
     await page.reload();
     await expect(page.locator('#connection-label')).not.toHaveText('Connexion…');
     await page.locator('#session-list').getByText('Next send after return.', { exact: true }).click();
@@ -515,11 +504,8 @@ try {
         .then((r) => r.json())
         .catch(() => null),
     );
-    if (cuaAvailable && stored?.computerBackend !== 'cua')
-      throw new Error('global backend PATCH must persist server-side');
-    if (!cuaAvailable && stored?.computerBackend !== 'native')
-      throw new Error('refused backend PATCH must not change the stored engine');
-    if (stored?.computerModel !== '') throw new Error('refused model PATCHes must not change the stored model');
+    if (stored?.computerModel !== '')
+      throw new Error('refused model PATCHes must not change the stored model');
     const badThinking = await page.evaluate(() =>
       fetch('/api/studio-preferences', {
         method: 'PATCH',
@@ -553,22 +539,9 @@ try {
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-dialog')).toBeHidden();
   }
-  report.push('Global engine and model PATCH validation fails closed with clear errors');
-  // Contract-following setup for the routing checks below: permissions are OFF
-  // (verified above), so the engine may change. The session toggle pins the
-  // native backend, so the global engine returns to native and the authorized
-  // send stays consistent. Backend persist + fail-closed coverage is done above.
-  {
-    const resetBackend = await page.evaluate(() =>
-      fetch('/api/studio-preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ computerBackend: 'native' }),
-      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) })),
-    );
-    if (resetBackend.status !== 200 || resetBackend.json?.computerBackend !== 'native')
-      throw new Error('resetting the global engine to native must succeed with no holder');
-  }
+  report.push('Global model and thinking PATCH validation fails closed with clear errors');
+  // Setup for the routing checks below: permissions are OFF (verified above).
+  // Only the decision model is set; no engine value is sent.
   {
     const setModel = await page.evaluate(() =>
       fetch('/api/studio-preferences', {
@@ -595,12 +568,25 @@ try {
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await computerModelButton.scrollIntoViewIfNeeded();
+    await page.locator('#computer-thinking').scrollIntoViewIfNeeded();
+    await expectComputerControlsStacked();
+    await expect(computerModelButton).toBeInViewport();
+    await expect(page.locator('#computer-thinking')).toBeInViewport();
     await expect(computerModelButton.locator('.model-picker-chevron svg')).toBeVisible();
-    expect(await computerModelButton.evaluate((button) => {
-      const rect = button.getBoundingClientRect();
-      return rect.left >= 0 && rect.right <= innerWidth;
-    })).toBe(true);
-    await page.screenshot({ path: join(shotDir, `computer-model-picker-${width}.png`), animations: 'disabled' });
+    expect(
+      await computerModelButton.evaluate((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.left >= 0 && rect.right <= innerWidth;
+      }),
+    ).toBe(true);
+    await page.screenshot({
+      path: join(shotDir, `computer-model-picker-${width}.png`),
+      animations: 'disabled',
+    });
+    await page.locator('#settings-panel-tools .computer-model-field').screenshot({
+      path: join(shotDir, `computer-model-controls-${width}.png`),
+      animations: 'disabled',
+    });
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await computerModelButton.click();
@@ -610,7 +596,9 @@ try {
   await expect(page.locator('#model-dialog')).toBeHidden();
   await expect(computerModelButton).toHaveAttribute('aria-expanded', 'false');
   await expect(computerModelButton).toBeFocused();
-  report.push('Computer Use model reuses the shared selector styling, icons and dialog on desktop and mobile');
+  report.push(
+    'Computer Use model reuses the shared selector styling, icons and dialog on desktop and mobile',
+  );
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-dialog')).toBeHidden();
   if ((await page.locator('#computer-use-toggle').getAttribute('aria-pressed')) !== 'true')
@@ -624,7 +612,9 @@ try {
     if (overrideBody?.computerUse !== true) throw new Error('override run must carry computerUse true');
     // Permission only: the main run keeps the conversation model unchanged.
     if (overrideBody?.model !== 'test/vision')
-      throw new Error('authorized runs must keep the conversation model, never the Computer Use decision model');
+      throw new Error(
+        'authorized runs must keep the conversation model, never the Computer Use decision model',
+      );
     if (overrideBody?.computerUseBackend !== undefined)
       throw new Error('authorized runs must not carry a per-run backend');
   }
@@ -634,7 +624,10 @@ try {
   {
     const runningChild = [...app.runs.values()].filter((r) => r?.status === 'running').pop();
     if (!runningChild?.id) throw new Error('authorized run must be running for child acquisition');
-    const routing = app.computer.permissionFor({ ownerId: runningChild.id, rootSessionId: runningChild.sessionId });
+    const routing = app.computer.permissionFor({
+      ownerId: runningChild.id,
+      rootSessionId: runningChild.sessionId,
+    });
     if (routing?.computerModel !== 'test/vision-2')
       throw new Error('run authorization must route the configured Computer Use model to the child');
     if (routing?.computerThinking !== 'high')
@@ -680,12 +673,14 @@ try {
       fetch('/api/studio-preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ computerModel: '', computerThinking: '', computerBackend: 'native' }),
+        body: JSON.stringify({ computerModel: '', computerThinking: '' }),
       }).then((r) => r.status),
     );
     if (cleared !== 200) throw new Error('clearing the global Computer Use settings must succeed');
   }
-  report.push('Authorized runs keep the main model, plain runs keep their own, child routing carries the decision model');
+  report.push(
+    'Authorized runs keep the main model, plain runs keep their own, child routing carries the decision model',
+  );
   if (driverCalls.length) throw new Error('smoke must not drive the real desktop');
   await page
     .locator('#session-list')

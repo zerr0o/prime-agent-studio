@@ -1,5 +1,7 @@
 # Cua Driver distribution research (pinned tag only)
 
+> Archive historique : CUA a été retiré de l’application. Ce document ne décrit plus le runtime ni les procédures de build actuels. Voir [Computer Use](../docs/computer-use.md).
+
 Scope: packaging and deployment of Cua Driver ONLY. No product edits, no desktop runs, no restarts, no installations. Source pinned at tag `cua-driver-rs-v0.28.2`. No `main`-only features assumed. Install scripts were read, never executed. The driver binary was downloaded to an ignored research path and inspected as a zip, never executed.
 
 Worktree: `E:/Documents/GitHub/PrimeAgentGUI-computer-use`. Studio target: beta.3 with Cua Driver integration while retaining the Windows-native fallback (`runtime/computer-use-worker.ps1` + `lib/computer-use-driver.mjs`).

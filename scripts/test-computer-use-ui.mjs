@@ -28,9 +28,6 @@ const fixture = `<!doctype html>
 <p id="computer-use-warning" class="computer-use-note"></p>
 <section id="tools-panel">
 <span id="computer-backend-label" data-i18n="computer.backendLabel">Computer Use</span>
-<label><input type="radio" name="computer-backend-global" id="computer-backend-native" value="native" checked /><span id="computer-backend-native-label" data-i18n="computer.backendNative">Original</span></label>
-<label><input type="radio" name="computer-backend-global" id="computer-backend-cua" value="cua" /><span id="computer-backend-cua-label" data-i18n="computer.backendCua">Cua</span></label>
-<p id="computer-backend-hint"></p>
 <button id="computer-model-button" type="button"><span id="computer-model-name"></span><span id="computer-model-provider"></span></button>
 <select id="computer-thinking"><option value=""></option><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
 <p id="computer-prefs-error" hidden></p>
@@ -66,7 +63,6 @@ window.__mock = {
   enabledSessions: {},
   backend: 'native',
   backends: null,
-  omitBackendFields: false,
   cleanupPending: false,
   cleanupFailed: false,
   prefs: { computerBackend: 'native', computerModel: '', computerThinking: '' },
@@ -98,7 +94,6 @@ window.__resetMock = () => {
   window.__mock.enabledSessions = {};
   window.__mock.backend = 'native';
   window.__mock.backends = null;
-  window.__mock.omitBackendFields = false;
   window.__mock.cleanupPending = false;
   window.__mock.cleanupFailed = false;
   window.__mock.prefs = { computerBackend: 'native', computerModel: '', computerThinking: '' };
@@ -109,14 +104,6 @@ window.__resetMock = () => {
   ];
   window.__mock.failPrefs = false;
   window.__pickerSelections = [];
-};
-window.__setBackends = (backends) => {
-  window.__mock.backends = backends ? JSON.parse(JSON.stringify(backends)) : null;
-};
-window.__setBackendFields = (backend, backends, omit) => {
-  if (backend) window.__mock.backend = backend;
-  window.__mock.backends = backends ? JSON.parse(JSON.stringify(backends)) : null;
-  window.__mock.omitBackendFields = omit === true;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sessionOf = (path) => {
@@ -144,7 +131,7 @@ const snapshotFor = (sessionId) => {
     cleanupPending: window.__mock.cleanupPending === true,
     cleanupFailed: window.__mock.cleanupFailed === true,
   };
-  if (window.__mock.omitBackendFields) return base;
+  // The server still reports engine metadata for compatibility; the UI ignores it.
   return {
     ...base,
     backend: window.__mock.backend || 'native',
@@ -173,27 +160,8 @@ const api = async (path, { method = 'GET', body } = {}) => {
   }
   if (path === '/api/studio-preferences' && method === 'PATCH') {
     const patch = body && typeof body === 'object' ? body : {};
-    if ('computerBackend' in patch) {
-      const wanted = patch.computerBackend;
-      if (wanted !== 'native' && wanted !== 'cua') {
-        const error = new Error('Invalid Computer Use backend.');
-        error.status = 400;
-        throw error;
-      }
-      if (window.__mock.controller) {
-        const error = new Error('Turn off desktop to change the engine.');
-        error.status = 409;
-        throw error;
-      }
-      const entries = window.__mock.backends ? window.__mock.backends : defaultBackends();
-      const entry = entries.find((candidate) => candidate?.id === wanted);
-      if (!entry?.available) {
-        const error = new Error(entry?.reason || 'The requested Computer Use backend is unavailable.');
-        error.status = 409;
-        throw error;
-      }
-      window.__mock.prefs.computerBackend = wanted;
-    }
+    // No engine selection: the UI never sends computerBackend. Any such key
+    // from elsewhere is ignored; the stored engine stays native.
     if ('computerModel' in patch) {
       const wanted = patch.computerModel;
       if (typeof wanted !== 'string' || wanted.length > 500) {
@@ -671,29 +639,42 @@ try {
     window.__cu.onSessionChange();
   });
   await page.evaluate(() => window.__cp.refresh());
-  await expect(page.locator('#computer-backend-native')).toBeVisible();
-  await expect(page.locator('#computer-backend-cua')).toBeVisible();
-  await expect(page.locator('#computer-backend-native')).toBeChecked();
-  await expect(page.locator('#computer-backend-native-label')).toContainText('ration');
-  await expect(page.locator('#computer-backend-cua-label')).toContainText('Cua Driver (beta)');
-  await expect(page.locator('#computer-backend-hint')).toContainText('Windows x64');
+  // No engine picker: native only, no radios, no hint, no CUA wording.
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-cua')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-hint')).toHaveCount(0);
+  await expect(page.locator('#computer-backend-label')).toHaveText('Computer Use');
   await expect(page.locator('#computer-model-name')).toContainText('Identique');
   await page.evaluate(() => window.__setLanguage('en'));
-  await expect(page.locator('#computer-backend-native-label')).toContainText('Original integration');
   await expect(page.locator('#computer-backend-label')).toHaveText('Computer Use');
   await expect(page.locator('#computer-model-name')).toContainText('Same as conversation');
-  await expect(page.locator('#computer-backend-hint')).toContainText('Beta for Windows x64');
   await page.evaluate(() => window.__setLanguage('fr'));
   await expect(page.locator('#computer-backend-label')).toHaveText('Computer Use');
-  await expect(page.locator('#computer-backend-native-label')).toContainText('ration originale');
+  if ((await page.evaluate(() => window.__cp.getBackend())) !== 'native')
+    throw new Error('backend getter must stay native');
+  const pageText = await page.locator('body').innerText();
+  if (/cua/i.test(pageText)) throw new Error('no CUA wording must remain in the UI');
+
+  // A stored legacy cua value sanitizes to native and is never sent back.
+  await page.evaluate(() => {
+    window.__mock.prefs = { computerBackend: 'cua', computerModel: '', computerThinking: '' };
+    window.__mock.backend = 'cua';
+    window.__cp.refresh();
+  });
+  if ((await page.evaluate(() => window.__cp.getBackend())) !== 'native')
+    throw new Error('stored cua must sanitize to native');
+  await page.evaluate(() => {
+    window.__mock.prefs = { computerBackend: 'native', computerModel: '', computerThinking: '' };
+    window.__mock.backend = 'native';
+    window.__cp.refresh();
+  });
 
   // The header toggle carries no backend choice anymore.
   await expect(page.locator('#computer-use-backend-native')).toHaveCount(0);
   if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== false)
     throw new Error('neutral header must not arm a run');
 
-  // Selecting CUA while off PATCHes the global preference once, never the computer-use route.
-  await expect(page.locator('#computer-backend-cua')).toBeEnabled();
+  // Native availability keeps the enable flow: toggle arms a run, no engine PATCH.
   await expect(page.locator('#computer-use-toggle')).toBeEnabled();
   const prefsPatchCount = () =>
     page.evaluate(
@@ -705,28 +686,10 @@ try {
     page.evaluate(
       () => window.__mock.calls.filter((c) => c.path === '/api/computer-use' && c.method === 'POST').length,
     );
+  // A draft header toggle arms a run with no engine payload and no POST.
+  await page.evaluate(() => window.__cp.refresh());
   const beforePrefs = await prefsPatchCount();
   const beforeCu = await cuPostCount();
-  await page.locator('#computer-backend-cua').click();
-  await expect(page.locator('#computer-backend-cua')).toBeChecked();
-  if ((await prefsPatchCount()) !== beforePrefs + 1)
-    throw new Error('backend select must PATCH the global preference exactly once');
-  if ((await cuPostCount()) !== beforeCu)
-    throw new Error('backend select must not POST to the computer-use route');
-  const patchedBackend = await page.evaluate(
-    () =>
-      window.__mock.calls.filter((c) => c.path === '/api/studio-preferences' && c.method === 'PATCH').pop()
-        ?.body,
-  );
-  if (patchedBackend?.computerBackend !== 'cua')
-    throw new Error('global PATCH must carry computerBackend cua');
-  if ((await page.evaluate(() => window.__cp.getBackend())) !== 'cua')
-    throw new Error('global backend getter must be cua');
-  await expect(page.locator('#computer-backend-hint')).toContainText('Windows x64');
-
-  // Polling preserves the global choice; a draft header toggle arms no backend payload.
-  await page.evaluate(() => window.__cp.refresh());
-  await expect(page.locator('#computer-backend-cua')).toBeChecked();
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'true');
   if ((await page.evaluate(() => window.__cu.shouldIncludeInRun())) !== true)
@@ -734,60 +697,7 @@ try {
   if ((await cuPostCount()) !== beforeCu) throw new Error('draft toggle must not POST');
   await page.locator('#computer-use-toggle').click();
   await expect(page.locator('#computer-use-toggle')).toHaveAttribute('aria-pressed', 'false');
-
-  // While another owner holds the desktop the global engine locks with a reason.
-  await page.evaluate(() => {
-    window.__setController({ sessionId: 'other-1', name: 'Other' });
-    window.__cp.refresh();
-  });
-  await expect(page.locator('#computer-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
-  await expect(page.locator('#computer-backend-hint')).toContainText('Désactivez');
-  const beforeLocked = await prefsPatchCount();
-  if ((await page.evaluate(() => window.__cp.saveBackend('native'))) !== false)
-    throw new Error('locked engine save must refuse');
-  if ((await prefsPatchCount()) !== beforeLocked) throw new Error('locked engine must not PATCH');
-  if ((await page.evaluate(() => window.__cp.getBackend())) !== 'cua')
-    throw new Error('locked engine must keep the stored choice');
-  const lockedPatch = await page.evaluate(() =>
-    window.__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'native' } }).then(
-      () => 'ok',
-      (error) => `fail:${error.status}`,
-    ),
-  );
-  if (lockedPatch !== 'fail:409') throw new Error('owned desktop must refuse backend PATCH with 409');
-  await page.evaluate(() => {
-    window.__setController(null);
-    window.__cp.refresh();
-  });
-  await expect(page.locator('#computer-backend-cua')).toBeEnabled();
-
-  // An unavailable CUA shows its reason and stays disabled; native remains usable.
-  await page.evaluate(() => {
-    window.__setBackends([
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: false, reason: 'Install Cua Driver beta for Windows x64.' },
-    ]);
-    window.__cp.refresh();
-  });
-  await expect(page.locator('#computer-backend-hint')).toContainText('Install Cua Driver');
-  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
-  await expect(page.locator('#computer-backend-native')).toBeEnabled();
-  const unavailablePatch = await page.evaluate(() =>
-    window.__api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } }).then(
-      () => 'ok',
-      (error) => `fail:${error.status}:${error.message}`,
-    ),
-  );
-  if (!unavailablePatch.startsWith('fail:409:Install Cua Driver'))
-    throw new Error('unavailable backend must fail closed with its reason');
-  await page.evaluate(() => {
-    window.__resetMock();
-    window.__cp.refresh();
-  });
-  await expect(page.locator('#computer-backend-native')).toBeChecked();
-  await expect(page.locator('#computer-backend-native')).toBeEnabled();
-  await expect(page.locator('#computer-backend-hint')).toContainText('Windows x64');
+  if ((await prefsPatchCount()) !== beforePrefs) throw new Error('draft toggle must not PATCH');
 
   // Computer Use model defaults to the conversation model with image guidance.
   await expect(page.locator('#computer-model-button')).toBeEnabled();
@@ -806,6 +716,8 @@ try {
   );
   if (patchedModel?.computerModel !== 'test/vision-2')
     throw new Error('model choice must PATCH computerModel globally');
+  if (patchedModel && 'computerBackend' in patchedModel)
+    throw new Error('model PATCH must omit any engine selection');
 
   // A model without images is refused with a clear error, never silently kept.
   await page.locator('#computer-model-button').click();
@@ -856,33 +768,32 @@ try {
     throw new Error('refused thinking must not replace the stored level');
 
   // Read only locks the global controls; a failed prefs fetch disables them.
+  // No engine picker exists: the assertions cover model + thinking only.
   await page.evaluate(() => {
     window.__ctx.readOnly = true;
     window.__cp.refresh();
   });
-  await expect(page.locator('#computer-backend-native')).toBeDisabled();
-  await expect(page.locator('#computer-backend-cua')).toBeDisabled();
+  await expect(page.locator('#computer-backend-native')).toHaveCount(0);
   await expect(page.locator('#computer-model-button')).toBeDisabled();
   await expect(page.locator('#computer-thinking')).toBeDisabled();
   await page.evaluate(() => {
     window.__ctx.readOnly = false;
     window.__cp.refresh();
   });
-  await expect(page.locator('#computer-backend-native')).toBeEnabled();
   await expect(page.locator('#computer-model-button')).toBeEnabled();
   await expect(page.locator('#computer-thinking')).toBeEnabled();
   await page.evaluate(() => {
     window.__mock.failPrefs = true;
     window.__cp.refresh();
   });
-  await expect(page.locator('#computer-backend-native')).toBeDisabled();
   await expect(page.locator('#computer-model-button')).toBeDisabled();
   await expect(page.locator('#computer-thinking')).toBeDisabled();
   await page.evaluate(() => {
     window.__mock.failPrefs = false;
     window.__cp.refresh();
   });
-  await expect(page.locator('#computer-backend-native')).toBeEnabled();
+  if ((await page.evaluate(() => window.__cp.getBackend())) !== 'native')
+    throw new Error('backend getter must stay native after recovery');
 
   // Back to neutral draft state for the remaining checks.
   await page.evaluate(() => {
@@ -900,17 +811,22 @@ try {
     const summary = window.__helpers.summarizeComputerAction({ type: 'type', text: long });
     const name = window.__helpers.ownerDisplayName({ cwd: 'C:\\Users\\test\\Project' });
     const normalized = window.__helpers.normalizeComputerStatus(null);
+    const legacy = window.__helpers.normalizeComputerStatus({ backend: 'cua', backends: [{ id: 'cua' }] });
     return {
       summaryLength: summary.length,
       name,
       supported: normalized.supported,
       enabled: normalized.enabled,
+      backend: normalized.backend,
+      legacyBackend: legacy.backend,
     };
   });
   if (helperCheck.summaryLength > 130) throw new Error('action summary must stay bounded');
   if (helperCheck.name !== 'Project') throw new Error('owner name must use folder base');
   if (helperCheck.supported !== true || helperCheck.enabled !== false)
     throw new Error('normalize must default safely');
+  if (helperCheck.backend !== 'native' || helperCheck.legacyBackend !== 'native')
+    throw new Error('normalize must collapse any backend to native');
 
   // Keyboard access: toggle remains a focusable button with pressed state.
   await page.locator('#computer-use-toggle').focus();

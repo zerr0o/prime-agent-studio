@@ -4,6 +4,19 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.7
+
+- **Computer Use à la demande** : les tâches de bureau utilisent des sous-agents natifs ordinaires, tandis que l’agent principal garde son modèle et son niveau de réflexion. Une autorisation seule ne démarre aucun pilote ; un seul agent précis détient le bureau à la fois.
+- **Moteur Windows natif uniquement** : suppression de CUA et de ses exécutables embarqués. Les anciennes préférences de moteur reviennent au natif sans démarrer de contrôle ; le modèle et le niveau de réflexion sont conservés.
+- **Bordure orange d’activité** : une bordure sans focus ni interception des clics suit la détention du bureau sur chaque écran. L’exclusion des captures Windows est vérifiée avant affichage ; la bordure se ferme à l’arrêt du worker et reste cachée si la protection est indisponible.
+- **16 conversations ouvertes** : limite augmentée sans partage du verrou exclusif du bureau.
+- **Réglages Outils** : le modèle Computer Use et le niveau de réflexion retrouvent deux lignes distinctes sur ordinateur et mobile.
+
+## 4.4.7-beta.2
+
+- **Computer Use natif uniquement** : suppression de CUA, de son sélecteur, de ses exécutables et de sa préparation dans les builds. Les anciennes préférences reviennent au moteur natif sans démarrer de contrôle. Les réglages de modèle et de réflexion sont conservés.
+- **Bordure d’activité** : une bordure orange discrète suit la détention du bureau sur tous les écrans. Sans focus ni interception des clics, elle reste exclue des captures par Windows et se ferme avec le worker. Si la protection est refusée, elle reste cachée.
+
 ## 4.4.7-beta.1
 
 - **Délégation à la demande** : l’agent principal garde son modèle et son niveau de réflexion. Les tâches de bureau utilisent des sous-agents natifs ordinaires avec le modèle et l’effort Computer Use configurés. Activer l’autorisation ne crée aucun enfant ni pilote de bureau. Un enfant inactif peut être réutilisé ou remplacé par un nouveau pour une autre tâche.

@@ -494,58 +494,53 @@ test(
   },
 );
 
-// ---- Backend selection over HTTP: native default, cua opt-in, no auto-enable ----
+// ---- Native-only backend over HTTP: sole native descriptor, explicit 'cua' rejected ----
 
-const CUA_BACKENDS = [
-  { id: 'native', supported: true, available: true },
-  { id: 'cua', supported: true, available: true, version: '0.28.2' },
-];
-// Explicit unavailable descriptor: never rely on the ambient machine, whose
-// real CUA artifacts may land mid-session from a parallel worker.
-const CUA_UNAVAILABLE = [
-  { id: 'native', supported: true, available: true },
-  { id: 'cua', supported: true, available: false, reason: 'CUA artifacts missing in fixture.' },
-];
-
-test('computer status exposes the backend selector contract without paths', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
+test('computer status exposes the native descriptor without paths', async (t) => {
+  const { api } = await fixture(t);
   const status = await api('/api/computer-use');
   assert.equal(status.status, 200);
   assert.equal(status.json.backend, null);
-  assert.deepEqual(status.json.backends, CUA_BACKENDS);
+  assert.deepEqual(
+    status.json.backends.map((entry) => entry.id),
+    ['native'],
+  );
   assert.ok(!JSON.stringify(status.json).includes('path'));
 });
 
-test('idle sessions enable with an explicit backend and report it', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
+test('idle sessions enable with the native backend and report it', async (t) => {
+  const { api } = await fixture(t);
   const enabled = await api('/api/computer-use', {
     method: 'POST',
-    body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
+    body: { enabled: true, sessionId: 'native-session', backend: 'native' },
   });
   assert.equal(enabled.status, 200);
-  assert.equal(enabled.json.backend, 'cua');
+  assert.equal(enabled.json.backend, 'native');
   // Permission only: no holder yet, backend comes from the grant.
   assert.equal(enabled.json.owner, null);
   assert.equal(enabled.json.enabled, true);
   const status = await api('/api/computer-use?sessionId=native-session');
-  assert.equal(status.json.backend, 'cua');
+  assert.equal(status.json.backend, 'native');
   assert.equal(status.json.enabled, true);
   assert.equal(status.json.owner, null);
 });
 
-test('unknown backends are rejected before any preflight', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
-  const refused = await api('/api/computer-use', {
-    method: 'POST',
-    body: { enabled: true, sessionId: 'native-session', backend: 'quantum' },
-  });
-  assert.equal(refused.status, 400);
-  assert.match(refused.json.error, /backend/i);
+test('unknown backends are rejected without enabling', async (t) => {
+  const { api } = await fixture(t);
+  for (const backend of ['quantum', 'cua']) {
+    const refused = await api('/api/computer-use', {
+      method: 'POST',
+      body: { enabled: true, sessionId: 'native-session', backend },
+    });
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.error, /backend/i);
+  }
   assert.equal((await api('/api/computer-use')).json.enabled, false);
+  assert.equal((await api('/api/computer-use')).json.owner, null);
 });
 
-test('unavailable backends never take the current owner offline', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_UNAVAILABLE });
+test('a rejected cua enable never takes the current grant offline', async (t) => {
+  const { api } = await fixture(t);
   const enabled = await api('/api/computer-use', {
     method: 'POST',
     body: { enabled: true, sessionId: 'native-session' },
@@ -555,7 +550,7 @@ test('unavailable backends never take the current owner offline', async (t) => {
     method: 'POST',
     body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
   });
-  assert.equal(refused.status, 409);
+  assert.equal(refused.status, 400);
   // Permission preserved; unscoped backend stays null without a holder.
   const scoped = await api('/api/computer-use?sessionId=native-session');
   assert.equal(scoped.json.enabled, true);
@@ -566,19 +561,13 @@ test('unavailable backends never take the current owner offline', async (t) => {
   assert.equal(state.json.owner, null);
 });
 
-test('the active backend cannot change without an explicit disable first', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
+test('the native grant survives a disable then enable cycle', async (t) => {
+  const { api } = await fixture(t);
   assert.equal(
     (await api('/api/computer-use', { method: 'POST', body: { enabled: true, sessionId: 'native-session' } }))
       .status,
     200,
   );
-  const refused = await api('/api/computer-use', {
-    method: 'POST',
-    body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
-  });
-  assert.equal(refused.status, 409);
-  assert.match(refused.json.error, /Disable/i);
   assert.equal((await api('/api/computer-use?sessionId=native-session')).json.backend, 'native');
   assert.equal(
     (
@@ -591,30 +580,39 @@ test('the active backend cannot change without an explicit disable first', async
   );
   const enabled = await api('/api/computer-use', {
     method: 'POST',
-    body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
+    body: { enabled: true, sessionId: 'native-session', backend: 'native' },
   });
   assert.equal(enabled.status, 200);
-  assert.equal(enabled.json.backend, 'cua');
+  assert.equal(enabled.json.backend, 'native');
 });
 
 test('a disabled selector choice never enables desktop control', async (t) => {
-  const { api } = await fixture(t, { computerBackends: CUA_BACKENDS });
+  const { api } = await fixture(t);
   const disabled = await api('/api/computer-use', {
     method: 'POST',
-    body: { enabled: false, backend: 'cua', sessionId: 'native-session' },
+    body: { enabled: false, backend: 'native', sessionId: 'native-session' },
   });
   assert.equal(disabled.status, 200);
   assert.equal(disabled.json.enabled, false);
   assert.equal(disabled.json.backend, null);
+  // A disable carries no backend dispatch, so a stale cua selector on a
+  // disable stays a no-op success without enabling anything.
+  const ignored = await api('/api/computer-use', {
+    method: 'POST',
+    body: { enabled: false, backend: 'cua', sessionId: 'native-session' },
+  });
+  assert.equal(ignored.status, 200);
+  assert.equal(ignored.json.enabled, false);
+  assert.equal(ignored.json.backend, null);
 });
 
 test('a foreign scoped disable keeps the other owner driver', async (t) => {
-  const { api, app } = await fixture(t, { computerBackends: CUA_BACKENDS });
+  const { api, app } = await fixture(t);
   assert.equal(
     (
       await api('/api/computer-use', {
         method: 'POST',
-        body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
+        body: { enabled: true, sessionId: 'native-session', backend: 'native' },
       })
     ).status,
     200,
@@ -627,7 +625,7 @@ test('a foreign scoped disable keeps the other owner driver', async (t) => {
   // Grant preserved; permission only, no holder yet.
   const scoped = await api('/api/computer-use?sessionId=native-session');
   assert.equal(scoped.json.enabled, true);
-  assert.equal(scoped.json.backend, 'cua');
+  assert.equal(scoped.json.backend, 'native');
   assert.equal(scoped.json.owner, null);
   const state = await api('/api/computer-use');
   assert.equal(state.json.enabled, true);
@@ -652,41 +650,44 @@ test('a foreign scoped disable keeps the other owner driver', async (t) => {
 });
 
 test('runs start with computerUseBackend and reject invalid combinations', async (t) => {
-  const { api, runtime, cwd } = await fixture(t, { computerBackends: CUA_BACKENDS });
+  const { api, runtime, cwd } = await fixture(t);
   assert.equal(
-    (await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUseBackend: 'cua' } }))
+    (await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUseBackend: 'native' } }))
       .status,
     400,
   );
-  assert.equal(
-    (
-      await api('/api/runs', {
-        method: 'POST',
-        body: { cwd, message: 'hi', computerUse: true, computerUseBackend: 'quantum' },
-      })
-    ).status,
-    400,
-  );
+  for (const computerUseBackend of ['cua', 'quantum']) {
+    assert.equal(
+      (
+        await api('/api/runs', {
+          method: 'POST',
+          body: { cwd, message: 'hi', computerUse: true, computerUseBackend },
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal((await api('/api/runs')).json.runs.length, 0);
   const started = await api('/api/runs', {
     method: 'POST',
-    body: { cwd, message: 'hi', computerUse: true, computerUseBackend: 'cua' },
+    body: { cwd, message: 'hi', computerUse: true, computerUseBackend: 'native' },
   });
   assert.equal(started.status, 201);
   assert.equal(started.json.computerUse, true);
   const status = await api(`/api/computer-use?runId=${started.json.id}`);
   assert.equal(status.json.enabled, true);
-  assert.equal(status.json.backend, 'cua');
+  assert.equal(status.json.backend, 'native');
   assert.equal(status.json.owner, null);
   runtime.controls[0].finish();
 });
 
-test('runs inherit the session preference backend when omitted', async (t) => {
-  const { api, runtime, cwd } = await fixture(t, { computerBackends: CUA_BACKENDS });
+test('runs inherit the native session grant when the backend is omitted', async (t) => {
+  const { api, runtime, cwd } = await fixture(t);
   assert.equal(
     (
       await api('/api/computer-use', {
         method: 'POST',
-        body: { enabled: true, sessionId: 'native-session', backend: 'cua' },
+        body: { enabled: true, sessionId: 'native-session', backend: 'native' },
       })
     ).status,
     200,
@@ -697,19 +698,19 @@ test('runs inherit the session preference backend when omitted', async (t) => {
   });
   assert.equal(started.status, 201);
   assert.equal(started.json.computerUse, true);
-  assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.backend, 'cua');
+  assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.backend, 'native');
   assert.equal((await api(`/api/computer-use?runId=${started.json.id}`)).json.owner, null);
   runtime.controls[0].finish();
   assert.equal((await api('/api/computer-use?sessionId=native-session')).json.enabled, true);
 });
 
-test('runs with an unavailable backend fail admission without starting', async (t) => {
-  const { api, cwd } = await fixture(t, { computerBackends: CUA_UNAVAILABLE });
+test('runs with a rejected backend fail admission without starting', async (t) => {
+  const { api, cwd } = await fixture(t);
   const refused = await api('/api/runs', {
     method: 'POST',
     body: { cwd, message: 'hi', computerUse: true, computerUseBackend: 'cua' },
   });
-  assert.equal(refused.status, 409);
+  assert.equal(refused.status, 400);
   assert.equal((await api('/api/runs')).json.runs.length, 0);
   assert.equal((await api('/api/computer-use')).json.enabled, false);
 });
@@ -718,11 +719,11 @@ test(
   'a stop racing backend run preflight drops the grant but keeps the run',
   { timeout: 10000 },
   async (t) => {
-    const f = await fixture(t, { computerBackends: CUA_BACKENDS });
+    const f = await fixture(t);
     const gate = gateMethod(f.runtime, 'getModels');
     const starting = f.api('/api/runs', {
       method: 'POST',
-      body: { cwd: f.cwd, message: 'hi', computerUse: true, computerUseBackend: 'cua' },
+      body: { cwd: f.cwd, message: 'hi', computerUse: true, computerUseBackend: 'native' },
     });
     try {
       await gate.wait();
@@ -742,30 +743,26 @@ test(
   },
 );
 
-test('GET reports live CUA availability without minting any driver', async (t) => {
-  let cuaAvailable = true;
+test('GET reports the sole native descriptor without minting any driver', async (t) => {
   let factoryCalls = 0;
   const { api } = await fixture(t, {
     computerDriver: () => {
       factoryCalls += 1;
       return fakeComputerDriver();
     },
-    getCuaAvailability: async () => ({
-      available: cuaAvailable,
-      supported: true,
-      version: '0.28.2',
-    }),
-    availabilityTtlMs: 50,
   });
-  const cuaOf = (body) => body.backends.find((entry) => entry.id === 'cua');
   const first = await api('/api/computer-use');
   assert.equal(first.status, 200);
-  assert.equal(cuaOf(first.json).available, true);
+  assert.deepEqual(
+    first.json.backends.map((entry) => entry.id),
+    ['native'],
+  );
   assert.equal(factoryCalls, 0);
-  cuaAvailable = false;
-  await new Promise((done) => setTimeout(done, 90));
   const second = await api('/api/computer-use');
   assert.equal(second.status, 200);
-  assert.equal(cuaOf(second.json).available, false);
+  assert.deepEqual(
+    second.json.backends.map((entry) => entry.id),
+    ['native'],
+  );
   assert.equal(factoryCalls, 0);
 });

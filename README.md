@@ -53,7 +53,7 @@ Dark, light and system themes. English and French. Your existing Prime Agent ses
 
 ## Computer Use
 
-Let an agent observe and control the **real Windows desktop**, one conversation at a time. Enable **Allow Computer Use** explicitly; it is off by default. Choose the original Windows integration or **Cua Driver (beta)**.
+Let an agent observe and control the **real Windows desktop**, one conversation at a time. Enable **Allow Computer Use** explicitly; it is off by default. Computer Use uses our native Windows engine.
 
 This is not a sandbox or a per-click approval flow. Screenshots go to the selected model provider. Use **Stop Computer Use** or **Ctrl+Alt+Shift+F10** to stop desktop input without stopping unrelated agents. [Computer Use guide →](docs/en/computer-use.md)
 

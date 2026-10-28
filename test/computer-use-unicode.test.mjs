@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createComputerUseDriver } from '../lib/computer-use-driver.mjs';
-import { createCuaComputerUseDriver } from '../lib/cua-computer-use-driver.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const workerSource = readFileSync(join(here, '..', 'runtime', 'computer-use-worker.ps1'), 'utf8');
@@ -134,7 +133,10 @@ test('UTF-8 bytes misread as single-byte OEM text garble the probe', () => {
   assert.ok(garbled.text.includes('\u00c3'), 'multibyte head byte leaks through as garbage');
   const intact = JSON.parse(bytes.toString('utf8'));
   assert.equal(intact.text, PROBE);
-  assert.deepEqual([...intact.text].map((ch) => ch.codePointAt(0)), PROBE_POINTS);
+  assert.deepEqual(
+    [...intact.text].map((ch) => ch.codePointAt(0)),
+    PROBE_POINTS,
+  );
 });
 
 test('worker pins the stdin/stdout console encoding to UTF-8', () => {
@@ -143,49 +145,6 @@ test('worker pins the stdin/stdout console encoding to UTF-8', () => {
   assert.match(workerSource, /\[Console\]::InputEncoding\s*=.*UTF8/s);
   assert.match(workerSource, /\[Console\]::OutputEncoding\s*=.*UTF8/s);
 });
-
-function fakeCuaTransport() {
-  const calls = [];
-  const transport = {
-    daemonPid: 6201,
-    proxyPid: 6202,
-    started: true,
-    generation: 1,
-    async start() {
-      return { daemonPid: 6201, proxyPid: 6202, generation: 1 };
-    },
-    async callTool(name, args = {}) {
-      calls.push({ name, args });
-      if (name === 'get_desktop_state') {
-        return {
-          result: {
-            content: [{ type: 'image', data: 'AA==', mimeType: 'image/png' }],
-            structuredContent: {
-              screenshot_width: 800,
-              screenshot_height: 600,
-              screen_width: 800,
-              screen_height: 600,
-              scale_factor: 1,
-              platform: 'windows',
-              display: 'primary',
-              screenshot_mime_type: 'image/png',
-            },
-          },
-          timing: { durationMs: 1 },
-        };
-      }
-      return {
-        result: { content: [{ type: 'text', text: 'acted' }], structuredContent: { effect: 'confirmed' } },
-        timing: { durationMs: 1 },
-      };
-    },
-    async stop(reason) {
-      return { stopped: true, reason, treeExited: true };
-    },
-    async close() {},
-  };
-  return { transport, calls };
-}
 
 function fakeNativeGuardian() {
   return {
@@ -214,36 +173,36 @@ function fakeNativeGuardian() {
   };
 }
 
-test('CUA type_text forwards non-ASCII text with intact code points', async () => {
-  // Read-only check of the CUA path: JSON-RPC stays UTF-8 end to end, so the
-  // probe must reach the tool call byte-identical. No CUA file is changed.
-  const fake = fakeCuaTransport();
-  const driver = createCuaComputerUseDriver({
+test('native driver act round-trip keeps non-ASCII code points intact', async () => {
+  const fake = createFakeProcess();
+  const driver = createComputerUseDriver({
     platform: 'win32',
-    arch: 'x64',
-    sessionLabel: 'unicode-test',
-    transport: fake.transport,
-    createGuardian: async () => fakeNativeGuardian(),
-    defaultTimeoutMs: 1500,
+    spawnProcess: fake.spawn,
+    workerPath: 'C:\\fake\\computer-use-worker.ps1',
+    startupTimeoutMs: 2000,
+    defaultTimeoutMs: 1000,
     stopTimeoutMs: 300,
   });
   try {
-    const observed = await driver.request({ method: 'observe', params: {} });
-    const acted = await driver.request({
+    const pending = driver.request({
       method: 'act',
-      params: {
-        actions: [{ type: 'type', text: PROBE }],
-        expectedFrame: { driverFrame: observed.driverFrame },
-      },
+      params: { actions: [{ type: 'type', text: PROBE }] },
     });
-    assert.equal(acted.executed, 1);
-    const typeCall = fake.calls.find((c) => c.name === 'type_text');
-    assert.ok(typeCall, 'type action maps to type_text');
-    assert.equal(typeCall.args.text, PROBE);
+    await tick(3);
+    fake.ready();
+    const deadline = Date.now() + 1500;
+    while (fake.received.length === 0 && Date.now() < deadline) {
+      await new Promise((done) => setTimeout(done, 5));
+    }
+    assert.equal(fake.received.length, 1);
+    const line = fake.received[0];
+    assert.equal(line.params.actions[0].text, PROBE);
     assert.deepEqual(
-      [...typeCall.args.text].map((ch) => ch.codePointAt(0)),
+      [...line.params.actions[0].text].map((ch) => ch.codePointAt(0)),
       PROBE_POINTS,
     );
+    fake.respond(line.id, { executed: 1 });
+    assert.deepEqual(await pending, { executed: 1 });
   } finally {
     await driver.close();
   }

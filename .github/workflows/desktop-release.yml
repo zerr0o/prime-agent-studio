@@ -39,8 +39,6 @@ jobs:
           if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing TAURI_SIGNING_PRIVATE_KEY repository secret' }
       - run: rustup default stable
       - run: npm ci
-      - name: Prepare pinned CUA driver sidecar
-        run: npm run cua:prepare
       - name: Prepare isolated compatible engine for integration tests
         run: node scripts/prepare-release-test-engine.mjs
       - run: node --test --test-concurrency=2 test/*.test.mjs

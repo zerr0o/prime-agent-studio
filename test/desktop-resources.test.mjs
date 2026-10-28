@@ -36,6 +36,10 @@ test('packaging validates workers, transitive modules and future file references
   await assert.rejects(verifyDesktopRuntimeResources(f.studio), /future-worker/);
   await writeFile(join(f.studio, 'scripts', 'future-worker.mjs'), '// future runtime helper');
   await verifyDesktopRuntimeResources(f.studio);
+  await rm(join(f.studio, 'runtime', 'computer-use-overlay.cs'));
+  await assert.rejects(verifyDesktopRuntimeResources(f.studio), /computer-use-overlay/);
+  await cp(resolve('runtime/computer-use-overlay.cs'), join(f.studio, 'runtime/computer-use-overlay.cs'));
+  await verifyDesktopRuntimeResources(f.studio);
   await rm(join(f.studio, 'scripts', 'native-skill-resources.mjs'));
   await assert.rejects(verifyDesktopRuntimeResources(f.studio), /native-skill-resources/);
 });

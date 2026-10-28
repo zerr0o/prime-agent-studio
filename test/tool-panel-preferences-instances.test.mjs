@@ -33,12 +33,19 @@ function makeElement(tag) {
   const classes = new Set();
   const el = {
     classList: {
-      add(...names) { names.forEach((name) => classes.add(name)); },
-      remove(...names) { names.forEach((name) => classes.delete(name)); },
-      contains(name) { return classes.has(name); },
+      add(...names) {
+        names.forEach((name) => classes.add(name));
+      },
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+      contains(name) {
+        return classes.has(name);
+      },
       toggle(name, force) {
         const enabled = force ?? !classes.has(name);
-        if (enabled) classes.add(name); else classes.delete(name);
+        if (enabled) classes.add(name);
+        else classes.delete(name);
         return enabled;
       },
     },
@@ -63,9 +70,7 @@ function makeElement(tag) {
       this.attributes[String(k)] = String(v);
     },
     getAttribute(k) {
-      return Object.prototype.hasOwnProperty.call(this.attributes, k)
-        ? this.attributes[k]
-        : null;
+      return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null;
     },
     removeAttribute(k) {
       delete this.attributes[k];
@@ -202,9 +207,8 @@ globalThis.NodeFilter = { SHOW_ALL: 4294967295 };
 globalThis.matchMedia = () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} });
 
 const { createInteractionSettings } = await import('../public/interaction-settings.js');
-const { createComputerPreferences, __resetSharedComputerForTests } = await import(
-  '../public/computer-preferences.js'
-);
+const { createComputerPreferences, __resetSharedComputerForTests } =
+  await import('../public/computer-preferences.js');
 const { createEngineSettings } = await import('../public/engine-settings.js');
 const { createSyncSettings } = await import('../public/sync-settings.js');
 const { createPublicApiSettings } = await import('../public/api-settings.js');
@@ -281,25 +285,20 @@ test('interaction instances use only their owned scope', async () => {
 });
 
 // ---------- Computer: shared confirmed data, independent view state ----------
-test('computer backend/model/thinking confirm in one instance and read fresh in the other', async () => {
+test('computer model/thinking confirm in one instance and read fresh in the other, engine stays native', async () => {
   documentGetElementByIdCalls.length = 0;
   const a = makeScope('A');
   const b = makeScope('B');
-  const state = { computerBackend: 'native', computerModel: '', computerThinking: '' };
+  // A stored legacy cua must sanitize to native and never reach the UI.
+  const state = { computerBackend: 'cua', computerModel: '', computerThinking: '' };
+  const calls = [];
   const api = async (path, opts = {}) => {
+    calls.push({ path, method: opts.method || 'GET', body: opts.body });
     if (path === '/api/studio-preferences' && !opts.method) return { ...state };
     if (path === '/api/studio-preferences' && opts.method === 'PATCH') {
       Object.assign(state, opts.body);
       return { ...state };
     }
-    if (path === '/api/computer-use')
-      return {
-        supported: true,
-        backends: [
-          { id: 'native', available: true },
-          { id: 'cua', available: true },
-        ],
-      };
     throw new Error('unexpected ' + path);
   };
   const changed = [];
@@ -330,18 +329,20 @@ test('computer backend/model/thinking confirm in one instance and read fresh in 
   await pa.refresh();
   await pb.refresh();
   assert.equal(pa.getBackend(), 'native');
-  // Clone confirms a backend switch: primary getter reads it synchronously.
-  await pb.saveBackend('cua');
-  assert.equal(pb.getBackend(), 'cua');
-  assert.equal(pa.getBackend(), 'cua');
-  assert.equal(a.getElement('computer-backend-cua').checked, true);
-  assert.deepEqual(changed, [['b', { backend: 'cua', model: '', thinking: '' }]]);
-  // Model + thinking follow the same shared path.
+  assert.equal(pb.getBackend(), 'native');
+  // Model + thinking confirm in one instance and read fresh in the other.
   await pa.saveModel('m/meta-vision');
   assert.equal(pb.getModel(), 'm/meta-vision');
   await pa.saveThinking('high');
   assert.equal(pb.getThinking(), 'high');
   assert.equal(b.getElement('computer-thinking').value, 'high');
+  assert.deepEqual(changed, [
+    ['a', { backend: 'native', model: 'm/meta-vision', thinking: '' }],
+    ['a', { backend: 'native', model: 'm/meta-vision', thinking: 'high' }],
+  ]);
+  // No engine selection: no request ever carries computerBackend.
+  assert.ok(calls.length > 0);
+  for (const call of calls) assert.ok(!call.body || !('computerBackend' in call.body));
   // Owned ids never escape to the global document.
   assert.deepEqual(documentGetElementByIdCalls, []);
   pa.dispose();

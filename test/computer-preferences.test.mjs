@@ -163,61 +163,73 @@ test('studio preferences default to the native engine and the conversation model
   assert.equal(prefs.allowQuestionsByDefault, true);
 });
 
-test('studio preferences store partial backend and model patches', async (t) => {
+test('studio preferences store partial native backend and model patches', async (t) => {
   const store = await storeFixture(t);
-  const first = await store.setStudioPreferences({ computerBackend: 'cua' });
-  assert.equal(first.computerBackend, 'cua');
+  const first = await store.setStudioPreferences({ computerBackend: 'native' });
+  assert.equal(first.computerBackend, 'native');
   assert.equal(first.allowQuestionsByDefault, true);
   const second = await store.setStudioPreferences({ computerModel: 'openai/other-vision' });
   assert.equal(second.computerModel, 'openai/other-vision');
-  assert.equal(second.computerBackend, 'cua');
+  assert.equal(second.computerBackend, 'native');
   const thinking = await store.setStudioPreferences({ computerThinking: 'high' });
   assert.equal(thinking.computerThinking, 'high');
   await assert.rejects(() => store.setStudioPreferences({ computerThinking: 42 }), { status: 400 });
   const third = await store.setStudioPreferences({ allowQuestionsByDefault: false });
   assert.equal(third.allowQuestionsByDefault, false);
-  assert.equal(third.computerBackend, 'cua');
+  assert.equal(third.computerBackend, 'native');
 });
 
 test('studio preferences reject invalid backend and model values', async (t) => {
   const store = await storeFixture(t);
   await assert.rejects(() => store.setStudioPreferences({ computerBackend: 'remote' }), { status: 400 });
+  await assert.rejects(() => store.setStudioPreferences({ computerBackend: 'cua' }), { status: 400 });
   await assert.rejects(() => store.setStudioPreferences({ computerModel: 42 }), { status: 400 });
   await assert.rejects(() => store.setStudioPreferences({ unknown: true }), { status: 400 });
   await assert.rejects(() => store.setStudioPreferences({}), { status: 400 });
 });
 
-test('PATCH native backend succeeds and unknown backends fail', async (t) => {
-  const { api } = await fixture(t);
+test('a persisted cua backend loads as native and preserves model and thinking', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'prime-prefs-migrate-'));
+  const options = {
+    sessionDir: join(root, 'sessions'),
+    dataDir: join(root, 'local'),
+    initialCwd: join(root, 'project'),
+  };
+  await Promise.all([mkdir(options.sessionDir), mkdir(options.initialCwd), mkdir(options.dataDir)]);
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  await writeFile(
+    join(options.dataDir, 'workspace.json'),
+    JSON.stringify({
+      projects: [],
+      sessions: {},
+      preferences: {
+        computerBackend: 'cua',
+        computerModel: 'openai/other-vision',
+        computerThinking: 'high',
+      },
+    }),
+  );
+  const store = createStore(options);
+  const prefs = await store.getStudioPreferences();
+  assert.equal(prefs.computerBackend, 'native');
+  assert.equal(prefs.computerModel, 'openai/other-vision');
+  assert.equal(prefs.computerThinking, 'high');
+});
+
+test('PATCH native backend succeeds and other backends fail without enabling the desktop', async (t) => {
+  const { app, api } = await fixture(t);
   const ok = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'native' } });
   assert.equal(ok.status, 200);
   assert.equal(ok.json.computerBackend, 'native');
-  const bad = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'remote' } });
-  assert.equal(bad.status, 400);
-});
-
-test('PATCH cua without an available driver fails closed', async (t) => {
-  const { api } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: false, reason: 'Missing test driver.' },
-    ],
-  });
-  const res = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
-  assert.equal(res.status, 409);
+  for (const computerBackend of ['cua', 'remote']) {
+    const bad = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend } });
+    assert.equal(bad.status, 400);
+  }
   assert.equal((await api('/api/studio-preferences')).json.computerBackend, 'native');
-});
-
-test('PATCH cua succeeds when the backend is available', async (t) => {
-  const { api } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true },
-    ],
-  });
-  const res = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
-  assert.equal(res.status, 200);
-  assert.equal(res.json.computerBackend, 'cua');
+  assert.equal(app.computer.ownerInfo(), null);
+  assert.equal(app.computer.status().enabled, false);
 });
 
 test('PATCH computer model validates catalog, availability and images', async (t) => {
@@ -330,19 +342,21 @@ test('runs without desktop keep the conversation model', async (t) => {
   runtime.controls[0].finish();
 });
 
-test('enabling without a backend uses the global engine', async (t) => {
-  const { api, cwd } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true },
-    ],
+test('enabling without a backend uses the native engine', async (t) => {
+  const { api, cwd } = await fixture(t);
+  const saved = await api('/api/studio-preferences', {
+    method: 'PATCH',
+    body: { computerBackend: 'native' },
   });
-  const saved = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
   assert.equal(saved.status, 200);
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(started.status, 201);
   const status = await api(`/api/computer-use?runId=${started.json.id}`);
-  assert.equal(status.json.backend, 'cua');
+  assert.equal(status.json.backend, 'native');
+  assert.deepEqual(
+    status.json.backends.map((entry) => entry.id),
+    ['native'],
+  );
 });
 
 test('an unusable stored desktop model does not block an ordinary main turn', async (t) => {
@@ -397,13 +411,8 @@ test('an unavailable stored desktop model does not block ordinary conversation',
   assert.equal(app.computer.permissionFor({ ownerId: started.json.id }).computerModel, 'gone/model');
 });
 
-test('backend changes are refused while the desktop is owned', async (t) => {
-  const { app, api, runtime, cwd } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true },
-    ],
-  });
+test('explicit cua stays rejected while the desktop is owned', async (t) => {
+  const { app, api, runtime, cwd } = await fixture(t);
   const started = await api('/api/runs', { method: 'POST', body: { cwd, message: 'hi', computerUse: true } });
   assert.equal(started.status, 201);
   assert.equal(app.computer.ownerInfo(), null);
@@ -418,29 +427,25 @@ test('backend changes are refused while the desktop is owned', async (t) => {
     method: 'PATCH',
     body: { computerBackend: 'cua' },
   });
-  assert.equal(refused.status, 409);
+  assert.equal(refused.status, 400);
+  assert.equal((await api('/api/studio-preferences')).json.computerBackend, 'native');
   runtime.controls[0].finish();
   const after = await api('/api/studio-preferences', {
     method: 'PATCH',
-    body: { computerBackend: 'cua' },
+    body: { computerBackend: 'native' },
   });
   assert.equal(after.status, 200);
 });
 
-test('a permission without a holder pins the global engine until disabled', async (t) => {
-  const { app, api, cwd } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true },
-    ],
-  });
+test('a permission without a holder rejects cua and keeps the native engine', async (t) => {
+  const { app, api, cwd } = await fixture(t);
   await app.computer.enable({ sessionId: 'allowed-session', cwd, backend: 'native' });
   assert.equal(app.computer.ownerInfo(), null);
   const refused = await api('/api/studio-preferences', {
     method: 'PATCH',
     body: { computerBackend: 'cua' },
   });
-  assert.equal(refused.status, 409);
+  assert.equal(refused.status, 400);
   assert.equal((await app.store.getStudioPreferences()).computerBackend, 'native');
   assert.equal(app.computer.ownerInfo(), null);
   await app.computer.disable({ sessionId: 'allowed-session' });
@@ -448,43 +453,20 @@ test('a permission without a holder pins the global engine until disabled', asyn
     (
       await api('/api/studio-preferences', {
         method: 'PATCH',
-        body: { computerBackend: 'cua' },
+        body: { computerBackend: 'native' },
       })
     ).status,
     200,
   );
 });
 
-test('engine preflight rechecks a permission granted while availability is pending', async (t) => {
-  const { app, api, cwd } = await fixture(t, {
-    computerBackends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true },
-    ],
-  });
-  let entered, release;
-  const seen = new Promise((resolve) => {
-    entered = resolve;
-  });
-  const pending = new Promise((resolve) => {
-    release = resolve;
-  });
-  const original = app.computer.refreshBackends.bind(app.computer);
-  app.computer.refreshBackends = async () => {
-    entered();
-    await pending;
-    return original();
-  };
-  const changing = api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'cua' } });
-  try {
-    await seen;
-    await app.computer.enable({ sessionId: 'concurrent-permission', cwd, backend: 'native' });
-    release();
-    assert.equal((await changing).status, 409);
-    assert.equal((await app.store.getStudioPreferences()).computerBackend, 'native');
-    assert.equal(app.computer.ownerInfo(), null);
-  } finally {
-    release();
-    app.computer.refreshBackends = original;
-  }
+test('a native patch racing a permission grant keeps the stored engine', async (t) => {
+  const { app, api, cwd } = await fixture(t);
+  await app.computer.enable({ sessionId: 'concurrent-permission', cwd, backend: 'native' });
+  const res = await api('/api/studio-preferences', { method: 'PATCH', body: { computerBackend: 'native' } });
+  assert.equal(res.status, 200);
+  assert.equal((await app.store.getStudioPreferences()).computerBackend, 'native');
+  assert.equal(app.computer.ownerInfo(), null);
+  await app.computer.disable({ sessionId: 'concurrent-permission' });
+  assert.equal(app.computer.ownerInfo(), null);
 });

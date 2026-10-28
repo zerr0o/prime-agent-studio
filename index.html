@@ -785,18 +785,12 @@
                 >
                   <span data-icon="map"></span><span data-i18n="roadmap.open">Roadmap du projet</span>
                 </button>
-                <button
-                  id="detail-performance"
-                  type="button"
-                  class="text-button"
-                  aria-haspopup="dialog"
-                ><span data-icon="activity"></span><span data-i18n="docking.performance">Performance</span></button>
-                <button
-                  id="detail-context"
-                  type="button"
-                  class="text-button"
-                  aria-haspopup="dialog"
-                ><span data-icon="file"></span><span data-i18n="docking.context">Context (Beta)</span></button>
+                <button id="detail-performance" type="button" class="text-button" aria-haspopup="dialog">
+                  <span data-icon="activity"></span><span data-i18n="docking.performance">Performance</span>
+                </button>
+                <button id="detail-context" type="button" class="text-button" aria-haspopup="dialog">
+                  <span data-icon="file"></span><span data-i18n="docking.context">Context (Beta)</span>
+                </button>
                 <button
                   id="detail-project-knowledge"
                   type="button"
@@ -950,7 +944,18 @@
                   <span data-icon="branch" aria-hidden="true"></span><span id="git-branch-label">…</span>
                 </button>
                 <span id="git-sync-counts" class="inspector-git-counts" role="status"></span>
-                <button id="files-context-reset" type="button" class="inspector-refresh" data-i18n-aria-label="files.context_reset" data-i18n-title="files.context_reset" aria-label="Revenir au projet" title="Revenir au projet" hidden>↩</button>
+                <button
+                  id="files-context-reset"
+                  type="button"
+                  class="inspector-refresh"
+                  data-i18n-aria-label="files.context_reset"
+                  data-i18n-title="files.context_reset"
+                  aria-label="Revenir au projet"
+                  title="Revenir au projet"
+                  hidden
+                >
+                  ↩
+                </button>
                 <div class="inspector-git-actions">
                   <button
                     id="git-fetch-button"
@@ -979,36 +984,36 @@
                 </div>
               </div>
               <div id="files-changes-split" class="files-list-pane">
-                  <div id="inspector-git-commit" class="inspector-git-commit" hidden>
-                    <textarea
-                      id="git-commit-message"
-                      rows="3"
-                      maxlength="5000"
-                      spellcheck="true"
-                      data-i18n-placeholder="git.panel_message_placeholder"
-                      placeholder="Message de commit…"
-                      data-i18n-aria-label="git.panel_commit"
-                      aria-label="Commiter"
-                    ></textarea>
-                    <div class="inspector-git-commit-actions">
-                      <button
-                        id="git-suggest-button"
-                        type="button"
-                        class="secondary-button"
-                        data-i18n="git.panel_suggest"
-                      >
-                        Proposer un message
-                      </button>
-                      <button
-                        id="git-commit-button"
-                        type="button"
-                        class="primary-button"
-                        data-i18n="git.panel_commit"
-                      >
-                        Commiter
-                      </button>
-                    </div>
+                <div id="inspector-git-commit" class="inspector-git-commit" hidden>
+                  <textarea
+                    id="git-commit-message"
+                    rows="3"
+                    maxlength="5000"
+                    spellcheck="true"
+                    data-i18n-placeholder="git.panel_message_placeholder"
+                    placeholder="Message de commit…"
+                    data-i18n-aria-label="git.panel_commit"
+                    aria-label="Commiter"
+                  ></textarea>
+                  <div class="inspector-git-commit-actions">
+                    <button
+                      id="git-suggest-button"
+                      type="button"
+                      class="secondary-button"
+                      data-i18n="git.panel_suggest"
+                    >
+                      Proposer un message
+                    </button>
+                    <button
+                      id="git-commit-button"
+                      type="button"
+                      class="primary-button"
+                      data-i18n="git.panel_commit"
+                    >
+                      Commiter
+                    </button>
                   </div>
+                </div>
                 <p id="inspector-file-note" class="inspector-note" role="status"></p>
                 <div id="inspector-file-breadcrumb" class="inspector-file-breadcrumb"></div>
                 <div id="inspector-file-list"></div>
@@ -1057,7 +1062,12 @@
                     Nouveau worktree
                   </button>
                 </div>
-                <div id="files-worktrees-owner-note" class="files-wt-note files-pane-head" role="note" hidden></div>
+                <div
+                  id="files-worktrees-owner-note"
+                  class="files-wt-note files-pane-head"
+                  role="note"
+                  hidden
+                ></div>
                 <div id="files-worktrees-error" class="files-error" hidden></div>
                 <div id="files-worktree-list" class="files-wt-list"></div>
               </div>
@@ -1666,8 +1676,7 @@
                   >Coloration du code dans les conversations</label
                 >
                 <p data-i18n="settings.code_highlight_note">
-                  Les blocs de code sont colorés après l’affichage, sans ralentir la frappe ni le
-                  streaming.
+                  Les blocs de code sont colorés après l’affichage, sans ralentir la frappe ni le streaming.
                 </p>
               </div>
               <input id="code-highlight" class="switch" type="checkbox" role="switch" checked />
@@ -1822,45 +1831,15 @@
             </div>
             <div class="settings-row computer-prefs-row">
               <div>
-                <label id="computer-backend-label" data-i18n="computer.backendLabel">Computer Use</label>
+                <span id="computer-backend-label" data-i18n="computer.backendLabel">Computer Use</span>
                 <p data-i18n="computer.toolsNote">
                   Permet à l’agent de voir l’écran et d’utiliser la souris et le clavier, avec votre
                   autorisation. Réglages communs à ce PC.
                 </p>
-                <div
-                  class="computer-backend-options"
-                  role="radiogroup"
-                  aria-labelledby="computer-backend-label"
-                >
-                  <label class="computer-backend-option">
-                    <input
-                      type="radio"
-                      name="computer-backend-global"
-                      id="computer-backend-native"
-                      value="native"
-                      checked
-                    />
-                    <span id="computer-backend-native-label" data-i18n="computer.backendNative"
-                      >Intégration originale (Windows)</span
-                    >
-                  </label>
-                  <label class="computer-backend-option">
-                    <input
-                      type="radio"
-                      name="computer-backend-global"
-                      id="computer-backend-cua"
-                      value="cua"
-                    />
-                    <span id="computer-backend-cua-label" data-i18n="computer.backendCua"
-                      >Cua Driver (beta)</span
-                    >
-                  </label>
-                </div>
-                <p class="settings-footnote" id="computer-backend-hint"></p>
               </div>
             </div>
             <div class="settings-row computer-prefs-row">
-              <div class="engine-field">
+              <div class="engine-field computer-model-field">
                 <label for="computer-model-button" data-i18n="computer.modelLabel">Modèle Computer Use</label>
                 <p data-i18n="computer.modelNote">
                   Utilisé lorsque Computer Use est autorisé. Vide : même modèle que la conversation.
@@ -2399,7 +2378,13 @@
                 </button>
               </div>
             </div>
-            <p id="settings-port-status" class="settings-footnote" role="status" aria-live="polite" hidden></p>
+            <p
+              id="settings-port-status"
+              class="settings-footnote"
+              role="status"
+              aria-live="polite"
+              hidden
+            ></p>
             <p id="settings-system-error" class="form-error" role="alert" hidden></p>
             <div class="settings-row">
               <div>

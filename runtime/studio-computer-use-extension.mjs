@@ -504,7 +504,7 @@ export default function studioComputerUse(pi) {
   register(
     'computer_status',
     'Computer status',
-    'Check Computer Use desktop state (read-only, permission-scoped, never enables): enabled, mine (exact holder), delegated (native caller agentId exists), routing {model, thinking}, owner/busy, last action and last frame metadata. Returns the true off state while disabled and tells how to enable. Reports the selected backend (native or cua) and availability without enabling or switching it. Never returns pixels, never captures, never moves input. Main never holds desktop; desktop actions as non-holder return computer_use_delegate_required.',
+    'Check Computer Use desktop state (read-only, permission-scoped, never enables): enabled, mine (exact holder), delegated (native caller agentId exists), routing {model, thinking}, owner/busy, last action and last frame metadata. Returns the true off state while disabled and tells how to enable. Reports the native backend and availability without enabling it. Never returns pixels, never captures, never moves input. Main never holds desktop; desktop actions as non-holder return computer_use_delegate_required.',
     object({}),
     async (_params, state, signal) => textResult('computer_status', await send('status', {}, state, signal)),
     true,
@@ -545,7 +545,7 @@ export default function studioComputerUse(pi) {
   register(
     'computer_observe',
     'Computer observe',
-    'Capture a screenshot of the real Windows desktop. Returns an image plus frame metadata with frameId, width, height and bounds. Coordinates in later actions use screenshot pixels of that exact frame. The image is point-in-time and can show loading or unsettled UI, so after launching an app wait for its window and observe that window before claiming an outcome. Observe again after every action batch. If off, the error explains how to enable in Studio. Images are capped at 2000 pixels on both axes, even when maxWidth is larger, for provider compatibility. With CUA, named-window captures also include accessibility elements; use their elementId for semantic actions. CUA in this beta supports full windows or the primary desktop, not region crops. maxWidth limits the long edge of window captures; primary-desktop captures stay at native resolution and are refused above 2000 pixels on either axis, so select a windowId instead. The original backend supports regions and the full multi-monitor desktop. Inspect or observe is always required after changing backend. Main never holds desktop and returns computer_use_delegate_required; only a delegated child matching routing.model may observe. Recoverable refusals keep the lock until task end; lock releases at task end.',
+    'Capture a screenshot of the real Windows desktop. Returns an image plus frame metadata with frameId, width, height and bounds. Coordinates in later actions use screenshot pixels of that exact frame. The image is point-in-time and can show loading or unsettled UI, so after launching an app wait for its window and observe that window before claiming an outcome. Observe again after every action batch. If off, the error explains how to enable in Studio. Images are capped at 2000 pixels on both axes, even when maxWidth is larger, for provider compatibility. maxWidth limits the long edge of window captures; primary-desktop captures stay at native resolution and are refused above 2000 pixels on either axis, so select a windowId instead. The native backend supports regions and the full multi-monitor desktop. Main never holds desktop and returns computer_use_delegate_required; only a delegated child matching routing.model may observe. Recoverable refusals keep the lock until task end; lock releases at task end.',
     object({
       windowId: optional(Type.String({ minLength: 1, maxLength: 500 })),
       region: optional(
@@ -575,26 +575,15 @@ export default function studioComputerUse(pi) {
     },
   );
 
-  register(
-    'computer_inspect',
-    'Computer inspect',
-    'CUA mode only: read a window accessibility tree without taking a screenshot. Get windowId from computer_windows first. Returns bounded elements with elementId and a fresh accessibility-only frameId. Prefer this for named buttons and text fields when CUA is selected. Use elementId in computer_act, or set_value with elementId and value. This frame has no pixel coordinates. Inspect or observe again after each batch; old tokens are not reusable. Accessibility state is point-in-time, not proof that an app is ready or the task succeeded. Does not enable Computer Use or change the selected backend. Main never holds desktop and returns computer_use_delegate_required; only a delegated child matching routing.model may inspect. Lock releases at task end.',
-    object({ windowId: Type.String({ minLength: 1, maxLength: 500 }) }),
-    async (params, state, signal) =>
-      textResult('computer_inspect', await send('inspect', params, state, signal)),
-  );
-
   const actionSchema = Type.Object(
     {
       type: Type.Union(
-        ['click', 'double_click', 'move', 'drag', 'scroll', 'keypress', 'type', 'wait', 'set_value'].map(
-          (value) => Type.Literal(value),
+        ['click', 'double_click', 'move', 'drag', 'scroll', 'keypress', 'type', 'wait'].map((value) =>
+          Type.Literal(value),
         ),
       ),
       x: optional(Type.Number({ minimum: 0 })),
       y: optional(Type.Number({ minimum: 0 })),
-      elementId: optional(Type.String({ minLength: 1, maxLength: 256 })),
-      value: optional(Type.String({ maxLength: 2000 })),
       button: optional(literal(['left', 'right', 'middle'])),
       text: optional(Type.String({ minLength: 1, maxLength: 2000 })),
       keys: optional(Type.Array(Type.String({ minLength: 1, maxLength: 32 }), { maxItems: 8 })),
@@ -617,18 +606,22 @@ export default function studioComputerUse(pi) {
   register(
     'computer_act',
     'Computer act',
-    'Drive the real desktop with a short bounded batch (1 to 12 actions). frameId must come from the latest computer_observe or CUA computer_inspect call and is consumed by the act. Coordinates x and y use screenshot pixels of that frame (0 <= x < width, 0 <= y < height); the bridge maps them to physical screen pixels and the native worker revalidates screen layout, window geometry and focus before input. Observe again after acting and never replay a timed out batch blindly. Scroll deltas are wheel ticks: positive deltaY scrolls down, positive deltaX scrolls right, range -100 to 100, at least one nonzero. Drag presses at x,y, moves through each path point in order (up to 20), and releases at the last path point. Key names are 1 to 32 characters, up to 8 per press. Wait accepts 1 to 5000 ms. Set observeAfter true to capture a verification screenshot in the same call. By default the verification reuses the original frame capture options (windowId, region, maxWidth); pass observeOptions {} for a whole desktop capture or a windowId, region, maxWidth object for a scoped capture. observeOptions is valid only with observeAfter true. A new app window can appear on another monitor, so prefer wait plus observe of the new window before acting on it. Every screenshot is point-in-time and can show loading or unsettled UI, so observe the target window before claiming an outcome. Results carry applicationState unverified because sent input is not task success. If verification capture fails after successful input, the result keeps executed plus observationError {code, message} without failing the whole call; observe again instead of replaying the batch. In CUA mode only, use elementId from the same frame instead of x/y, and set_value with elementId plus value for editable fields (empty value clears). Accessibility-only frames reject pixel coordinates. deliveryMode may explicitly select foreground or background for the batch; by default CUA pixel actions use foreground and element-targeted actions use background; a refusal is not permission to replay in another mode. CUA unsupported operations return explicit errors, never native fallback. CUA results include per-action effects and may be partial or unverifiable: executed does not prove success. Main never holds desktop and returns computer_use_delegate_required; only the delegated child whose model matches routing.model may act. Recoverable refusals (including delegate-required) keep the lock until task end; do not release on every refusal. Lock releases at agent_end/session_shutdown or via computer_release.',
+    'Drive the real desktop with a short bounded batch (1 to 12 actions). frameId must come from the latest computer_observe call and is consumed by the act. Coordinates x and y use screenshot pixels of that frame (0 <= x < width, 0 <= y < height); the bridge maps them to physical screen pixels and the native worker revalidates screen layout, window geometry and focus before input. Observe again after acting and never replay a timed out batch blindly. Scroll deltas are wheel ticks: positive deltaY scrolls down, positive deltaX scrolls right, range -100 to 100, at least one nonzero. Drag presses at x,y, moves through each path point in order (up to 20), and releases at the last path point. Key names are 1 to 32 characters, up to 8 per press. Wait accepts 1 to 5000 ms. Set observeAfter true to capture a verification screenshot in the same call. By default the verification reuses the original frame capture options (windowId, region, maxWidth); pass observeOptions {} for a whole desktop capture or a windowId, region, maxWidth object for a scoped capture. observeOptions is valid only with observeAfter true. A new app window can appear on another monitor, so prefer wait plus observe of the new window before acting on it. Every screenshot is point-in-time and can show loading or unsettled UI, so observe the target window before claiming an outcome. Results carry applicationState unverified because sent input is not task success. If verification capture fails after successful input, the result keeps executed plus observationError {code, message} without failing the whole call; observe again instead of replaying the batch. Input is always delivered in the foreground; background delivery is unavailable and an explicit background request is rejected, never silently turned into foreground input. Main never holds desktop and returns computer_use_delegate_required; only the delegated child whose model matches routing.model may act. Recoverable refusals (including delegate-required) keep the lock until task end; do not release on every refusal. Lock releases at agent_end/session_shutdown or via computer_release.',
     object({
       frameId: Type.String({ minLength: 1, maxLength: 60 }),
       actions: Type.Array(actionSchema, { minItems: 1, maxItems: 12 }),
       observeAfter: optional(Type.Boolean()),
       observeOptions: optional(observeScopeSchema()),
-      deliveryMode: optional(literal(['foreground', 'background'])),
     }),
     async (params, state, signal) => {
       if (params?.observeOptions !== undefined && params?.observeAfter !== true) {
         throw new Error(
           'observeOptions is valid only with observeAfter:true. Set observeAfter:true or drop observeOptions.',
+        );
+      }
+      if (params?.deliveryMode !== undefined && params.deliveryMode !== 'foreground') {
+        throw new Error(
+          'Background delivery is unavailable in the native-only build. The desktop is always driven in the foreground.',
         );
       }
       const response = await send('act', params, state, signal);

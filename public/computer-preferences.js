@@ -1,10 +1,11 @@
 import { t as tr, bindText, bindAttribute, translateKnown, onLanguageChange } from './i18n.js';
 
+// Single desktop engine: the custom native integration only. Any stored
+// legacy 'cua' value is sanitized to 'native' and never sent back.
 export const COMPUTER_BACKEND_NATIVE = 'native';
-export const COMPUTER_BACKEND_CUA = 'cua';
 
 export function normalizeComputerBackend(value) {
-  return value === COMPUTER_BACKEND_CUA ? COMPUTER_BACKEND_CUA : COMPUTER_BACKEND_NATIVE;
+  return COMPUTER_BACKEND_NATIVE;
 }
 
 // Module-shared confirmed snapshot (global PC setting, not per-root view
@@ -45,13 +46,12 @@ export function __resetSharedComputerForTests() {
 }
 
 // Global Computer Use preferences (Preferences > Tools, one global setting
-// persisted server-side via /api/studio-preferences). The desktop engine radio
-// group and the Computer Use decision model+thinking live here, not in the
-// Computer Use header. They apply only to the delegated desktop child, never
-// to the main conversation model+thinking (main stays unchanged). Empty model
-// means same as conversation but still in a separate child (no paid pick is
-// forced). Changes apply only when the desktop is off and not owned; the
-// backend default is native with no silent fallback.
+// persisted server-side via /api/studio-preferences). The single native
+// desktop engine needs no picker; only the Computer Use decision
+// model+thinking live here, not in the Computer Use header. They apply only
+// to the delegated desktop child, never to the main conversation
+// model+thinking (main stays unchanged). Empty model means same as
+// conversation but still in a separate child (no paid pick is forced).
 export function createComputerPreferences({
   api,
   getContext = () => ({}),
@@ -70,9 +70,6 @@ export function createComputerPreferences({
   let backend = COMPUTER_BACKEND_NATIVE;
   let model = '';
   let thinking = '';
-  let backends = null;
-  let status = null;
-  let supported = true;
   let known = false;
   let busy = false;
   let generation = 0;
@@ -93,53 +90,6 @@ export function createComputerPreferences({
   // matching the previous header selector semantics.
   function locked() {
     return readOnly();
-  }
-
-  function backendEntry(id) {
-    const list = Array.isArray(backends) ? backends : [];
-    const found = list.find((entry) => entry?.id === id);
-    if (found) return found;
-    if (id === COMPUTER_BACKEND_CUA) return { id, supported: false, available: false, reason: null };
-    return { id, supported, available: supported, reason: null };
-  }
-
-  function isAvailable(id) {
-    return backendEntry(id).available === true;
-  }
-
-  function reasonOf(id) {
-    const reason = backendEntry(id).reason;
-    return typeof reason === 'string' && reason ? reason : null;
-  }
-
-  // Documented contract: permission snapshots pin the engine. Unscoped
-  // `enabled` is true while any session keeps mere permission, so the engine
-  // changes only when permissions are OFF and there is no holder/cleanup.
-  // This is not desktop ownership: owner/busy add their own lock below.
-  function computerOn() {
-    if (!status) return false;
-    if (status.enabled === true) return true;
-    return Boolean(status.owner) || status.busy === true;
-  }
-
-  function cleanupBlocked() {
-    return status?.cleanupPending === true || status?.cleanupFailed === true;
-  }
-
-  function selectorDisabled() {
-    if (locked() || busy || !known) return true;
-    if (supported === false) return true;
-    if (computerOn() || cleanupBlocked()) return true;
-    return false;
-  }
-
-  function hintText() {
-    if (!known) return '';
-    if (supported === false) return '';
-    if (computerOn() || cleanupBlocked()) return tr('computer.backendChangeNeedsOff');
-    const cua = backendEntry(COMPUTER_BACKEND_CUA);
-    if (cua.available === true) return tr('computer.backendBetaNote');
-    return reasonOf(COMPUTER_BACKEND_CUA) || tr('computer.backendCuaUnavailable');
   }
 
   function liveModels() {
@@ -186,32 +136,9 @@ export function createComputerPreferences({
   }
 
   function render() {
-    const native = $('computer-backend-native');
-    const cua = $('computer-backend-cua');
-    const hint = $('computer-backend-hint');
     const button = $('computer-model-button');
     const nameEl = $('computer-model-name');
     const providerEl = $('computer-model-provider');
-    const disabled = selectorDisabled();
-    if (native) {
-      native.checked = backend === COMPUTER_BACKEND_NATIVE;
-      native.disabled = disabled || !isAvailable(COMPUTER_BACKEND_NATIVE);
-      bindAttribute(native, 'title', () =>
-        disabled && known ? tr('computer.backendChangeNeedsOff') : tr('computer.backendNative'),
-      );
-      bindAttribute(native, 'aria-label', () => tr('computer.backendNative'));
-    }
-    if (cua) {
-      cua.checked = backend === COMPUTER_BACKEND_CUA;
-      cua.disabled = disabled || !isAvailable(COMPUTER_BACKEND_CUA);
-      bindAttribute(cua, 'title', () =>
-        disabled && known
-          ? tr('computer.backendChangeNeedsOff')
-          : reasonOf(COMPUTER_BACKEND_CUA) || tr('computer.backendCua'),
-      );
-      bindAttribute(cua, 'aria-label', () => tr('computer.backendCua'));
-    }
-    if (hint) bindText(hint, () => hintText());
     if (button) {
       const models = liveModels();
       const display = decisionDisplay(models);
@@ -241,40 +168,24 @@ export function createComputerPreferences({
     busy = true;
     render();
     try {
-      const [prefs, computer] = await Promise.all([
-        api('/api/studio-preferences'),
-        api('/api/computer-use').catch(() => null),
-      ]);
+      const prefs = await api('/api/studio-preferences');
       if (turn !== generation) return;
       const incomingRev = revisionNumber(prefs?.revision);
       // Late GET safety: a stale read (older revision than the shared
       // confirmed snapshot) adopts the shared values instead of rolling back
       // this form and the global snapshot. Never invents server writes.
+      // Stored legacy 'cua' values sanitize to 'native' via normalize.
       if (incomingRev !== undefined && incomingRev < sharedComputerRevision && sharedComputer) {
-        if (typeof sharedComputer.backend === 'string')
-          backend = normalizeComputerBackend(sharedComputer.backend);
         if (typeof sharedComputer.model === 'string') model = sharedComputer.model;
         if (typeof sharedComputer.thinking === 'string') thinking = sharedComputer.thinking;
-        if (computer && typeof computer === 'object') {
-          known = true;
-          supported = computer.supported !== false;
-          status = computer;
-          backends = Array.isArray(computer.backends) ? computer.backends : null;
-        }
+        backend = COMPUTER_BACKEND_NATIVE;
+        known = true;
         showError(false);
       } else {
         backend = normalizeComputerBackend(prefs?.computerBackend);
         model = typeof prefs?.computerModel === 'string' ? prefs.computerModel : '';
         thinking = typeof prefs?.computerThinking === 'string' ? prefs.computerThinking : '';
-        if (computer && typeof computer === 'object') {
-          known = true;
-          supported = computer.supported !== false;
-          status = computer;
-          backends = Array.isArray(computer.backends) ? computer.backends : null;
-        } else {
-          known = true;
-          status = null;
-        }
+        known = true;
         publishComputer({ backend, model, thinking }, incomingRev);
       }
       showError(false);
@@ -284,42 +195,6 @@ export function createComputerPreferences({
       showError(error?.message || 'computer.preferencesError');
     } finally {
       if (turn === generation) busy = false;
-      render();
-    }
-  }
-
-  async function saveBackend(next) {
-    const wanted = normalizeComputerBackend(next);
-    if (wanted !== COMPUTER_BACKEND_NATIVE && wanted !== COMPUTER_BACKEND_CUA) return false;
-    if (selectorDisabled() || !isAvailable(wanted)) return false;
-    if (backend === wanted) {
-      render();
-      return true;
-    }
-    const previous = backend;
-    backend = wanted;
-    busy = true;
-    render();
-    try {
-      const result = await api('/api/studio-preferences', {
-        method: 'PATCH',
-        body: { computerBackend: wanted },
-      });
-      backend = normalizeComputerBackend(result?.computerBackend);
-      showError(false);
-      render();
-      publishComputer({ backend }, revisionNumber(result?.revision));
-      try {
-        await onChanged({ backend, model, thinking });
-      } catch {}
-      return true;
-    } catch (error) {
-      backend = previous;
-      showError(error?.message || 'computer.preferencesError');
-      render();
-      return false;
-    } finally {
-      busy = false;
       render();
     }
   }
@@ -382,11 +257,12 @@ export function createComputerPreferences({
 
   // A sibling's confirmed save lands here synchronously: adopt it unless an
   // own save is in flight (its completion publishes and wins instead).
+  // The engine is native-only: any shared backend value sanitizes to native.
   function onShared(next) {
     if (!next || busy) return;
     let changed = false;
-    if (typeof next.backend === 'string' && next.backend !== backend) {
-      backend = normalizeComputerBackend(next.backend);
+    if (backend !== COMPUTER_BACKEND_NATIVE) {
+      backend = COMPUTER_BACKEND_NATIVE;
       changed = true;
     }
     if (typeof next.model === 'string' && next.model !== model) {
@@ -407,16 +283,6 @@ export function createComputerPreferences({
     started = true;
     sharedComputerListeners.add(onShared);
     if (sharedComputer) onShared(sharedComputer);
-    const native = $('computer-backend-native');
-    if (native)
-      native.onchange = () => {
-        if (native.checked) void saveBackend(COMPUTER_BACKEND_NATIVE);
-      };
-    const cua = $('computer-backend-cua');
-    if (cua)
-      cua.onchange = () => {
-        if (cua.checked) void saveBackend(COMPUTER_BACKEND_CUA);
-      };
     const button = $('computer-model-button');
     if (button) button.onclick = () => openPicker();
     const thinkingSelect = $('computer-thinking');
@@ -487,12 +353,12 @@ export function createComputerPreferences({
       } catch {}
       offLanguage = null;
     },
-    saveBackend,
     saveModel,
     saveThinking,
     // Getters prefer the module-shared confirmed snapshot so the primary
     // (used by sendMessage) never sends a stale global after a clone update.
-    getBackend: () => (typeof sharedComputer?.backend === 'string' ? sharedComputer.backend : backend),
+    // The engine is native-only: always 'native', never restored from storage.
+    getBackend: () => COMPUTER_BACKEND_NATIVE,
     getModel: () => (typeof sharedComputer?.model === 'string' ? sharedComputer.model : model),
     getThinking: () => (typeof sharedComputer?.thinking === 'string' ? sharedComputer.thinking : thinking),
     get backend() {

@@ -1,5 +1,7 @@
 # CUA driver adapter: design notes (tag cua-driver-rs-v0.28.2 / fc188250)
 
+> Archive historique : CUA a été retiré de l’application. Ce document ne décrit plus le runtime ni les procédures de build actuels. Voir [Computer Use](../docs/computer-use.md).
+
 Files owned here ONLY (no edits to bridge/manager/PS/UI/packaging):
 
 - `lib/cua-computer-use-driver.mjs` (`createCuaComputerUseDriver`)

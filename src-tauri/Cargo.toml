@@ -1,6 +1,6 @@
 [package]
 name = "prime-agent-studio"
-version = "4.4.7-beta.1"
+version = "4.4.7"
 description = "Prime Agent Studio desktop application"
 authors = ["zerr0o"]
 edition = "2021"

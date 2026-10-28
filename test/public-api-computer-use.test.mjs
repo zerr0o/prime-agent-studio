@@ -9,7 +9,7 @@ import { createComputerUseManager } from '../lib/computer-use.mjs';
 // Real HTTP and lease manager, isolated storage, fake runtime and drivers only.
 const ENDPOINT = '/api/v1/computer-use';
 const SCOPES = ['read', 'runs:write', 'computer:write'];
-const BACKENDS = ['native', 'cua'].map((id) => ({ id, supported: true, available: true }));
+const BACKENDS = ['native'].map((id) => ({ id, supported: true, available: true }));
 const CONFIGURED_MODEL = 'openai/gpt-5.6-luna';
 
 // Fake verified native child: permission-only grants never create a holder,
@@ -511,18 +511,15 @@ test('active text-only runs may grant Computer Use permission (acquire still nee
   assert.deepEqual(f.effects, []);
 });
 
-for (const method of ['preferences', 'availability']) {
+for (const method of ['preferences', 'session']) {
   for (const change of ['stop', 'foreign-owner', 'revoke-token']) {
-    test(`delayed ${method} preflight rechecks ${change} before granting`, { timeout: 10000 }, async (t) => {
+    test(`delayed ${method} lookup rechecks ${change} before granting`, { timeout: 10000 }, async (t) => {
       const f = await fixture(t);
       if (method === 'preferences') await f.start('session-a');
       const revision = (await f.get()).json.revision;
-      // Gate the actual awaited work: studio preferences vs backend availability.
+      // Gate the actual awaited work: studio preferences vs session lookup.
       // Hold it through the concurrent change so the grant cannot slip through.
-      const gate = gateMethod(
-        method === 'preferences' ? f.app.store : f.computer,
-        method === 'preferences' ? 'getStudioPreferences' : 'refreshBackends',
-      );
+      const gate = gateMethod(f.app.store, method === 'preferences' ? 'getStudioPreferences' : 'history');
       const enabling = f.set({ enabled: true, expectedRevision: revision, sessionId: 'session-a' });
       // Revocation may close an already authenticated request: that is an unknown outcome, not success.
       enabling.catch(() => {});
@@ -566,7 +563,7 @@ for (const method of ['preferences', 'availability']) {
   }
 }
 
-test('global CUA selection is honored without starting a worker', async (t) => {
+test('explicit cua is rejected while native grants stay passive', async (t) => {
   const f = await fixture(t);
   assert.equal(
     (
@@ -575,15 +572,20 @@ test('global CUA selection is honored without starting a worker', async (t) => {
         body: { computerBackend: 'cua' },
       })
     ).status,
-    200,
+    400,
   );
+  assert.equal((await f.get()).json.backend, null);
   const granted = await f.set({
     enabled: true,
     expectedRevision: (await f.get()).json.revision,
     sessionId: 'session-a',
   });
   assert.equal(granted.status, 200);
-  assert.equal(granted.json.backend, 'cua');
+  assert.equal(granted.json.backend, 'native');
+  assert.deepEqual(
+    granted.json.backends.map((entry) => entry.id),
+    ['native'],
+  );
   cleanDto(granted.json);
   assert.deepEqual(f.effects, []);
 });

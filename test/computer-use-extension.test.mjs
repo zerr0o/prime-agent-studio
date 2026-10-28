@@ -610,66 +610,61 @@ test('context hook removes oversized historical screenshots and guards user imag
   assert.equal(await events.get('context')({ messages: [smallUser] }), undefined);
 });
 
-test('CUA inspect schema and requests preserve fresh element frames without images', async (t) => {
-  const stub = await startStubBridge(t, async () => ({
-    frame: { frameId: 'f-ax', kind: 'accessibility', backend: 'cua' },
-    elements: [{ elementId: 's00000001:2', label: 'Play', role: 'button' }],
-    truncated: false,
-  }));
+test('native-only build exposes no inspect tool and no semantic action fields', async (t) => {
+  const stub = await startStubBridge(t, async () => ({}));
   const { tools } = await loadExtension(t, stub.config);
-  const inspect = tools.get('computer_inspect');
-  assert.ok(inspect);
-  assert.match(inspect.description, /CUA mode only/);
-  assert.ok(inspect.parameters.properties.windowId);
-  const result = await inspect.execute('id', { windowId: '42:128' }, null, null, ctx);
-  assert.equal(stub.calls[0].action, 'inspect');
-  assert.equal(stub.calls[0].params.windowId, '42:128');
-  assert.equal(result.content.length, 1);
-  assert.equal(result.content[0].type, 'text');
-  const parsed = JSON.parse(result.content[0].text);
-  assert.equal(parsed.frame.kind, 'accessibility');
-  assert.equal(parsed.elements[0].elementId, 's00000001:2');
+  assert.equal(tools.get('computer_inspect'), undefined);
+  const act = tools.get('computer_act');
+  const actionProperties = act.parameters.properties.actions.items.properties;
+  assert.ok(!('elementId' in actionProperties));
+  assert.ok(!('value' in actionProperties));
+  assert.ok(!('deliveryMode' in act.parameters.properties));
+  const serialized = JSON.stringify(act.parameters);
+  assert.ok(!serialized.includes('set_value'));
+  assert.ok(!serialized.includes('elementId'));
+  assert.ok(!serialized.includes('deliveryMode'));
 });
 
-test('CUA image verification retains partial action evidence and does not duplicate image bytes', async (t) => {
+test('background delivery is rejected before reaching the bridge', async (t) => {
+  const stub = await startStubBridge(t, async () => ({}));
+  const { tools } = await loadExtension(t, stub.config);
+  const act = tools.get('computer_act');
+  await assert.rejects(
+    act.execute(
+      'id',
+      { frameId: 'f-old', actions: [{ type: 'click', x: 10, y: 20 }], deliveryMode: 'background' },
+      null,
+      null,
+      ctx,
+    ),
+    /Background delivery is unavailable/,
+  );
+  assert.equal(stub.calls.length, 0);
+});
+
+test('native image verification keeps action evidence and does not duplicate image bytes', async (t) => {
   const stub = await startStubBridge(t, async () => ({
     executed: 0,
-    partial: true,
     applicationState: 'unverified',
     results: [{ index: 0, effect: 'refused', route: 'none' }],
     observe: {
       image: { data: IMAGE, mimeType: 'image/png' },
-      frame: { frameId: 'f-next', backend: 'cua', kind: 'screenshot' },
-      elements: [{ elementId: 's00000002:1', role: 'button', label: 'Play' }],
-      truncated: false,
+      frame: { frameId: 'f-next', backend: 'native', kind: 'screenshot' },
     },
   }));
   const { tools } = await loadExtension(t, stub.config);
   const act = tools.get('computer_act');
-  assert.ok(act.parameters.properties.deliveryMode);
-  const actionProperties = act.parameters.properties.actions.items.properties;
-  assert.ok(actionProperties.elementId);
-  assert.ok(actionProperties.value);
   const result = await act.execute(
     'id',
-    {
-      frameId: 'f-old',
-      actions: [{ type: 'set_value', elementId: 's00000001:1', value: '' }],
-      deliveryMode: 'background',
-      observeAfter: true,
-    },
+    { frameId: 'f-old', actions: [{ type: 'keypress', keys: ['CTRL', 'T'] }], observeAfter: true },
     null,
     null,
     ctx,
   );
-  assert.equal(stub.calls[0].params.actions[0].value, '');
-  assert.equal(stub.calls[0].params.deliveryMode, 'background');
+  assert.equal(stub.calls[0].params.actions[0].type, 'keypress');
   const text = JSON.parse(result.content.find((p) => p.type === 'text').text);
   assert.equal(text.executed, 0);
-  assert.equal(text.partial, true);
   assert.equal(text.results[0].effect, 'refused');
-  assert.equal(text.elements[0].label, 'Play');
-  assert.equal(result.details.partial, true);
   assert.ok(!JSON.stringify(text).includes(IMAGE));
 });
 

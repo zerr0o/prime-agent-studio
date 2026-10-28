@@ -1,5 +1,7 @@
 # CUA owned-process Job supervision: guardian verb schema (finalized for relay)
 
+> Archive historique : CUA a été retiré de l’application. Ce document ne décrit plus le runtime ni les procédures de build actuels. Voir [Computer Use](../docs/computer-use.md).
+
 Owner: native worker implements; CUA adapter/transport integrates only.
 Neither side edits the other's files. Raw child.kill direct-child exit is
 NOT tree proof in production and MUST NOT be used as such.

@@ -6825,23 +6825,6 @@ export const messages = {
     en: 'Shortcut unavailable. The Stop Computer Use button remains available.',
   },
   'computer.backendLabel': { fr: 'Computer Use', en: 'Computer Use' },
-  'computer.backendNative': {
-    fr: 'Intégration originale (Windows)',
-    en: 'Original integration (Windows)',
-  },
-  'computer.backendCua': { fr: 'Cua Driver (beta)', en: 'Cua Driver (beta)' },
-  'computer.backendCuaUnavailable': {
-    fr: 'Cua Driver indisponible sur ce serveur. Choisissez l’intégration originale.',
-    en: 'Cua Driver unavailable on this server. Choose the original integration.',
-  },
-  'computer.backendChangeNeedsOff': {
-    fr: 'Désactivez Computer Use pour changer de moteur.',
-    en: 'Turn off Computer Use to change the engine.',
-  },
-  'computer.backendBetaNote': {
-    fr: 'Bêta Windows x64 uniquement.',
-    en: 'Beta for Windows x64 only.',
-  },
   'computer.cleanupPending': {
     fr: 'Nettoyage de Computer Use en cours.',
     en: 'Computer Use cleanup in progress.',

@@ -100,6 +100,11 @@ export async function verifyDesktopRuntimeResources(studioRoot) {
     if (!(await lstat(join(root, 'scripts', name))).isFile())
       throw new Error(`Missing desktop runtime: ${name}`);
   }
+  // PowerShell loads this C# renderer at runtime, outside the JS import graph.
+  for (const name of ['computer-use-worker.ps1', 'computer-use-overlay.cs']) {
+    const info = await lstat(join(root, 'runtime', name)).catch(() => null);
+    if (!info?.isFile()) throw new Error(`Missing desktop resource runtime/${name}`);
+  }
   async function scan(folder) {
     for (const entry of await readdir(folder, { withFileTypes: true })) {
       if (entry.name === 'node_modules') continue;

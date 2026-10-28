@@ -53,7 +53,7 @@ Thèmes sombre, clair et système. Français et anglais. Vos sessions et votre c
 
 ## Computer Use
 
-Laissez un agent observer et contrôler le **vrai bureau Windows**, pour une conversation à la fois. Activez explicitement **Autoriser le Computer Use** ; l’option est désactivée par défaut. Choisissez l’intégration Windows d’origine ou **Cua Driver (bêta)**.
+Laissez un agent observer et contrôler le **vrai bureau Windows**, pour une conversation à la fois. Activez explicitement **Autoriser le Computer Use** ; l’option est désactivée par défaut. Computer Use utilise notre moteur natif Windows.
 
 Ce n’est ni un environnement isolé ni une validation clic par clic. Les captures sont envoyées au fournisseur du modèle sélectionné. Utilisez **Arrêter Computer Use** ou **Ctrl+Alt+Shift+F10** pour arrêter les entrées sans interrompre les autres agents. [Guide Computer Use →](docs/computer-use.md)
 

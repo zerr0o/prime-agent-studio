@@ -1,5 +1,7 @@
 # Cua Driver beta.3 integration contract (in progress)
 
+> Archive historique : CUA a été retiré de l’application. Ce document ne décrit plus le runtime ni les procédures de build actuels. Voir [Computer Use](../docs/computer-use.md).
+
 ## Scope and constraints
 
 - Work only in the existing `feat/computer-use` worktree. Preserve all prior uncommitted changes and the verified beta.2 installer.

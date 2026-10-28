@@ -23,7 +23,6 @@ const EXPECTED_TOOLS = [
   'computer_status',
   'computer_windows',
   'computer_observe',
-  'computer_inspect',
   'computer_act',
   'computer_release',
 ];

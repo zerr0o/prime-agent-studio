@@ -297,34 +297,9 @@
 .computer-prefs-row {
   align-items: flex-start;
 }
-.computer-backend-options {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-.computer-backend-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text);
-  cursor: pointer;
-  min-width: 0;
-}
-.computer-backend-option input[type='radio'] {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--accent);
-}
-.computer-backend-option input[type='radio']:disabled + span {
-  opacity: 0.55;
-}
-#computer-backend-hint:empty {
-  display: none;
+.computer-model-field > select {
+  display: block;
+  margin-top: 8px;
 }
 #computer-prefs-error:not([hidden]) {
   margin-top: 4px;
@@ -1003,10 +978,22 @@
 }
 
 /* Legacy settings card: plain detected-values list, one Reset action. */
-.engine-legacy-list { list-style: none; padding: 0; margin: 12px 0 4px; }
-.engine-legacy-list li { font-size: 12px; color: var(--text); border-bottom: 1px solid var(--line-soft); padding: 7px 0; }
-.engine-legacy-list li:last-child { border-bottom: none; }
-@media (max-width: 600px) {
-  .model-config-modal .subagent-controls { grid-template-columns: minmax(0, 1fr); }
+.engine-legacy-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 4px;
 }
-
+.engine-legacy-list li {
+  font-size: 12px;
+  color: var(--text);
+  border-bottom: 1px solid var(--line-soft);
+  padding: 7px 0;
+}
+.engine-legacy-list li:last-child {
+  border-bottom: none;
+}
+@media (max-width: 600px) {
+  .model-config-modal .subagent-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

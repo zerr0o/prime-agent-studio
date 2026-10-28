@@ -58,7 +58,7 @@ import { getStudioMachineId } from './lib/studio-identity.mjs';
 import { createRoadmapBridge, createRoadmapCallerResolver } from './lib/roadmap-bridge.mjs';
 import { createRoadmapRoutes } from './lib/roadmap-routes.mjs';
 import { createRoadmapSessionResolver } from './lib/roadmap-session.mjs';
-import { createComputerUseManager, modelSupportsImages, COMPUTER_USE_BACKENDS } from './lib/computer-use.mjs';
+import { createComputerUseManager, modelSupportsImages } from './lib/computer-use.mjs';
 import { createComputerUseBridge } from './lib/computer-use-bridge.mjs';
 import { createProjectArchives } from './lib/project-archives.mjs';
 import { createConversationSync } from './lib/conversation-sync.mjs';
@@ -86,8 +86,7 @@ const HLJS_EXTRA_FILES = {
 };
 function hljsExtraFile(path) {
   const name = path.slice('/vendor/hljs-'.length, -'.js'.length);
-  if (!Object.hasOwn(HLJS_EXTRA_FILES, name))
-    throw new HttpError(404, tr('server.fichier_introuvable'));
+  if (!Object.hasOwn(HLJS_EXTRA_FILES, name)) throw new HttpError(404, tr('server.fichier_introuvable'));
   return join(ROOT, 'node_modules', '@highlightjs', 'cdn-assets', 'es', 'languages', HLJS_EXTRA_FILES[name]);
 }
 const MIME = {
@@ -228,7 +227,9 @@ export function createApp(options = {}) {
       initialCwd: options.initialCwd || process.env.PRIME_AGENT_GUI_INITIAL_CWD || ROOT,
     });
   const context = options.context || createContextService({ dataDir, store, index: options.codeIndex });
-  const contextStartup = setTimeout(() => { void context.ensureAll().catch(() => {}); }, 0);
+  const contextStartup = setTimeout(() => {
+    void context.ensureAll().catch(() => {});
+  }, 0);
   contextStartup.unref();
   const metrics = createMetrics({
     dataDir,
@@ -324,21 +325,14 @@ export function createApp(options = {}) {
     options.computer ||
     createComputerUseManager({
       ...(options.computerDriver ? { createDriver: options.computerDriver, isSupported: true } : {}),
-      // Backend availability injection for offline tests and the CUA rollout:
-      // static descriptors win, otherwise the manager queries
-      // lib/cua-driver-runtime.mjs without spawning any desktop worker.
-      ...(options.computerBackends ? { backends: options.computerBackends } : {}),
-      ...(options.cuaAvailability ? { cuaAvailability: options.cuaAvailability } : {}),
-      ...(typeof options.getCuaAvailability === 'function'
-        ? { getCuaAvailability: options.getCuaAvailability }
-        : {}),
-      ...(typeof options.availabilityTtlMs === 'number'
-        ? { availabilityTtlMs: options.availabilityTtlMs }
-        : {}),
     });
   const computerIdentity = createRoadmapCallerResolver({
-    getRuns: () => [...runs.values()], store, agentHome, sessionDir,
-    readEdges: options.readInspectorEdges, includeModel: true,
+    getRuns: () => [...runs.values()],
+    store,
+    agentHome,
+    sessionDir,
+    readEdges: options.readInspectorEdges,
+    includeModel: true,
   });
   const computerBridge =
     options.computerBridge ||
@@ -346,8 +340,10 @@ export function createApp(options = {}) {
       manager: computer,
       resolveCaller: async (identity) => {
         const caller = await computerIdentity(identity);
-        return { ...caller, imageCapable: caller.agentId
-          ? modelSupportsImages(caller.model, await models()) : false };
+        return {
+          ...caller,
+          imageCapable: caller.agentId ? modelSupportsImages(caller.model, await models()) : false,
+        };
       },
       isOwnerActive: (id) => runs.get(id)?.status === 'running',
     });
@@ -446,8 +442,7 @@ export function createApp(options = {}) {
       onChanged: () => invalidateModels(),
     });
   const projectFiles = createProjectFiles({ store, protectedRoots: [agentHome, sessionDir, dataDir] });
-  const filePreviewSettings =
-    options.filePreviewSettings || createFilePreviewSettings({ dataDir });
+  const filePreviewSettings = options.filePreviewSettings || createFilePreviewSettings({ dataDir });
   const isTaskFilesCwd = (value) => {
     try {
       if (typeof value !== 'string' || !value || !worktrees?.managedRoot) return false;
@@ -645,7 +640,10 @@ export function createApp(options = {}) {
   // settle, so later reads still see fresh data (store.mjs untouched).
   let overviewFlight = null;
   async function overviewSingleFlight() {
-    if (!overviewFlight) overviewFlight = store.overview().finally(() => { overviewFlight = null; });
+    if (!overviewFlight)
+      overviewFlight = store.overview().finally(() => {
+        overviewFlight = null;
+      });
     return overviewFlight;
   }
   // Trace only slow/stalled runtime discovery. No user data or error payloads.
@@ -657,7 +655,9 @@ export function createApp(options = {}) {
       const key = `${stage}:${outcome}`;
       if (Date.now() - (discoveryLogged.get(key) || 0) < 30000) return;
       discoveryLogged.set(key, Date.now());
-      console.log(`[startup] ${new Date().toISOString()} stage=${stage} outcome=${outcome} durationMs=${Date.now() - started}`);
+      console.log(
+        `[startup] ${new Date().toISOString()} stage=${stage} outcome=${outcome} durationMs=${Date.now() - started}`,
+      );
     };
     const watchdog = setTimeout(() => log('waiting'), 8000);
     watchdog.unref?.();
@@ -675,14 +675,19 @@ export function createApp(options = {}) {
   async function status() {
     if (!statusCache || (!statusPending && Date.now() - statusAt > 60000)) {
       statusPending = true;
-      statusCache = traceDiscovery('status', () => runtime.getStatus())
-        .finally(() => { statusPending = false; });
+      statusCache = traceDiscovery('status', () => runtime.getStatus()).finally(() => {
+        statusPending = false;
+      });
       statusAt = Date.now();
     }
     return statusCache;
   }
   async function models({ refresh = false } = {}) {
-    if (refresh || !modelCache || (!modelPending && Date.now() - modelsAt > (modelRefreshing ? 1000 : 5000))) {
+    if (
+      refresh ||
+      !modelCache ||
+      (!modelPending && Date.now() - modelsAt > (modelRefreshing ? 1000 : 5000))
+    ) {
       modelPending = true;
       const request = traceDiscovery('models', () => runtime.getModels({ refresh }));
       modelCache = request;
@@ -731,30 +736,26 @@ export function createApp(options = {}) {
     }
     return configuredModels(modelDefaults.set(selection));
   }
-  // Global Computer Use preferences (Preferences > Tools, one global setting).
-  // Backend changes only apply when the desktop is off and not owned; the
-  // stored model must exist, be available and read images when metadata says so.
-  // No silent fallback: unavailable selections fail closed with the reason.
+  // Global Computer Use preferences: native-only engine, one global setting.
+  // Only 'native' is accepted; any other backend fails with 400 and never
+  // enables desktop control. Persisted 'cua' values load as native.
+  // The stored model must exist, be available and read images when metadata says so.
   async function setStudioPreferencesGuarded(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body))
       throw new HttpError(400, tr('server.demande_invalide'));
     if ('computerBackend' in body) {
       const wanted = body.computerBackend;
-      if (wanted !== 'native' && wanted !== 'cua') throw new HttpError(400, tr('server.demande_invalide'));
+      if (wanted !== 'native') throw new HttpError(400, tr('server.demande_invalide'));
       const current = await studioPreferences().catch(() => null);
       if (!current || current.computerBackend !== wanted) {
         const state = computer.status();
-        if (state.enabled || state.owner) throw new HttpError(409, 'Turn off desktop permissions to change the engine.');
+        if (state.enabled || state.owner)
+          throw new HttpError(409, 'Turn off desktop permissions to change the engine.');
         if (state.cleanupPending === true || state.cleanupFailed === true)
           throw new HttpError(
             409,
             'Desktop cleanup is pending. Use Stop to retry before changing the engine.',
           );
-        if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
-        const entries = computer.status().backends;
-        const entry = Array.isArray(entries) ? entries.find((candidate) => candidate?.id === wanted) : null;
-        if (!entry?.available)
-          throw new HttpError(409, entry?.reason || 'The requested Computer Use backend is unavailable.');
       }
     }
     // The decision model (computerModel) must read screenshots when it
@@ -803,8 +804,10 @@ export function createApp(options = {}) {
     if ('computerBackend' in body) {
       const current = await studioPreferences();
       const state = computer.status();
-      if (body.computerBackend !== current.computerBackend &&
-          (state.enabled || state.owner || state.cleanupPending || state.cleanupFailed))
+      if (
+        body.computerBackend !== current.computerBackend &&
+        (state.enabled || state.owner || state.cleanupPending || state.cleanupFailed)
+      )
         throw new HttpError(409, 'Turn off desktop permissions to change the engine.');
     }
     return store.setStudioPreferences(body);
@@ -878,18 +881,28 @@ export function createApp(options = {}) {
         desktopNotifications.publish('turnComplete', run);
         void pushService.notify('turnComplete', { sessionId: run.sessionId, runId: run.id }).catch(() => {});
       }
-      if (run.sessionId && ![...runs.values()].some((other) => other !== run &&
-          other.sessionId === run.sessionId && !other.finished && ['running', 'stopping'].includes(other.status)))
+      if (
+        run.sessionId &&
+        ![...runs.values()].some(
+          (other) =>
+            other !== run &&
+            other.sessionId === run.sessionId &&
+            !other.finished &&
+            ['running', 'stopping'].includes(other.status),
+        )
+      )
         sessionLocks.delete(run.sessionId);
       // Send the finished turn right away instead of waiting for the next cycle.
       if (run.sessionId && !closing)
         setTimeout(() => void conversationSync.checkSession(run.sessionId).catch(() => {}), 1500).unref();
     }
     if (
-      (event.kind === 'message' && (event.message?.role === 'assistant' || event.message?.customType === 'compaction')) ||
+      (event.kind === 'message' &&
+        (event.message?.role === 'assistant' || event.message?.customType === 'compaction')) ||
       event.kind === 'done' ||
       (['runtime', 'status'].includes(event.kind) && ['compacting', 'turn_end'].includes(event.status))
-    ) inspector.invalidate(run.sessionId);
+    )
+      inspector.invalidate(run.sessionId);
     publicApi.noteEvent(run, event);
     metrics.noteEvent(run, event);
     const item = { ...event, seq: ++run.seq };
@@ -966,30 +979,14 @@ export function createApp(options = {}) {
         if (!state.supported || state.cleanupPending || state.cleanupFailed)
           throw new HttpError(409, 'Computer Use is unavailable or waiting for desktop cleanup.');
       }
-      // Global backend default (Preferences > Tools, one global setting).
-      // An explicit body.backend stays accepted for API compatibility and is
-      // validated the same way. When omitted, the stored global backend is
-      // used. The manager revalidates after an async CUA refresh at
-      // admission, so a stale cache can never grant an unavailable backend.
-      // Never silently falls back across backends.
+      // Native-only backend (Preferences > Tools, one global setting).
+      // An explicit body.backend stays accepted for API compatibility only
+      // when it is 'native'. Any other value fails with 400 and never
+      // silently dispatches the native engine.
       const preferences = await studioPreferences();
-      let backend = null;
-      if (body.backend !== undefined) {
-        if (!COMPUTER_USE_BACKENDS.includes(body.backend))
-          throw new HttpError(400, 'Unknown Computer Use backend. Send native or cua.');
-        backend = body.backend;
-      } else {
-        backend = preferences?.computerBackend === 'cua' ? 'cua' : 'native';
-      }
-      if (backend) {
-        if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
-        const entries = computer.status().backends;
-        if (Array.isArray(entries)) {
-          const entry = entries.find((candidate) => candidate?.id === backend);
-          if (!entry?.available)
-            throw new HttpError(409, entry?.reason || 'The requested Computer Use backend is unavailable.');
-        }
-      }
+      if (body.backend !== undefined && body.backend !== 'native')
+        throw new HttpError(400, 'Unknown Computer Use backend. Send native.');
+      const backend = 'native';
       const sessionId = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : null;
       const runId = typeof body.runId === 'string' && body.runId ? body.runId : null;
       if (!sessionId && !runId)
@@ -1053,7 +1050,10 @@ export function createApp(options = {}) {
         );
       }
       rejectStaleGrant();
-      return computer.enable({ sessionId, cwd, ...computerRouting(preferences, existing), ...(backend ? { backend } : {}) }, guard);
+      return computer.enable(
+        { sessionId, cwd, ...computerRouting(preferences, existing), ...(backend ? { backend } : {}) },
+        guard,
+      );
     }
     return computer.disable(
       {
@@ -1210,7 +1210,6 @@ export function createApp(options = {}) {
     // Desktop permission never changes the conversation model or reasoning.
     // The configured model is reserved for a native child on actual desktop use.
     const globals = await studioPreferences().catch(() => null);
-    const globalComputerBackend = globals?.computerBackend === 'cua' ? 'cua' : 'native';
     const selectedModel =
       (pastudioResolved ?? body.model ?? settings?.model ?? existing?.model) || catalog.default?.model;
     const selectedThinking =
@@ -1219,13 +1218,12 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.demande_invalide'));
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
       throw new HttpError(400, 'Invalid computerUse flag. Send true to enable desktop control for this run.');
-    // Backend selection never enables desktop control on its own: it is only
-    // legitimate alongside computerUse: true. When omitted the global backend
-    // (Preferences > Tools) is used at admission; an explicit backend stays
-    // accepted for API compatibility and is validated the same way.
+    // Native-only engine: an explicit computerUseBackend is only legitimate
+    // alongside computerUse: true and only when it is 'native'. Any other
+    // value fails with 400 and never enables desktop control.
     if (body.computerUseBackend !== undefined) {
-      if (!COMPUTER_USE_BACKENDS.includes(body.computerUseBackend))
-        throw new HttpError(400, 'Invalid computerUseBackend. Send native or cua with computerUse: true.');
+      if (body.computerUseBackend !== 'native')
+        throw new HttpError(400, 'Invalid computerUseBackend. Send native with computerUse: true.');
       if (body.computerUse !== true) throw new HttpError(400, 'computerUseBackend needs computerUse: true.');
     }
     const allowQuestions =
@@ -1279,11 +1277,7 @@ export function createApp(options = {}) {
           runId: run.id,
           cwd,
           computerUse: body.computerUse === true,
-          ...(body.computerUse === true
-            ? { backend: body.computerUseBackend || globalComputerBackend }
-            : body.computerUseBackend
-              ? { backend: body.computerUseBackend }
-              : {}),
+          ...(body.computerUse === true ? { backend: 'native' } : {}),
           ...computerRouting(globals, run),
         });
       }
@@ -1515,9 +1509,11 @@ export function createApp(options = {}) {
         };
         const bootWatchdog = setTimeout(() => {
           if (bootFinished) return;
-          const pending = (bootMode === 'light' ? ['overview', 'subagent', 'prefs'] : ['overview', 'status', 'models', 'subagent', 'prefs']).filter(
-            (name) => !(name in bootStages),
-          );
+          const pending = (
+            bootMode === 'light'
+              ? ['overview', 'subagent', 'prefs']
+              : ['overview', 'status', 'models', 'subagent', 'prefs']
+          ).filter((name) => !(name in bootStages));
           console.log(`${bootLine('waiting')} pending=${pending.join(',') || 'none'}`);
         }, 8000);
         // Client timeout/abort while stages hang: capture the outstanding
@@ -1525,7 +1521,10 @@ export function createApp(options = {}) {
         res.on('close', () => logBoot('aborted'));
         const withMetricsId = (overview) => ({
           ...overview,
-          projects: overview.projects.map((project) => ({ ...project, metricsId: metricsProjectId(project.cwd) })),
+          projects: overview.projects.map((project) => ({
+            ...project,
+            metricsId: metricsProjectId(project.cwd),
+          })),
         });
         const basePreferences = {
           attachments: true,
@@ -1724,8 +1723,7 @@ export function createApp(options = {}) {
         return json(res, 200, await filePreviewSettings.set(await readBody(req)));
       if (method === 'GET' && path === '/api/file-previews/external') {
         const settings = await filePreviewSettings.get();
-        if (!settings.allowOutsideProject)
-          throw new HttpError(403, tr('server.ce_lien_sort_du_projet'));
+        if (!settings.allowOutsideProject) throw new HttpError(403, tr('server.ce_lien_sort_du_projet'));
         return json(
           res,
           200,
@@ -1877,7 +1875,10 @@ export function createApp(options = {}) {
         const overview = await overviewSingleFlight();
         return json(res, 200, {
           ...overview,
-          projects: overview.projects.map((project) => ({ ...project, metricsId: metricsProjectId(project.cwd) })),
+          projects: overview.projects.map((project) => ({
+            ...project,
+            metricsId: metricsProjectId(project.cwd),
+          })),
           runs: activeRuns(),
           studioPreferences: await studioPreferences(),
         });
@@ -2057,14 +2058,20 @@ export function createApp(options = {}) {
         );
         return json(res, 200, result);
       }
-      const contextRoute = path.match(/^\/api\/projects\/([a-f0-9]{64})\/context(?:\/(events|rebuild|search))?$/);
+      const contextRoute = path.match(
+        /^\/api\/projects\/([a-f0-9]{64})\/context(?:\/(events|rebuild|search))?$/,
+      );
       if (contextRoute) {
         const [, id, action] = contextRoute;
-        if (!action && method === 'GET') return json(res, 200, await context.get(id, url.searchParams.get('sessionId')));
-        if (!action && method === 'PATCH') return json(res, 200, await context.patch(id, await readBody(req)));
-        if (action === 'events' && method === 'GET') return await context.events(id, url.searchParams.get('sessionId'), req, res);
+        if (!action && method === 'GET')
+          return json(res, 200, await context.get(id, url.searchParams.get('sessionId')));
+        if (!action && method === 'PATCH')
+          return json(res, 200, await context.patch(id, await readBody(req)));
+        if (action === 'events' && method === 'GET')
+          return await context.events(id, url.searchParams.get('sessionId'), req, res);
         if (action === 'rebuild' && method === 'POST') return json(res, 202, await context.rebuild(id));
-        if (action === 'search' && method === 'POST') return json(res, 200, await context.search(id, await readBody(req)));
+        if (action === 'search' && method === 'POST')
+          return json(res, 200, await context.search(id, await readBody(req)));
         throw new HttpError(405, 'Method not allowed.');
       }
       if (method === 'POST' && path === '/api/projects/move')
@@ -2287,11 +2294,6 @@ export function createApp(options = {}) {
       // selected existing session or the current run. Disable/stop only
       // clear desktop input, never the agent run or the server.
       if (method === 'GET' && path === '/api/computer-use') {
-        // Live availability before status: the cached default says CUA is
-        // missing until queried, which would wedge the disabled selector
-        // off forever. Pure file check only, TTL-gated, never a worker
-        // spawn; failures keep the last cached verdict.
-        if (typeof computer.refreshBackends === 'function') await computer.refreshBackends().catch(() => {});
         return json(
           res,
           200,
@@ -2353,8 +2355,7 @@ export function createApp(options = {}) {
         else if (path === '/vendor/jsqr.js') file = join(ROOT, 'node_modules', 'jsqr', 'dist', 'jsQR.js');
         else if (path === '/vendor/hljs.js')
           file = join(ROOT, 'node_modules', '@highlightjs', 'cdn-assets', 'es', 'highlight.min.js');
-        else if (path.startsWith('/vendor/hljs-') && path.endsWith('.js'))
-          file = hljsExtraFile(path);
+        else if (path.startsWith('/vendor/hljs-') && path.endsWith('.js')) file = hljsExtraFile(path);
         else if (path === '/favicon.ico') file = join(ROOT, 'assets', 'prime-agent.ico');
         else if (path === '/manifest.webmanifest') {
           const locale = requestLanguage(req.headers, url.searchParams.get('lang'));

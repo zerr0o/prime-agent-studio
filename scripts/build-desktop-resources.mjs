@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { desktopRuntimeScripts, verifyDesktopRuntimeResources } from './desktop-runtime-resources.mjs';
-import { verifyCuaDriverSidecar } from './prepare-cua-driver.mjs';
 import { checkNode } from '../lib/desktop-components.mjs';
 
 checkNode();
@@ -35,32 +34,9 @@ await mkdir(join(studio, 'scripts'));
 for (const name of desktopRuntimeScripts)
   await cp(join(root, 'scripts', name), join(studio, 'scripts', name));
 await verifyDesktopRuntimeResources(studio);
-// Pinned CUA driver sidecar (beta, Windows x64 only): the resource build
-// runs on every desktop platform, but the driver beta supports win32-x64
-// only (see lib/cua-driver-runtime.mjs). Require and publish the verified
-// sidecar on win32-x64 hosts; skip elsewhere so macOS, Linux and non-x64
-// builds keep working with the CUA backend reported unsupported at
-// runtime. Override with CUA_DRIVER_SIDECAR=required|skip.
-const cuaDriverSidecarMode = process.env.CUA_DRIVER_SIDECAR;
-const cuaDriverSidecarRequired =
-  cuaDriverSidecarMode === 'required' ||
-  (cuaDriverSidecarMode !== 'skip' && process.platform === 'win32' && process.arch === 'x64');
-if (cuaDriverSidecarRequired) {
-  await verifyCuaDriverSidecar(join(root, 'runtime', 'cua-driver'));
-  await rm(join(studio, 'runtime', 'cua-driver'), { recursive: true, force: true });
-  await cp(join(root, 'runtime', 'cua-driver'), join(studio, 'runtime', 'cua-driver'), {
-    recursive: true,
-  });
-} else {
-  // The generic runtime copy above may have staged an unverified
-  // runtime/cua-driver dir: remove it from the bundle copy (source tree
-  // untouched) so Windows binaries are never shipped unverified on other
-  // platforms or explicit skips.
-  await rm(join(studio, 'runtime', 'cua-driver'), { recursive: true, force: true });
-  console.log(
-    `Skipping Windows-only CUA driver sidecar on ${process.platform}-${process.arch} (CUA backend stays unsupported there).`,
-  );
-}
+// Native-only engine: never ship a legacy runtime/cua-driver dir that the
+// generic runtime copy above may have staged from the source tree.
+await rm(join(studio, 'runtime', 'cua-driver'), { recursive: true, force: true });
 const npmCli = process.env.npm_execpath || join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
 execFileSync(process.execPath, [npmCli, 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {
   cwd: studio,
@@ -74,9 +50,14 @@ if (process.platform === 'win32') {
   const probe = join(output, 'verbatim-probe.mjs');
   await writeFile(probe, '');
   try {
-    execFileSync(join(output, 'node.exe'), [`\\\\?\\${resolve(probe)}`], { windowsHide: true, stdio: 'pipe' });
+    execFileSync(join(output, 'node.exe'), [`\\\\?\\${resolve(probe)}`], {
+      windowsHide: true,
+      stdio: 'pipe',
+    });
   } catch {
-    throw new Error(`Node ${process.version} cannot start scripts from verbatim Windows paths. Build with the pinned Node version.`);
+    throw new Error(
+      `Node ${process.version} cannot start scripts from verbatim Windows paths. Build with the pinned Node version.`,
+    );
   } finally {
     await rm(probe, { force: true });
   }

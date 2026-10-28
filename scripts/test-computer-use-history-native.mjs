@@ -1,16 +1,8 @@
-// CUA + history native proof: real installed Prime Agent 0.9.5 only.
-// Two narrow cases, isolated temp agentHome/namespace, fake desktops,
-// local deterministic provider. No real input, capture, paid models,
-// live Studio daemon, installs or restarts. Kills only exact test trees
-// via runtime.close/bridge.close/provider.close.
-// Case H: oversized HISTORICAL ComputerUse image filtered by the real
-//   extension relative helper import + context hook BEFORE provider.
-//   Seeds an isolated session fixture toolResult PNG>2000 then resumes.
-//   Session logs on disk stay unchanged; provider sees only the marker.
-// Case C: real-engine CUA fake-driver proof: computer_inspect text frame
-//   -> elementId/set_value via existing bridge owner backend cua,
-//   pixel coords untouched, partial truth preserved.
-// Fake Node helper with driverFrame bindings; CUA exe never used.
+// Native history proof with the real isolated Prime Agent runtime.
+// Local deterministic provider and fake desktop only: no real input, capture,
+// paid model, Studio daemon changes, installs or restarts. An oversized historical
+// tool-result PNG is filtered by the extension context hook before provider
+// submission, while original session logs remain unchanged.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, appendFile } from 'node:fs/promises';
@@ -22,22 +14,18 @@ import { createAgentRuntime, discoverCli, agentEnvironment } from '../lib/agent.
 import { createStore } from '../lib/store.mjs';
 import { createRoadmapCallerResolver } from '../lib/roadmap-bridge.mjs';
 import { createComputerUseManager, modelSupportsImages } from '../lib/computer-use.mjs';
-import { createComputerUseBridge, toPhysicalCoordinates } from '../lib/computer-use-bridge.mjs';
+import { createComputerUseBridge } from '../lib/computer-use-bridge.mjs';
 
 const EXPECTED_TOOLS = [
   'computer_status',
   'computer_windows',
   'computer_observe',
-  'computer_inspect',
   'computer_act',
   'computer_release',
 ];
 const FRAME_GEOM = { width: 400, height: 300, bounds: { x: 100, y: 80, width: 800, height: 600 } };
-const CUA_GEOM = { width: 800, height: 450, bounds: { x: -1600, y: 100, width: 1600, height: 900 } };
-const CUA_WINDOW_ID = '432:198738';
-const CUA_PIXEL = { x: 400, y: 200 };
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const CU_MODEL = 'fixture/cua';
+const CU_MODEL = 'fixture/desktop';
 const HISTORY_MODEL = 'fixture/history';
 const MAIN_MODEL = 'fixture/parent';
 const CU_THINKING = 'off';
@@ -234,143 +222,6 @@ function createFakeNativeDriver({ pngBase64 }) {
     },
   };
 }
-function createFakeCuaDriver({ smallPngBase64 }) {
-  const calls = { status: 0, windows: [], observes: [], inspects: [], acts: [] };
-  let seq = 0;
-  let closed = false;
-  const stopReasons = [];
-  const nextSnapshot = () => {
-    seq += 1;
-    return 's' + seq.toString(16).padStart(8, '0');
-  };
-  let lastInspectSnapshot = null;
-  let lastObserveSnapshot = null;
-  let lastInspectElement = null;
-  return {
-    calls,
-    stopReasons,
-    get closed() {
-      return closed;
-    },
-    get lastInspectSnapshot() {
-      return lastInspectSnapshot;
-    },
-    get lastObserveSnapshot() {
-      return lastObserveSnapshot;
-    },
-    get lastInspectElement() {
-      return lastInspectElement;
-    },
-    async request(command) {
-      const method = command && command.method;
-      const params = (command && command.params) || {};
-      if (closed) {
-        const e = new Error('Fake CUA worker is closed.');
-        e.code = 'WORKER_EXIT';
-        throw e;
-      }
-      if (method === 'status') {
-        calls.status += 1;
-        return { supported: true, hotkeyRegistered: true, hotkeyError: 0, fake: true, backend: 'cua' };
-      }
-      if (method === 'windows') {
-        calls.windows.push(params);
-        return {
-          windows: [
-            {
-              id: CUA_WINDOW_ID,
-              title: 'Fake CUA App',
-              processId: 432,
-              processName: 'fake.exe',
-              bounds: { x: -1600, y: 100, width: 1600, height: 900 },
-              foreground: false,
-            },
-          ],
-          foreground: CUA_WINDOW_ID,
-          fake: true,
-        };
-      }
-      if (method === 'inspect') {
-        calls.inspects.push(params);
-        const snapshotId = nextSnapshot();
-        lastInspectSnapshot = snapshotId;
-        const elementId = snapshotId + ':1';
-        lastInspectElement = elementId;
-        return {
-          frame: {
-            width: CUA_GEOM.width,
-            height: CUA_GEOM.height,
-            windowId: params.windowId,
-            bounds: { ...CUA_GEOM.bounds },
-            capturedAt: new Date().toISOString(),
-          },
-          driverFrame: {
-            backend: 'cua',
-            kind: 'accessibility',
-            pid: 432,
-            windowId: 198738,
-            snapshotId,
-            sessionLabel: 'private',
-          },
-          elements: [{ elementId, role: 'button', label: 'Play', enabled: true }],
-          timing: { driverMs: 2 },
-        };
-      }
-      if (method === 'observe') {
-        calls.observes.push(params);
-        const snapshotId = nextSnapshot();
-        lastObserveSnapshot = snapshotId;
-        const elementId = snapshotId + ':1';
-        return {
-          image: { mimeType: 'image/png', data: smallPngBase64 },
-          frame: {
-            width: CUA_GEOM.width,
-            height: CUA_GEOM.height,
-            windowId: params.windowId || CUA_WINDOW_ID,
-            bounds: { ...CUA_GEOM.bounds },
-            capturedAt: new Date().toISOString(),
-          },
-          driverFrame: {
-            backend: 'cua',
-            kind: 'screenshot',
-            pid: 432,
-            windowId: 198738,
-            snapshotId,
-            sessionLabel: 'private',
-          },
-          elements: [{ elementId, role: 'button', label: 'Play', enabled: true }],
-          timing: { driverMs: 2 },
-        };
-      }
-      if (method === 'act') {
-        calls.acts.push(params);
-        const actions = Array.isArray(params.actions) ? params.actions : [];
-        const first = actions[0] || {};
-        if (typeof first.elementId === 'string') {
-          return {
-            executed: actions.length,
-            results: actions.map((_, i) => ({ index: i, effect: 'confirmed', route: 'uia' })),
-            fake: true,
-          };
-        }
-        // Pixel path: omit executed to exercise CUA partial truth (bridge sets executed null, partial true).
-        return {
-          results: actions.map((_, i) => ({ index: i, effect: 'unverified', route: 'uia' })),
-          fake: true,
-        };
-      }
-      const e = new Error('Unknown fake CUA method ' + String(method));
-      e.status = 400;
-      throw e;
-    },
-    async stop(r = 'user') {
-      stopReasons.push(r);
-    },
-    async close() {
-      closed = true;
-    },
-  };
-}
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROOF_ROOT = resolve(join(SCRIPT_DIR, '..'));
 function sanitizeChildNodeOptions(value, root) {
@@ -405,7 +256,7 @@ function testChildEnv() {
 async function runHistoryCase({ pngBase64, pngPrefix, resultsDir }) {
   const label = 'history-filter';
   let historyChild = null;
-  const phaseRoot = await mkdtemp(join(tmpdir(), 'prime-cua-native-' + label + '-'));
+  const phaseRoot = await mkdtemp(join(tmpdir(), 'prime-history-native-' + label + '-'));
   const cwd = join(phaseRoot, 'project');
   const agentHome = join(phaseRoot, 'agent');
   const sessionDir = join(agentHome, 'sessions');
@@ -490,7 +341,7 @@ async function runHistoryCase({ pngBase64, pngPrefix, resultsDir }) {
         sessionId: run.sessionId,
         runId: run.id,
         cwd,
-        name: 'native-cua-' + label,
+        name: 'native-history-' + label,
         computerModel: HISTORY_MODEL,
         computerThinking: CU_THINKING,
       });
@@ -605,7 +456,8 @@ async function runHistoryCase({ pngBase64, pngPrefix, resultsDir }) {
       let tool = null;
       if (step === 0) tool = { name: 'computer_status', arguments: {} };
       else if (step === 1) {
-        const isChild = role === HISTORY_MODEL || role === 'history' || role === CU_MODEL || role === 'cua';
+        const isChild =
+          role === HISTORY_MODEL || role === 'history' || role === CU_MODEL || role === 'desktop';
         const text = lastToolText(body.messages);
         let p = null;
         try {
@@ -1008,550 +860,6 @@ async function runHistoryCase({ pngBase64, pngPrefix, resultsDir }) {
   }
 }
 
-async function runCuaCase({ resultsDir }) {
-  const label = 'cua-inspect';
-  const phaseRoot = await mkdtemp(join(tmpdir(), 'prime-cua-native-' + label + '-'));
-  const cwd = join(phaseRoot, 'project');
-  const agentHome = join(phaseRoot, 'agent');
-  const sessionDir = join(agentHome, 'sessions');
-  const dataDir = join(phaseRoot, 'studio');
-  await Promise.all([cwd, sessionDir].map((p) => mkdir(p, { recursive: true })));
-  const store = createStore({ sessionDir, dataDir });
-  await store.project({ cwd });
-  const run = { id: 'cccccccc-dddd-4eee-8fff-000000000001', sessionId: null, cwd, status: 'running' };
-  const smallPngBase64 = pngHeaderBase64(CUA_GEOM.width, CUA_GEOM.height);
-  const smallPrefix = smallPngBase64.slice(0, 48);
-  const driver = createFakeCuaDriver({ smallPngBase64 });
-  const manager = createComputerUseManager({
-    createDriver: () => driver,
-    isSupported: true,
-    cuaAvailability: { available: true, supported: true },
-  });
-  const bridge = createComputerUseBridge({
-    manager,
-    resolveCaller: (() => {
-      const verified = createRoadmapCallerResolver({
-        getRuns: () => [run],
-        store,
-        agentHome,
-        sessionDir,
-        includeModel: true,
-      });
-      const trustedCatalog = {
-        models: [
-          { id: MAIN_MODEL, input: ['text'] },
-          { id: HISTORY_MODEL, input: ['text', 'image'] },
-          { id: CU_MODEL, input: ['text', 'image'] },
-        ],
-      };
-      return async (identity) => {
-        try {
-          const caller = await verified(identity);
-          return {
-            ...caller,
-            imageCapable: caller.agentId ? modelSupportsImages(caller.model, trustedCatalog) : false,
-          };
-        } catch (error) {
-          try {
-            calls.push(
-              label +
-                ':resolver-fail-' +
-                String(error && error.message ? error.message : error).slice(0, 300),
-            );
-          } catch {}
-          throw error;
-        }
-      };
-    })(),
-    isOwnerActive: (id) => run.id === id && run.status === 'running',
-  });
-  await bridge.ready;
-  const calls = [];
-  const { promise: providerFailure, reject: failProvider } = Promise.withResolvers();
-  // A provider error can precede runtime admission; retain it without an
-  // unhandled rejection, then race it against the active run below.
-  providerFailure.catch(() => {});
-  const requests = [];
-  const events = [];
-  const stage = new Map();
-  const evidence = { toolDiscovery: null, elements: [] };
-  let runtime = null;
-  let inspectFrameId = null;
-  let inspectElement = null;
-  let observeFrameId = null;
-  let childFinished = false;
-  const CHILD_NAME = 'cu-child-1';
-  async function ensureCua() {
-    const deadline = Date.now() + 15000;
-    while (!run.sessionId && Date.now() < deadline) await sleep(50);
-    assert.ok(run.sessionId, label + ': session id missing');
-    const cur = manager.status({ sessionId: run.sessionId });
-    if (!cur.enabled || cur.owner?.backend !== 'cua') {
-      await manager.enable({
-        sessionId: run.sessionId,
-        runId: run.id,
-        cwd,
-        name: 'native-cua-' + label,
-        computerModel: CU_MODEL,
-        computerThinking: CU_THINKING,
-        backend: 'cua',
-      });
-      calls.push(label + ':test-enabled-cua-lease');
-    }
-  }
-  const provider = createServer(async (req, res) => {
-    try {
-      let raw = '';
-      for await (const chunk of req) raw += chunk;
-      const body = JSON.parse(raw);
-      const role = body.model || 'cua';
-      {
-        const knownCua = new Set([MAIN_MODEL, 'fixture/parent', 'parent', CU_MODEL, 'cua']);
-        if (!knownCua.has(role))
-          throw Object.assign(new Error('unexpected cua provider role: ' + String(role)), { role });
-      }
-      requests.push(body);
-      const names = (body.tools || []).map((t) => t.function.name);
-      for (const n of EXPECTED_TOOLS)
-        assert.ok(names.includes(n), label + ' ' + role + ': tool ' + n + ' missing');
-      if (!evidence.toolDiscovery)
-        evidence.toolDiscovery = {
-          count: names.length,
-          computerTools: EXPECTED_TOOLS.filter((n) => names.includes(n)),
-        };
-      const step = stage.get(role) || 0;
-      let tool = null;
-      if (step === 0) tool = { name: 'computer_status', arguments: {} };
-      else if (step === 1) {
-        const isCuaChild = role === CU_MODEL || role === 'cua';
-        const text = lastToolText(body.messages);
-        let p = null;
-        try {
-          p = JSON.parse(text);
-        } catch {}
-        if (isCuaChild) {
-          try {
-            calls.push(label + ':debug-run-' + String(run.id) + '-' + String(run.sessionId));
-          } catch {}
-          try {
-            calls.push(label + ':debug-manager-' + JSON.stringify(manager._debug()).slice(0, 800));
-          } catch {}
-          assert.ok(
-            p && p.enabled === true,
-            label + ': child status must be enabled, got ' + text.slice(0, 500),
-          );
-          assert.equal(p.delegated, true, label + ': child must report delegated=true');
-          assert.equal(
-            p.routing && p.routing.model,
-            CU_MODEL,
-            label + ': child routing must advertise CU model',
-          );
-          calls.push(label + ':status-enabled-json');
-          tool = { name: 'computer_inspect', arguments: { windowId: CUA_WINDOW_ID } };
-        } else {
-          assert.ok(p && p.enabled === false, label + ': status must be disabled first');
-          calls.push(label + ':status-disabled-json');
-          await ensureCua();
-          tool = { name: 'computer_status', arguments: {} };
-        }
-      } else if (step === 2) {
-        const isCuaChild2 = role === CU_MODEL || role === 'cua';
-        if (isCuaChild2) {
-          const text = lastToolText(body.messages);
-          let p = null;
-          try {
-            p = JSON.parse(text);
-          } catch {}
-          assert.ok(p && p.frame, label + ': inspect must return frame, got ' + text.slice(0, 500));
-          assert.equal(p.frame.kind, 'accessibility', label + ': inspect frame must be accessibility');
-          assert.equal(p.frame.backend, 'cua', label + ': inspect frame backend must be cua');
-          assert.ok(p.frame.frameId, label + ': inspect frameId required');
-          assert.ok(Array.isArray(p.elements) && p.elements.length > 0, label + ': inspect elements missing');
-          assert.ok(p.elements[0].elementId, label + ': elementId missing');
-          assert.equal(p.image, undefined, label + ': inspect must return no pixels');
-          inspectFrameId = p.frame.frameId;
-          inspectElement = p.elements[0].elementId;
-          evidence.elements.push({ frameId: inspectFrameId, elementId: inspectElement, kind: p.frame.kind });
-          const seen = imageEvidence(body.messages, smallPrefix);
-          assert.ok(!seen.hasBase64, label + ': inspect must not leak pixels yet');
-          calls.push(label + ':inspect-no-pixels');
-          tool = {
-            name: 'computer_act',
-            arguments: {
-              frameId: inspectFrameId,
-              actions: [{ type: 'set_value', elementId: inspectElement, value: 'hello' }],
-              deliveryMode: 'background',
-            },
-          };
-        } else {
-          const text = lastToolText(body.messages);
-          let p = null;
-          try {
-            p = JSON.parse(text);
-          } catch {}
-          assert.ok(p && p.enabled === true, label + ': enabled status missing, got ' + text.slice(0, 300));
-          assert.equal(p.delegated, false, label + ': main must report delegated=false');
-          assert.equal(p.routing && p.routing.model, CU_MODEL, label + ': routing must advertise CU model');
-          assert.equal(p.owner, null, label + ': permission only, no holder yet');
-          calls.push(label + ':status-enabled-cua-json');
-          tool = { name: 'computer_inspect', arguments: { windowId: CUA_WINDOW_ID } };
-        }
-      } else if (step === 3) {
-        const isCuaChild3 = role === CU_MODEL || role === 'cua';
-        if (isCuaChild3) {
-          const text = lastToolText(body.messages);
-          let p = null;
-          try {
-            p = JSON.parse(text);
-          } catch {}
-          assert.ok(
-            p && typeof p.executed === 'number',
-            label + ': set_value must report executed, got ' + text.slice(0, 500),
-          );
-          assert.equal(p.executed, 1, label + ': set_value executed must be 1');
-          assert.equal(p.applicationState, 'unverified', label + ': applicationState must be unverified');
-          assert.ok(
-            Array.isArray(p.results) && p.results[0].effect === 'confirmed',
-            label + ': per-action effect missing',
-          );
-          assert.equal(p.partial || false, false, label + ': confirmed set_value must not be partial');
-          calls.push(label + ':set-value-routed');
-          // Verify driver routing synchronously (same tick, before next observe).
-          const actCall = driver.calls.acts[0];
-          assert.ok(actCall, label + ': driver must have received set_value act');
-          assert.deepEqual(
-            actCall.actions,
-            [{ type: 'set_value', elementId: inspectElement, value: 'hello' }],
-            label + ': element action must be routed unchanged',
-          );
-          assert.equal(actCall.deliveryMode, 'background', label + ': deliveryMode must be forwarded');
-          assert.ok(
-            actCall.expectedFrame &&
-              actCall.expectedFrame.driverFrame &&
-              actCall.expectedFrame.driverFrame.backend === 'cua',
-            label + ': expectedFrame must carry CUA binding',
-          );
-          assert.equal(
-            actCall.expectedFrame.driverFrame.snapshotId,
-            driver.lastInspectSnapshot,
-            label + ': snapshot binding must match inspect',
-          );
-          assert.equal(
-            actCall.expectedFrame.driverFrame.kind,
-            'accessibility',
-            label + ': binding kind must be accessibility',
-          );
-          calls.push(label + ':bridge-binding-verified');
-          tool = { name: 'computer_observe', arguments: { windowId: CUA_WINDOW_ID } };
-        } else {
-          const text = lastToolText(body.messages);
-          assert.match(text, /delegate/i, label + ': main inspect must delegate, got ' + text.slice(0, 300));
-          calls.push(label + ':main-delegate-required');
-          tool = {
-            name: 'ipython',
-            arguments: {
-              code:
-                'import rlm\nchild = await rlm.spawn(' +
-                JSON.stringify(
-                  'Prove CUA via delegated child. Inspect, set_value, screenshot, pixel act, release.',
-                ) +
-                ', name=' +
-                JSON.stringify(CHILD_NAME) +
-                ', model=' +
-                JSON.stringify(CU_MODEL) +
-                ', thinking=' +
-                JSON.stringify(CU_THINKING) +
-                ')\nprint("CU_CHILD_SPAWNED:" + child.rlm_child_id)',
-            },
-          };
-        }
-      } else if (step === 4) {
-        const isCuaChild4 = role === CU_MODEL || role === 'cua';
-        if (isCuaChild4) {
-          const text = lastToolText(body.messages);
-          let p = null;
-          try {
-            p = JSON.parse(text);
-          } catch {}
-          // Observe returns image+text; the text side is the second content part, but lastToolText merges text parts.
-          // Find frame from tool messages (observe text payload).
-          let frame = null;
-          for (let i = toolMessages(body.messages).length - 1; i >= 0; i--) {
-            const t = textOf(toolMessages(body.messages)[i].content);
-            if (!t) continue;
-            try {
-              const pa = JSON.parse(t);
-              const fr =
-                pa && pa.frame ? pa.frame : pa && pa.observe && pa.observe.frame ? pa.observe.frame : null;
-              if (fr && fr.frameId) {
-                frame = fr;
-                break;
-              }
-            } catch {}
-          }
-          assert.ok(frame, label + ': screenshot observe must return frame');
-          assert.equal(frame.backend, 'cua', label + ': screenshot backend must be cua');
-          observeFrameId = frame.frameId;
-          const seen = imageEvidence(body.messages, smallPrefix);
-          assert.ok(
-            seen.hasBase64 && seen.hasImagePart,
-            label + ': screenshot pixels must reach model as image',
-          );
-          calls.push(label + ':screenshot-pixels-local');
-          tool = {
-            name: 'computer_act',
-            arguments: {
-              frameId: observeFrameId,
-              actions: [{ type: 'click', x: CUA_PIXEL.x, y: CUA_PIXEL.y }],
-            },
-          };
-        } else {
-          const text = lastToolText(body.messages);
-          assert.match(
-            text,
-            /CU_CHILD_SPAWNED/,
-            label + ': child admission must be reported, got ' + text.slice(0, 300),
-          );
-          calls.push(label + ':child-admitted');
-          const deadline = Date.now() + 90000;
-          while (!childFinished && Date.now() < deadline) await sleep(100);
-          assert.ok(childFinished, label + ': delegated child must finish');
-          assert.equal(manager.ownerInfo(), null, label + ': child release must clear holder');
-          calls.push(label + ':child-delegated-verified');
-        }
-      } else if (step === 5) {
-        const isCuaChild5 = role === CU_MODEL || role === 'cua';
-        if (isCuaChild5) {
-          const text = lastToolText(body.messages);
-          let p = null;
-          try {
-            p = JSON.parse(text);
-          } catch {}
-          assert.ok(p, label + ': pixel act must return JSON, got ' + text.slice(0, 500));
-          assert.equal(p.applicationState, 'unverified', label + ': pixel act must be unverified');
-          assert.equal(
-            p.partial,
-            true,
-            label + ': pixel act without driver executed must be partial true, got ' + text.slice(0, 500),
-          );
-          assert.ok(
-            p.executed === null || p.executed === undefined,
-            label + ': partial executed must be null/undefined',
-          );
-          calls.push(label + ':partial-truth');
-          const pixelCall = driver.calls.acts[1];
-          assert.ok(pixelCall, label + ': driver must have received pixel act');
-          assert.deepEqual(
-            pixelCall.actions[0],
-            { type: 'click', x: CUA_PIXEL.x, y: CUA_PIXEL.y },
-            label + ': CUA pixel coords must stay local untouched',
-          );
-          assert.equal(
-            pixelCall.expectedFrame.driverFrame.snapshotId,
-            driver.lastObserveSnapshot,
-            label + ': pixel snapshot binding must match screenshot',
-          );
-          assert.equal(
-            pixelCall.expectedFrame.driverFrame.kind,
-            'screenshot',
-            label + ': pixel binding kind must be screenshot',
-          );
-          calls.push(label + ':pixel-untouched');
-          tool = { name: 'computer_release', arguments: {} };
-        } else {
-          calls.push(label + ':finished');
-        }
-      } else if (step === 6) {
-        const isCuaChild6 = role === CU_MODEL || role === 'cua';
-        if (isCuaChild6) {
-          const text = lastToolText(body.messages);
-          const p = JSON.parse(text);
-          assert.equal(p.released, true, label + ': release must confirm');
-          calls.push(label + ':release');
-
-          childFinished = true;
-          tool = {
-            name: 'ipython',
-            arguments: {
-              code: 'import agent_message\nawait agent_message.send("CU_CHILD_DONE", receiver_role="parent")\nprint("CU_CHILD_SENT")',
-            },
-          };
-        } else {
-          calls.push(label + ':finished');
-        }
-      } else if (step === 7) {
-        childFinished = true;
-        calls.push(label + ':finished');
-      } else calls.push(label + ':finished');
-      stage.set(role, step + 1);
-      if (tool) calls.push(label + ':' + tool.name);
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      const fr = (delta, fin = null) =>
-        res.write(
-          'data: ' +
-            JSON.stringify({
-              id: 'message-' + requests.length,
-              object: 'chat.completion.chunk',
-              created: 1,
-              model: role,
-              choices: [{ index: 0, delta, finish_reason: fin }],
-            }) +
-            '\n\n',
-        );
-      fr({ role: 'assistant' });
-      if (tool) {
-        fr({
-          tool_calls: [
-            {
-              index: 0,
-              id: role + '-' + step,
-              type: 'function',
-              function: { name: tool.name, arguments: JSON.stringify(tool.arguments) },
-            },
-          ],
-        });
-        fr({}, 'tool_calls');
-      } else {
-        fr({ content: 'CUA native integration verified.' });
-        fr({}, 'stop');
-      }
-      res.end('data: [DONE]\n\n');
-    } catch (e) {
-      calls.push({ error: label + ' provider: ' + String(e && e.message ? e.message : e).slice(0, 500) });
-      failProvider(e);
-      try {
-        res.writeHead(500);
-        res.end(String(e && e.message ? e.message : e).slice(0, 2000));
-      } catch {}
-    }
-  });
-  provider.requestTimeout = 30000;
-  provider.headersTimeout = 15000;
-  await new Promise((d) => provider.listen(0, '127.0.0.1', d));
-  const port = provider.address().port;
-  const settings = JSON.stringify({
-    defaultProvider: 'fixture',
-    defaultModel: 'cua',
-    defaultThinkingLevel: 'off',
-    autoRefine: { enabled: false },
-    compaction: { enabled: false },
-    retry: { enabled: false },
-    telemetry: { enabled: false, noticeShown: true },
-  });
-  await writeFile(join(agentHome, 'auth.json'), '{}');
-  await writeFile(join(agentHome, 'settings.json'), settings);
-  await writeFile(
-    join(agentHome, 'models.json'),
-    JSON.stringify({
-      providers: {
-        fixture: {
-          api: 'openai-completions',
-          baseUrl: 'http://127.0.0.1:' + port + '/v1',
-          apiKey: 'fixture-only',
-          models: [
-            {
-              id: 'cua',
-              name: 'CUA fixture',
-              reasoning: false,
-              input: ['text', 'image'],
-              contextWindow: 131072,
-              maxTokens: 4096,
-            },
-          ],
-        },
-      },
-    }),
-  );
-  let handle = null;
-  try {
-    runtime = createAgentRuntime({
-      agentHome,
-      sessionDir,
-      computer: { config: bridge.config },
-      env: testChildEnv(),
-    });
-    handle = await runtime.start({
-      cwd,
-      message: 'Prove CUA inspect with fake driver. Start with status, then inspect.',
-      model: MAIN_MODEL,
-      thinking: 'off',
-      onEvent: (ev) => {
-        events.push(ev);
-        if (ev && ev.kind === 'session' && ev.sessionId) run.sessionId = ev.sessionId;
-      },
-    });
-    let timer;
-    const done = await Promise.race([
-      handle.done,
-      providerFailure,
-      new Promise((_, rej) => {
-        timer = setTimeout(
-          () =>
-            rej(new Error(label + ' run timed out after 120s calls=' + JSON.stringify(calls).slice(0, 2000))),
-          120000,
-        );
-      }),
-    ]).finally(() => clearTimeout(timer));
-    const providerErrors = calls.filter((e) => e && e.error);
-    assert.deepEqual(
-      providerErrors,
-      [],
-      label + ' provider errors: ' + JSON.stringify(providerErrors).slice(0, 2000),
-    );
-    assert.equal(done.status, 'completed', label + ' run status ' + JSON.stringify(done).slice(0, 500));
-    for (const ex of [
-      label + ':status-disabled-json',
-      label + ':status-enabled-cua-json',
-      label + ':main-delegate-required',
-      label + ':child-admitted',
-      label + ':inspect-no-pixels',
-      label + ':set-value-routed',
-      label + ':bridge-binding-verified',
-      label + ':screenshot-pixels-local',
-      label + ':partial-truth',
-      label + ':pixel-untouched',
-      label + ':release',
-      label + ':child-delegated-verified',
-    ])
-      assert.ok(calls.includes(ex), label + ' missing ' + ex + ' in ' + JSON.stringify(calls).slice(0, 2000));
-    assert.equal(driver.calls.inspects.length, 1, label + ': exactly one inspect must reach driver');
-    assert.equal(
-      driver.calls.observes.length,
-      1,
-      label + ': exactly one screenshot observe must reach driver',
-    );
-    assert.equal(driver.calls.acts.length, 2, label + ': exactly two act batches must reach driver');
-    return {
-      label,
-      passed: true,
-      calls,
-      evidence,
-      sessionId: run.sessionId,
-      root: phaseRoot,
-      requestCount: requests.length,
-      driver: {
-        inspects: driver.calls.inspects.length,
-        observes: driver.calls.observes.length,
-        acts: driver.calls.acts.length,
-      },
-    };
-  } finally {
-    run.status = 'completed';
-    try {
-      await runtime?.close();
-    } catch {}
-    try {
-      await bridge.close();
-    } catch {}
-    await new Promise((d) => {
-      try {
-        provider.closeAllConnections?.();
-      } catch {}
-      provider.close(d);
-    });
-  }
-}
-
 const cli = discoverCli();
 console.log(
   JSON.stringify({
@@ -1568,7 +876,7 @@ if (cli.version !== '0.9.5') console.error('Warning: expected engine 0.9.5, got 
 const pngBytes = makeFixturePng(FRAME_GEOM.width, FRAME_GEOM.height);
 const pngBase64 = pngBytes.toString('base64');
 const pngPrefix = pngBase64.slice(0, 48);
-const resultsDir = resolve('test-results/cua-integration/native');
+const resultsDir = resolve('test-results/computer-use-history-native');
 await mkdir(resultsDir, { recursive: true });
 await writeFile(join(resultsDir, 'native-frame.png'), pngBytes);
 const summary = {
@@ -1606,24 +914,9 @@ try {
   });
   console.error('History phase failed:', e);
 }
-let cuaResult = null;
-try {
-  cuaResult = await withBudget(runCuaCase({ resultsDir }), 'cua-inspect');
-  summary.phases.push({ ...cuaResult, evidence: cuaResult.evidence });
-  summary.checks.push(
-    'CUA: real engine computer_inspect text frame -> elementId/set_value via bridge owner backend cua, pixel coords untouched, partial truth',
-  );
-} catch (e) {
-  summary.phases.push({
-    label: 'cua-inspect',
-    passed: false,
-    error: String(e && e.stack ? e.stack : e).slice(0, 4000),
-  });
-  console.error('CUA phase failed:', e);
-}
 summary.finishedAt = new Date().toISOString();
-summary.passed = summary.phases.length === 2 && summary.phases.every((p) => p.passed === true);
-await writeFile(join(resultsDir, 'native-cua-proof.json'), JSON.stringify(summary, null, 2));
+summary.passed = summary.phases.length === 1 && summary.phases.every((p) => p.passed === true);
+await writeFile(join(resultsDir, 'native-history-proof.json'), JSON.stringify(summary, null, 2));
 console.log(
   JSON.stringify(
     {

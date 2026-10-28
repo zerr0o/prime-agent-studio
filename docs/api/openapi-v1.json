@@ -74,9 +74,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/computer-use": {
@@ -154,9 +152,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       },
       "post": {
         "operationId": "setComputerUse",
@@ -171,11 +167,7 @@
                   {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": [
-                      "enabled",
-                      "expectedRevision",
-                      "sessionId"
-                    ],
+                    "required": ["enabled", "expectedRevision", "sessionId"],
                     "properties": {
                       "enabled": {
                         "type": "boolean"
@@ -193,11 +185,7 @@
                   {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": [
-                      "enabled",
-                      "expectedRevision",
-                      "runId"
-                    ],
+                    "required": ["enabled", "expectedRevision", "runId"],
                     "properties": {
                       "enabled": {
                         "type": "boolean"
@@ -279,10 +267,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "computer:write"
-        ]
+        "x-required-scopes": ["read", "computer:write"]
       }
     },
     "/api/v1/sync": {
@@ -331,9 +316,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/projects": {
@@ -373,10 +356,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "items",
-                    "nextOffset"
-                  ],
+                  "required": ["items", "nextOffset"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -425,9 +405,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/models": {
@@ -467,10 +445,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "items",
-                    "nextOffset"
-                  ],
+                  "required": ["items", "nextOffset"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -519,9 +494,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/projects/{projectId}/sessions": {
@@ -569,10 +542,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "items",
-                    "nextOffset"
-                  ],
+                  "required": ["items", "nextOffset"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -621,9 +591,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/sessions/{sessionId}/messages": {
@@ -706,9 +674,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       },
       "post": {
         "operationId": "sendMessage",
@@ -734,11 +700,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "requestId",
-                  "mode",
-                  "message"
-                ],
+                "required": ["requestId", "mode", "message"],
                 "additionalProperties": false,
                 "properties": {
                   "requestId": {
@@ -747,10 +709,7 @@
                   },
                   "mode": {
                     "type": "string",
-                    "enum": [
-                      "steer",
-                      "follow_up"
-                    ]
+                    "enum": ["steer", "follow_up"]
                   },
                   "message": {
                     "type": "string",
@@ -803,10 +762,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "runs:write"
-        ]
+        "x-required-scopes": ["read", "runs:write"]
       }
     },
     "/api/v1/projects/{projectId}/runs": {
@@ -834,10 +790,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "requestId",
-                  "message"
-                ],
+                "required": ["requestId", "message"],
                 "additionalProperties": false,
                 "properties": {
                   "requestId": {
@@ -857,15 +810,7 @@
                   },
                   "thinking": {
                     "type": "string",
-                    "enum": [
-                      "off",
-                      "minimal",
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "max"
-                    ]
+                    "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
                   },
                   "allowQuestions": {
                     "type": "boolean"
@@ -927,10 +872,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "runs:write"
-        ]
+        "x-required-scopes": ["read", "runs:write"]
       }
     },
     "/api/v1/runs": {
@@ -970,10 +912,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "items",
-                    "nextOffset"
-                  ],
+                  "required": ["items", "nextOffset"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -1022,9 +961,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/runs/{runId}": {
@@ -1098,9 +1035,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/runs/{runId}/events": {
@@ -1184,9 +1119,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/runs/{runId}/stop": {
@@ -1262,10 +1195,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "runs:write"
-        ]
+        "x-required-scopes": ["read", "runs:write"]
       }
     },
     "/api/v1/runs/{runId}/interactions": {
@@ -1293,10 +1223,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "id",
-                  "response"
-                ],
+                "required": ["id", "response"],
                 "additionalProperties": false,
                 "properties": {
                   "id": {
@@ -1306,24 +1233,18 @@
                     "oneOf": [
                       {
                         "type": "object",
-                        "required": [
-                          "cancelled"
-                        ],
+                        "required": ["cancelled"],
                         "additionalProperties": false,
                         "properties": {
                           "cancelled": {
                             "type": "boolean",
-                            "enum": [
-                              true
-                            ]
+                            "enum": [true]
                           }
                         }
                       },
                       {
                         "type": "object",
-                        "required": [
-                          "confirmed"
-                        ],
+                        "required": ["confirmed"],
                         "additionalProperties": false,
                         "properties": {
                           "confirmed": {
@@ -1333,9 +1254,7 @@
                       },
                       {
                         "type": "object",
-                        "required": [
-                          "value"
-                        ],
+                        "required": ["value"],
                         "additionalProperties": false,
                         "properties": {
                           "value": {
@@ -1346,9 +1265,7 @@
                       },
                       {
                         "type": "object",
-                        "required": [
-                          "values"
-                        ],
+                        "required": ["values"],
                         "additionalProperties": false,
                         "properties": {
                           "values": {
@@ -1360,9 +1277,7 @@
                               "oneOf": [
                                 {
                                   "type": "object",
-                                  "required": [
-                                    "option"
-                                  ],
+                                  "required": ["option"],
                                   "additionalProperties": false,
                                   "properties": {
                                     "option": {
@@ -1374,9 +1289,7 @@
                                 },
                                 {
                                   "type": "object",
-                                  "required": [
-                                    "text"
-                                  ],
+                                  "required": ["text"],
                                   "additionalProperties": false,
                                   "properties": {
                                     "text": {
@@ -1389,16 +1302,12 @@
                                 },
                                 {
                                   "type": "object",
-                                  "required": [
-                                    "skipped"
-                                  ],
+                                  "required": ["skipped"],
                                   "additionalProperties": false,
                                   "properties": {
                                     "skipped": {
                                       "type": "boolean",
-                                      "enum": [
-                                        true
-                                      ]
+                                      "enum": [true]
                                     }
                                   }
                                 }
@@ -1456,10 +1365,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "runs:write"
-        ]
+        "x-required-scopes": ["read", "runs:write"]
       }
     },
     "/api/v1/metrics": {
@@ -1489,11 +1395,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": [
-                "day",
-                "model",
-                "project"
-              ],
+              "enum": ["day", "model", "project"],
               "default": "day"
             }
           },
@@ -1555,9 +1457,7 @@
             "description": "Metrics are unavailable."
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/projects/{projectId}/sync": {
@@ -1664,10 +1564,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "sync:write"
-        ]
+        "x-required-scopes": ["read", "sync:write"]
       }
     },
     "/api/v1/projects/{projectId}/roadmap": {
@@ -1731,9 +1628,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/projects/{projectId}/roadmap/mutations": {
@@ -1763,17 +1658,12 @@
                 "oneOf": [
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision"
-                    ],
+                    "required": ["action", "expectedRevision"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "init"
-                        ]
+                        "enum": ["init"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1783,18 +1673,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "text"
-                    ],
+                    "required": ["action", "expectedRevision", "text"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "vision"
-                        ]
+                        "enum": ["vision"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1809,18 +1693,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "title"
-                    ],
+                    "required": ["action", "expectedRevision", "title"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "milestone.create"
-                        ]
+                        "enum": ["milestone.create"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1837,28 +1715,18 @@
                       },
                       "status": {
                         "type": "string",
-                        "enum": [
-                          "planned",
-                          "active",
-                          "done"
-                        ]
+                        "enum": ["planned", "active", "done"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "milestoneId"
-                    ],
+                    "required": ["action", "expectedRevision", "milestoneId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "milestone.patch"
-                        ]
+                        "enum": ["milestone.patch"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1879,28 +1747,18 @@
                       },
                       "status": {
                         "type": "string",
-                        "enum": [
-                          "planned",
-                          "active",
-                          "done"
-                        ]
+                        "enum": ["planned", "active", "done"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "milestoneId"
-                    ],
+                    "required": ["action", "expectedRevision", "milestoneId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "milestone.delete"
-                        ]
+                        "enum": ["milestone.delete"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1914,20 +1772,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "milestoneId",
-                      "targetId",
-                      "position"
-                    ],
+                    "required": ["action", "expectedRevision", "milestoneId", "targetId", "position"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "milestone.move"
-                        ]
+                        "enum": ["milestone.move"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1943,27 +1793,18 @@
                       },
                       "position": {
                         "type": "string",
-                        "enum": [
-                          "before",
-                          "after"
-                        ]
+                        "enum": ["before", "after"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "title"
-                    ],
+                    "required": ["action", "expectedRevision", "title"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.create"
-                        ]
+                        "enum": ["plan.create"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -1980,12 +1821,7 @@
                       },
                       "status": {
                         "type": "string",
-                        "enum": [
-                          "active",
-                          "done",
-                          "paused",
-                          "abandoned"
-                        ]
+                        "enum": ["active", "done", "paused", "abandoned"]
                       },
                       "milestone": {
                         "oneOf": [
@@ -2001,14 +1837,7 @@
                       },
                       "color": {
                         "type": "string",
-                        "enum": [
-                          "transparent",
-                          "#0d9488",
-                          "#db2777",
-                          "#4f46e5",
-                          "#65a30d",
-                          "#ea580c"
-                        ]
+                        "enum": ["transparent", "#0d9488", "#db2777", "#4f46e5", "#65a30d", "#ea580c"]
                       },
                       "sessions": {
                         "type": "array",
@@ -2029,18 +1858,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.patch"
-                        ]
+                        "enum": ["plan.patch"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2061,12 +1884,7 @@
                       },
                       "status": {
                         "type": "string",
-                        "enum": [
-                          "active",
-                          "done",
-                          "paused",
-                          "abandoned"
-                        ]
+                        "enum": ["active", "done", "paused", "abandoned"]
                       },
                       "milestone": {
                         "oneOf": [
@@ -2082,32 +1900,18 @@
                       },
                       "color": {
                         "type": "string",
-                        "enum": [
-                          "transparent",
-                          "#0d9488",
-                          "#db2777",
-                          "#4f46e5",
-                          "#65a30d",
-                          "#ea580c"
-                        ]
+                        "enum": ["transparent", "#0d9488", "#db2777", "#4f46e5", "#65a30d", "#ea580c"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "sessionId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "sessionId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.attach"
-                        ]
+                        "enum": ["plan.attach"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2125,18 +1929,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.delete"
-                        ]
+                        "enum": ["plan.delete"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2150,18 +1948,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.archive"
-                        ]
+                        "enum": ["plan.archive"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2175,18 +1967,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.unarchive"
-                        ]
+                        "enum": ["plan.unarchive"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2200,19 +1986,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "steps"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "steps"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "plan.steps"
-                        ]
+                        "enum": ["plan.steps"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2233,19 +2012,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "text"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "text"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "step.add"
-                        ]
+                        "enum": ["step.add"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2284,19 +2056,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "stepId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "stepId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "step.edit"
-                        ]
+                        "enum": ["step.edit"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2323,19 +2088,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "done"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "done"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "step.check"
-                        ]
+                        "enum": ["step.check"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2378,19 +2136,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "stepId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "stepId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "step.remove"
-                        ]
+                        "enum": ["step.remove"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2408,19 +2159,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "stepId"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "stepId"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "step.move"
-                        ]
+                        "enum": ["step.move"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2436,12 +2180,7 @@
                       },
                       "direction": {
                         "type": "string",
-                        "enum": [
-                          "up",
-                          "down",
-                          "indent",
-                          "outdent"
-                        ]
+                        "enum": ["up", "down", "indent", "outdent"]
                       },
                       "targetId": {
                         "type": "string",
@@ -2449,29 +2188,18 @@
                       },
                       "position": {
                         "type": "string",
-                        "enum": [
-                          "before",
-                          "after",
-                          "inside"
-                        ]
+                        "enum": ["before", "after", "inside"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "planId",
-                      "text"
-                    ],
+                    "required": ["action", "expectedRevision", "planId", "text"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "journal.add"
-                        ]
+                        "enum": ["journal.add"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2490,17 +2218,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision"
-                    ],
+                    "required": ["action", "expectedRevision"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.add"
-                        ]
+                        "enum": ["backlog.add"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2524,18 +2247,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "number"
-                    ],
+                    "required": ["action", "expectedRevision", "number"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.edit"
-                        ]
+                        "enum": ["backlog.edit"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2558,19 +2275,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "numbers",
-                      "done"
-                    ],
+                    "required": ["action", "expectedRevision", "numbers", "done"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.set"
-                        ]
+                        "enum": ["backlog.set"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2592,18 +2302,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "numbers"
-                    ],
+                    "required": ["action", "expectedRevision", "numbers"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.remove"
-                        ]
+                        "enum": ["backlog.remove"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2622,20 +2326,12 @@
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "number",
-                      "targetNumber",
-                      "position"
-                    ],
+                    "required": ["action", "expectedRevision", "number", "targetNumber", "position"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.move"
-                        ]
+                        "enum": ["backlog.move"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2651,28 +2347,18 @@
                       },
                       "position": {
                         "type": "string",
-                        "enum": [
-                          "before",
-                          "after"
-                        ]
+                        "enum": ["before", "after"]
                       }
                     }
                   },
                   {
                     "type": "object",
-                    "required": [
-                      "action",
-                      "expectedRevision",
-                      "number",
-                      "kind"
-                    ],
+                    "required": ["action", "expectedRevision", "number", "kind"],
                     "additionalProperties": false,
                     "properties": {
                       "action": {
                         "type": "string",
-                        "enum": [
-                          "backlog.convert"
-                        ]
+                        "enum": ["backlog.convert"]
                       },
                       "expectedRevision": {
                         "type": "integer",
@@ -2684,10 +2370,7 @@
                       },
                       "kind": {
                         "type": "string",
-                        "enum": [
-                          "item",
-                          "note"
-                        ]
+                        "enum": ["item", "note"]
                       }
                     }
                   }
@@ -2748,10 +2431,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "roadmaps:write"
-        ]
+        "x-required-scopes": ["read", "roadmaps:write"]
       }
     },
     "/api/v1/projects/{projectId}/roadmap/work": {
@@ -2779,11 +2459,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "requestId",
-                  "expectedRevision",
-                  "targets"
-                ],
+                "required": ["requestId", "expectedRevision", "targets"],
                 "additionalProperties": false,
                 "properties": {
                   "requestId": {
@@ -2802,16 +2478,11 @@
                       "oneOf": [
                         {
                           "type": "object",
-                          "required": [
-                            "kind",
-                            "planId"
-                          ],
+                          "required": ["kind", "planId"],
                           "properties": {
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "plan"
-                              ]
+                              "enum": ["plan"]
                             },
                             "planId": {
                               "type": "string"
@@ -2823,16 +2494,11 @@
                         },
                         {
                           "type": "object",
-                          "required": [
-                            "kind",
-                            "milestoneId"
-                          ],
+                          "required": ["kind", "milestoneId"],
                           "properties": {
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "milestone"
-                              ]
+                              "enum": ["milestone"]
                             },
                             "milestoneId": {
                               "type": "string"
@@ -2841,16 +2507,11 @@
                         },
                         {
                           "type": "object",
-                          "required": [
-                            "kind",
-                            "number"
-                          ],
+                          "required": ["kind", "number"],
                           "properties": {
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "backlog"
-                              ]
+                              "enum": ["backlog"]
                             },
                             "number": {
                               "type": "integer",
@@ -2874,15 +2535,7 @@
                   },
                   "thinking": {
                     "type": "string",
-                    "enum": [
-                      "off",
-                      "minimal",
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "max"
-                    ]
+                    "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
                   }
                 }
               }
@@ -2941,11 +2594,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "runs:write",
-          "roadmaps:write"
-        ]
+        "x-required-scopes": ["read", "runs:write", "roadmaps:write"]
       }
     },
     "/api/v1/sessions/{sessionId}/files": {
@@ -2993,10 +2642,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "items",
-                    "nextOffset"
-                  ],
+                  "required": ["items", "nextOffset"],
                   "properties": {
                     "items": {
                       "type": "array",
@@ -3045,9 +2691,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read"
-        ]
+        "x-required-scopes": ["read"]
       }
     },
     "/api/v1/sessions/{sessionId}/files/{fileId}": {
@@ -3293,10 +2937,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "files:download"
-        ]
+        "x-required-scopes": ["read", "files:download"]
       },
       "head": {
         "operationId": "fileHead",
@@ -3460,10 +3101,7 @@
             }
           }
         },
-        "x-required-scopes": [
-          "read",
-          "files:download"
-        ]
+        "x-required-scopes": ["read", "files:download"]
       }
     }
   },
@@ -3490,11 +3128,7 @@
           },
           "groupBy": {
             "type": "string",
-            "enum": [
-              "day",
-              "model",
-              "project"
-            ]
+            "enum": ["day", "model", "project"]
           },
           "project": {
             "type": "string",
@@ -4006,12 +3640,7 @@
       "SyncState": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "machineId",
-          "configured",
-          "running",
-          "lastSync"
-        ],
+        "required": ["machineId", "configured", "running", "lastSync"],
         "properties": {
           "machineId": {
             "type": "string",
@@ -4027,12 +3656,7 @@
             "type": "object",
             "nullable": true,
             "additionalProperties": false,
-            "required": [
-              "at",
-              "ok",
-              "sent",
-              "received"
-            ],
+            "required": ["at", "ok", "sent", "received"],
             "properties": {
               "at": {
                 "type": "string",
@@ -4056,11 +3680,7 @@
       "SyncResult": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "machineId",
-          "projectId",
-          "scope"
-        ],
+        "required": ["machineId", "projectId", "scope"],
         "properties": {
           "machineId": {
             "type": "string",
@@ -4072,10 +3692,7 @@
           },
           "scope": {
             "type": "string",
-            "enum": [
-              "session",
-              "all"
-            ]
+            "enum": ["session", "all"]
           },
           "sessionId": {
             "type": "string",
@@ -4093,12 +3710,7 @@
             "type": "object",
             "nullable": true,
             "additionalProperties": false,
-            "required": [
-              "at",
-              "ok",
-              "sent",
-              "received"
-            ],
+            "required": ["at", "ok", "sent", "received"],
             "properties": {
               "at": {
                 "type": "string",
@@ -4123,9 +3735,7 @@
         "type": "object",
         "nullable": true,
         "additionalProperties": false,
-        "required": [
-          "projectId"
-        ],
+        "required": ["projectId"],
         "properties": {
           "sessionId": {
             "type": "string",
@@ -4183,29 +3793,18 @@
           "backend": {
             "type": "string",
             "nullable": true,
-            "enum": [
-              "native",
-              "cua",
-              null
-            ]
+            "enum": ["native", null]
           },
           "backends": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "id",
-                "supported",
-                "available"
-              ],
+              "required": ["id", "supported", "available"],
               "properties": {
                 "id": {
                   "type": "string",
-                  "enum": [
-                    "native",
-                    "cua"
-                  ]
+                  "enum": ["native"]
                 },
                 "supported": {
                   "type": "boolean"
@@ -4242,20 +3841,11 @@
       },
       "Machine": {
         "type": "object",
-        "required": [
-          "apiVersion",
-          "studioVersion",
-          "machineId",
-          "name",
-          "capabilities",
-          "idempotency"
-        ],
+        "required": ["apiVersion", "studioVersion", "machineId", "name", "capabilities", "idempotency"],
         "properties": {
           "apiVersion": {
             "type": "string",
-            "enum": [
-              "v1"
-            ]
+            "enum": ["v1"]
           },
           "studioVersion": {
             "type": "string"
@@ -4275,22 +3865,15 @@
           },
           "idempotency": {
             "type": "object",
-            "required": [
-              "retentionSeconds",
-              "persistent"
-            ],
+            "required": ["retentionSeconds", "persistent"],
             "properties": {
               "retentionSeconds": {
                 "type": "integer",
-                "enum": [
-                  3600
-                ]
+                "enum": [3600]
               },
               "persistent": {
                 "type": "boolean",
-                "enum": [
-                  false
-                ]
+                "enum": [false]
               }
             }
           }
@@ -4298,13 +3881,7 @@
       },
       "Project": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "syncId",
-          "exists",
-          "machineId"
-        ],
+        "required": ["id", "name", "syncId", "exists", "machineId"],
         "properties": {
           "id": {
             "type": "string"
@@ -4326,9 +3903,7 @@
       },
       "Model": {
         "type": "object",
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "properties": {
           "id": {
             "type": "string"
@@ -4349,15 +3924,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "off",
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh",
-                "max"
-              ]
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
             }
           },
           "contextWindow": {
@@ -4371,12 +3938,7 @@
       },
       "Session": {
         "type": "object",
-        "required": [
-          "id",
-          "title",
-          "machineId",
-          "projectId"
-        ],
+        "required": ["id", "title", "machineId", "projectId"],
         "properties": {
           "id": {
             "type": "string"
@@ -4395,15 +3957,7 @@
           },
           "thinking": {
             "type": "string",
-            "enum": [
-              "off",
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ]
+            "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
           },
           "machineId": {
             "type": "string"
@@ -4490,13 +4044,7 @@
       },
       "Message": {
         "type": "object",
-        "required": [
-          "sessionId",
-          "projectId",
-          "machineId",
-          "items",
-          "nextOffset"
-        ],
+        "required": ["sessionId", "projectId", "machineId", "items", "nextOffset"],
         "properties": {
           "sessionId": {
             "type": "string"
@@ -4605,9 +4153,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "questions"
-            ],
+            "enum": ["questions"],
             "description": "Present on batch question requests."
           },
           "questions": {
@@ -4616,11 +4162,7 @@
             "maxItems": 6,
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "question",
-                "options"
-              ],
+              "required": ["id", "question", "options"],
               "properties": {
                 "id": {
                   "type": "string"
@@ -4636,11 +4178,7 @@
                   "maxItems": 6,
                   "items": {
                     "type": "object",
-                    "required": [
-                      "id",
-                      "label",
-                      "description"
-                    ],
+                    "required": ["id", "label", "description"],
                     "properties": {
                       "id": {
                         "type": "string"
@@ -4668,12 +4206,7 @@
             "description": "Normalized batch answers after native acknowledgement, including cancellation.",
             "items": {
               "type": "object",
-              "required": [
-                "question",
-                "answer",
-                "wasCustom",
-                "skipped"
-              ],
+              "required": ["question", "answer", "wasCustom", "skipped"],
               "properties": {
                 "question": {
                   "type": "string"
@@ -4695,9 +4228,7 @@
       },
       "RunEvent": {
         "type": "object",
-        "required": [
-          "kind"
-        ],
+        "required": ["kind"],
         "properties": {
           "kind": {
             "type": "string"
@@ -4726,11 +4257,7 @@
       },
       "Roadmap": {
         "type": "object",
-        "required": [
-          "machineId",
-          "projectId",
-          "roadmap"
-        ],
+        "required": ["machineId", "projectId", "roadmap"],
         "properties": {
           "machineId": {
             "type": "string"
@@ -4745,21 +4272,11 @@
       },
       "RoadmapWorkAccept": {
         "type": "object",
-        "required": [
-          "accepted",
-          "queued",
-          "requestId",
-          "run",
-          "sessionId",
-          "machineId",
-          "projectId"
-        ],
+        "required": ["accepted", "queued", "requestId", "run", "sessionId", "machineId", "projectId"],
         "properties": {
           "accepted": {
             "type": "boolean",
-            "enum": [
-              true
-            ]
+            "enum": [true]
           },
           "queued": {
             "type": "boolean"
@@ -4790,30 +4307,18 @@
       },
       "StopResult": {
         "type": "object",
-        "required": [
-          "stopped"
-        ],
+        "required": ["stopped"],
         "properties": {
           "stopped": {
             "type": "boolean",
-            "enum": [
-              true
-            ]
+            "enum": [true]
           }
         },
         "description": "Stop acknowledgement plus the current Run projection fields."
       },
       "FileRef": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "size",
-          "available",
-          "machineId",
-          "originMachineId",
-          "kind"
-        ],
+        "required": ["id", "name", "size", "available", "machineId", "originMachineId", "kind"],
         "properties": {
           "id": {
             "type": "string"
@@ -4838,10 +4343,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "link",
-              "attachment"
-            ]
+            "enum": ["link", "attachment"]
           }
         }
       },
@@ -4849,11 +4351,7 @@
         "type": "object",
         "nullable": true,
         "readOnly": true,
-        "required": [
-          "machineId",
-          "sessionId",
-          "completedAt"
-        ],
+        "required": ["machineId", "sessionId", "completedAt"],
         "additionalProperties": false,
         "description": "Server-owned completion. machineId equals GET /machine on the Studio that executed the check; after sync it may differ from the current envelope Studio. sessionId is the associated conversation (project membership checked) or null without context; natively the verified actual caller (child, not root).",
         "properties": {
@@ -4875,13 +4373,7 @@
       },
       "RoadmapOutputStep": {
         "type": "object",
-        "required": [
-          "id",
-          "text",
-          "done",
-          "completion",
-          "children"
-        ],
+        "required": ["id", "text", "done", "completion", "children"],
         "properties": {
           "id": {
             "type": "string",
@@ -4918,9 +4410,7 @@
       },
       "RoadmapDocument": {
         "type": "object",
-        "required": [
-          "revision"
-        ],
+        "required": ["revision"],
         "properties": {
           "revision": {
             "type": "integer",
@@ -4930,10 +4420,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "steps"
-              ],
+              "required": ["id", "steps"],
               "properties": {
                 "id": {
                   "type": "string",
@@ -4954,9 +4441,7 @@
       },
       "RoadmapStep": {
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -4987,9 +4472,7 @@
       },
       "BacklogEntry": {
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -5005,10 +4488,7 @@
       },
       "Error": {
         "type": "object",
-        "required": [
-          "error",
-          "code"
-        ],
+        "required": ["error", "code"],
         "properties": {
           "error": {
             "type": "string"

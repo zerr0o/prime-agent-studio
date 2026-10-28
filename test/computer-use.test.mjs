@@ -422,29 +422,28 @@ test('scoped disable of another scope never stops the holder', { timeout: 5000 }
   }
 });
 
-// ---- Backend selection: native default, cua beta opt-in, no silent fallback ----
-
-const cuaAvailable = () => ({ available: true, supported: true, version: '0.28.2' });
-const cuaMissing = () => ({ available: false, supported: true, reason: 'CUA artifacts missing.' });
+// ---- Backend: native only, unsupported ids reject, never fall back ----
 
 test('backend contract constants stay stable for integrators', () => {
-  assert.deepEqual(COMPUTER_USE_BACKENDS, ['native', 'cua']);
+  assert.deepEqual(COMPUTER_USE_BACKENDS, ['native']);
   assert.equal(COMPUTER_USE_DEFAULT_BACKEND, 'native');
 });
 
-test('status reports the active backend and per-backend availability without paths', () => {
+test('status reports the sole native descriptor without paths', () => {
   const computer = createComputerUseManager({
     createDriver: fakeDriver,
     isSupported: true,
-    cuaAvailability: { available: true, supported: true, version: '0.28.2', path: 'C:\\secret\\cua' },
+    backends: [{ id: 'native', supported: true, available: true, path: 'C:\\secret\\native' }],
   });
   const state = computer.status();
   assert.equal(state.backend, null);
-  assert.deepEqual(state.backends, [
-    { id: 'native', supported: true, available: true },
-    { id: 'cua', supported: true, available: true, version: '0.28.2' },
-  ]);
+  assert.deepEqual(state.backends, [{ id: 'native', supported: true, available: true }]);
   assert.ok(!JSON.stringify(state).includes('secret'));
+});
+
+test('refreshBackends returns the sole native descriptor', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  assert.deepEqual(await computer.refreshBackends(), [{ id: 'native', supported: true, available: true }]);
 });
 
 test('native stays the compatibility default and reaches the factory', async () => {
@@ -465,22 +464,29 @@ test('native stays the compatibility default and reaches the factory', async () 
   assert.deepEqual(seen, ['native']);
 });
 
-test('explicit cua enable binds the lease backend and freezes it for the driver', async () => {
-  const seen = [];
-  const computer = createComputerUseManager({
-    createDriver: (options) => {
-      seen.push(options?.backend);
-      return fakeDriver();
-    },
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
+test('explicit cua requests reject without touching the lease or holder', async () => {
+  const driver = fakeDriver();
+  const computer = createComputerUseManager({ createDriver: () => driver, isSupported: true });
+  await computer.enable({ sessionId: 'sess-a', runId: 'run-a' });
+  acquireChild(computer, { runId: 'run-a', sessionId: 'sess-a', agentId: 'agent-a' });
+  await computer.driver();
+  await assert.rejects(
+    computer.enable({ sessionId: 'sess-b', runId: 'run-b', backend: 'cua' }),
+    /Unknown Computer Use backend/,
+  );
+  assert.deepEqual(driver.stopped, []);
+  assert.deepEqual(computer.status().owner, {
+    sessionId: 'sess-a',
+    runId: 'run-a',
+    agentId: 'agent-a',
+    agentSessionId: 'child-agent-a-run-a',
+    backend: 'native',
   });
-  const state = await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'cua' });
-  assert.equal(state.backend, 'cua');
-  assert.equal(state.owner, null);
-  acquireChild(computer, { runId: 'run-1', sessionId: 'sess-1' });
-  assert.ok(await computer.driver());
-  assert.deepEqual(seen, ['cua']);
+  assert.equal(computer.status({ sessionId: 'sess-a' }).backend, 'native');
+  // The rejected enable granted nothing, so the stranger has no permission at all.
+  await assert.rejects(computer.acquire(childCaller({ runId: 'run-b', sessionId: 'sess-b' })), {
+    code: 'computer_use_disabled',
+  });
 });
 
 test('unknown backends fail fast with a validation error', async () => {
@@ -492,53 +498,24 @@ test('unknown backends fail fast with a validation error', async () => {
   assert.equal(computer.status().enabled, false);
 });
 
-test('unavailable cua never takes another owner offline', async () => {
+test('re-enable stays native and idempotent; no backend switch exists', async () => {
   const driver = fakeDriver();
-  const computer = createComputerUseManager({
-    createDriver: () => driver,
-    isSupported: true,
-    cuaAvailability: cuaMissing(),
-  });
-  await computer.enable({ sessionId: 'sess-a', runId: 'run-a' });
-  acquireChild(computer, { runId: 'run-a', sessionId: 'sess-a', agentId: 'agent-a' });
-  await computer.driver();
-  await assert.rejects(
-    computer.enable({ sessionId: 'sess-b', runId: 'run-b', backend: 'cua' }),
-    /CUA artifacts missing/,
-  );
-  assert.deepEqual(driver.stopped, []);
-  assert.deepEqual(computer.status().owner, {
-    sessionId: 'sess-a',
-    runId: 'run-a',
-    agentId: 'agent-a',
-    agentSessionId: 'child-agent-a-run-a',
-    backend: 'native',
-  });
-  assert.equal(computer.status({ sessionId: 'sess-a' }).backend, 'native');
-});
-
-test('the active backend cannot change without an explicit disable first', async () => {
-  const driver = fakeDriver();
-  const computer = createComputerUseManager({
-    createDriver: () => driver,
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
-  });
+  const computer = createComputerUseManager({ createDriver: () => driver, isSupported: true });
   await computer.enable({ sessionId: 'sess-1', runId: 'run-1' });
   acquireChild(computer, { runId: 'run-1', sessionId: 'sess-1' });
   await computer.driver();
+  const state = await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'native' });
+  assert.equal(state.backend, 'native');
+  assert.deepEqual(driver.stopped, []);
+  assert.equal(computer.status({ sessionId: 'sess-1' }).backend, 'native');
   await assert.rejects(
     computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'cua' }),
-    /Disable it first/,
+    /Unknown Computer Use backend/,
   );
   assert.equal(computer.status({ sessionId: 'sess-1' }).backend, 'native');
-  assert.deepEqual(driver.stopped, []);
-  await computer.disable({ sessionId: 'sess-1' });
-  const state = await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'cua' });
-  assert.equal(state.backend, 'cua');
 });
 
-test('a second scope waits for release, then drives with its own backend', async () => {
+test('a second scope waits for release, then drives natively', async () => {
   const seen = [];
   const first = fakeDriver();
   const second = fakeDriver();
@@ -550,13 +527,11 @@ test('a second scope waits for release, then drives with its own backend', async
       return creations === 1 ? first : second;
     },
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
   await computer.enable({ sessionId: 'sess-a', runId: 'run-a' });
   acquireChild(computer, { runId: 'run-a', sessionId: 'sess-a', agentId: 'agent-a' });
   await computer.driver();
-  const state = await computer.enable({ sessionId: 'sess-b', runId: 'run-b', backend: 'cua' });
-  assert.equal(state.backend, 'cua');
+  await computer.enable({ sessionId: 'sess-b', runId: 'run-b' });
   // No steal: the first holder keeps the desktop and its worker.
   await assert.rejects(
     computer.acquire(childCaller({ runId: 'run-b', sessionId: 'sess-b', agentId: 'agent-b' })),
@@ -564,166 +539,106 @@ test('a second scope waits for release, then drives with its own backend', async
   );
   assert.deepEqual(first.stopped, []);
   assert.deepEqual(computer.status().owner?.agentId, 'agent-a');
-  // After an explicit release the next child drives with its own backend.
-  // The factory is lazy: the new backend worker mints on first real request.
+  // After an explicit release the next child drives natively.
+  // The factory is lazy: the new worker mints on first real request.
   await computer.releaseAgent('run-a', 'agent-a');
   assert.deepEqual(first.stopped, ['release']);
   acquireChild(computer, { runId: 'run-b', sessionId: 'sess-b', agentId: 'agent-b' });
   const current = await computer.driver();
   assert.equal(current, second);
-  assert.deepEqual(seen, ['native', 'cua']);
+  assert.deepEqual(seen, ['native', 'native']);
 });
 
-test('the backend survives run release and resume, stop clears it', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
-  });
-  await computer.enable({ sessionId: 'sess-9', cwd: '/tmp/p', backend: 'cua' });
+test('native survives run release and resume, stop clears it', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  await computer.enable({ sessionId: 'sess-9', cwd: '/tmp/p' });
   await computer.noteRunStarted({ sessionId: 'sess-9', runId: 'run-9', cwd: '/tmp/p' });
   acquireChild(computer, { runId: 'run-9', sessionId: 'sess-9' });
-  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'native');
   await computer.releaseRun('run-9');
-  // Holder released, session preference (cua) survives; unscoped has no holder.
+  // Holder released, session preference (native) survives; unscoped has no holder.
   assert.equal(computer.status().owner, null);
   assert.equal(computer.status().backend, null);
-  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'native');
   await computer.noteRunStarted({ sessionId: 'sess-9', runId: 'run-10', cwd: '/tmp/p' });
-  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-9' }).backend, 'native');
   acquireChild(computer, { runId: 'run-10', sessionId: 'sess-9' });
-  assert.equal(computer.status().owner?.backend, 'cua');
+  assert.equal(computer.status().owner?.backend, 'native');
   assert.equal(computer.status().owner?.runId, 'run-10');
   await computer.stop();
   assert.equal(computer.status({ sessionId: 'sess-9' }).enabled, false);
   assert.equal(computer.status().backend, null);
 });
 
-test('run binding accepts computerUseBackend and inherits the preference when omitted', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
-  });
+test('run binding accepts computerUseBackend native and rejects cua', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
   await computer.noteRunStarted({
     sessionId: 'sess-1',
     runId: 'run-1',
     cwd: '/tmp/p',
     computerUse: true,
-    computerUseBackend: 'cua',
+    computerUseBackend: 'native',
   });
-  assert.equal(computer.status({ runId: 'run-1' }).backend, 'cua');
+  assert.equal(computer.status({ runId: 'run-1' }).backend, 'native');
   await computer.releaseRun('run-1');
   await computer.noteRunStarted({ sessionId: 'sess-1', runId: 'run-2', cwd: '/tmp/p' });
-  assert.equal(computer.status({ sessionId: 'sess-1' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-1' }).backend, 'native');
+  await assert.rejects(
+    computer.noteRunStarted({
+      sessionId: 'sess-1',
+      runId: 'run-3',
+      cwd: '/tmp/p',
+      computerUse: true,
+      computerUseBackend: 'cua',
+    }),
+    /Unknown Computer Use backend/,
+  );
 });
 
-test('run session binding preserves the lease backend', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
-  });
+test('run session binding preserves the native lease', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
   await computer.noteRunStarted({
     sessionId: null,
     runId: 'run-new',
     cwd: '/tmp/p',
     computerUse: true,
-    backend: 'cua',
   });
   computer.noteRunSession('run-new', 'sess-new');
-  assert.equal(computer.status({ runId: 'run-new' }).backend, 'cua');
+  assert.equal(computer.status({ runId: 'run-new' }).backend, 'native');
   await computer.releaseRun('run-new');
   assert.equal(computer.status({ sessionId: 'sess-new' }).enabled, true);
   await computer.noteRunStarted({ sessionId: 'sess-new', runId: 'run-next', cwd: '/tmp/p' });
-  assert.equal(computer.status({ sessionId: 'sess-new' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-new' }).backend, 'native');
 });
 
-test('unsupported cua reports the x64 gate without touching the lease', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    cuaAvailability: { available: false, supported: false },
-  });
-  await assert.rejects(computer.enable({ sessionId: 'sess-1', backend: 'cua' }), /x64/);
-  assert.equal(computer.status().enabled, false);
-});
-
-test('async availability sources resolve through refresh without spawning workers', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    getCuaAvailability: async () => ({
-      available: true,
-      supported: true,
-      backend: 'cua',
-      path: '/hidden/cua',
-      version: '0.28.2',
-    }),
-  });
-  const backends = await computer.refreshBackends();
-  assert.deepEqual(backends, [
-    { id: 'native', supported: true, available: true },
-    { id: 'cua', supported: true, available: true, version: '0.28.2' },
-  ]);
-  const state = await computer.enable({ sessionId: 'sess-1', backend: 'cua' });
-  assert.equal(state.backend, 'cua');
-});
-
-test('full static backend descriptors override both entries for offline tests', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    backends: [
-      { id: 'native', supported: true, available: true },
-      { id: 'cua', supported: true, available: true, reason: 'Beta pool.', version: '9.9' },
-    ],
-  });
-  assert.deepEqual(computer.status().backends[1], {
-    id: 'cua',
-    supported: true,
-    available: true,
-    reason: 'Beta pool.',
-    version: '9.9',
-  });
-  assert.equal((await computer.enable({ sessionId: 'sess-1', backend: 'cua' })).backend, 'cua');
-});
-
-test('a failing cua factory never replays on native', async (t) => {
+test('a failing native factory surfaces without side effects', async (t) => {
   const calls = [];
-  const nativeDriver = fakeDriver();
   const computer = createComputerUseManager({
     createDriver: (options) => {
       calls.push(options?.backend);
-      if (options?.backend === 'cua') throw Object.assign(new Error('cua worker down'), { status: 409 });
-      return nativeDriver;
+      throw Object.assign(new Error('native worker down'), { status: 409 });
     },
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
   t.after(() => computer.close());
-  await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'cua' });
+  await computer.enable({ sessionId: 'sess-1', runId: 'run-1' });
   acquireChild(computer, { runId: 'run-1', sessionId: 'sess-1' });
-  await assert.rejects(computer.driver(), /cua worker down/);
-  // Only the requested backend was attempted: no implicit native replay.
-  assert.deepEqual(calls, ['cua']);
-  assert.equal(computer.status().backend, 'cua');
+  await assert.rejects(computer.driver(), /native worker down/);
+  // Only the native backend was attempted and the grant survives.
+  assert.deepEqual(calls, ['native']);
+  assert.equal(computer.status({ sessionId: 'sess-1' }).enabled, true);
 });
 
-test('public frames omit opaque driverFrame but keep backend and kind', async () => {
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    cuaAvailability: cuaAvailable(),
-  });
-  await computer.enable({ sessionId: 'sess-1', backend: 'cua' });
+test('public frames omit opaque driverFrame but keep native backend and kind', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  await computer.enable({ sessionId: 'sess-1' });
   const id = computer.setFrame({
     width: 800,
     height: 600,
     bounds: { x: 0, y: 0, width: 800, height: 600 },
     capturedAt: 't',
-    backend: 'cua',
-    kind: 'cua',
+    backend: 'native',
+    kind: 'screenshot',
     driverFrame: { pid: 1234, window: 'hwnd-9', snapshot: 'raw', sessionLabel: 'secret' },
     imageData: 'pixels',
   });
@@ -735,8 +650,8 @@ test('public frames omit opaque driverFrame but keep backend and kind', async ()
     sessionLabel: 'secret',
   });
   const meta = computer.status().lastFrame;
-  assert.equal(meta.backend, 'cua');
-  assert.equal(meta.kind, 'cua');
+  assert.equal(meta.backend, 'native');
+  assert.equal(meta.kind, 'screenshot');
   assert.ok(!('driverFrame' in meta));
   assert.ok(!('imageData' in meta));
   assert.ok(!JSON.stringify(meta).includes('secret'));
@@ -762,7 +677,6 @@ test('a natively stopped worker closes on the teardown barrier before any remint
       return worker;
     },
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
   try {
     await computer.enable({ sessionId: 'sess-1', runId: 'run-1' });
@@ -789,12 +703,12 @@ test('a natively stopped worker closes on the teardown barrier before any remint
     assert.ok(await waiting);
     assert.equal(minted, true);
     assert.deepEqual(seen, ['native', 'native']);
-    // Same guarantee when switching backends after an explicit disable.
+    // Same guarantee when re-enabling natively after an explicit disable.
     await computer.disable({ sessionId: 'sess-1' });
-    await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'cua' });
+    await computer.enable({ sessionId: 'sess-1', runId: 'run-1', backend: 'native' });
     acquireChild(computer, { runId: 'run-1', sessionId: 'sess-1' });
     assert.ok(await computer.driver());
-    assert.deepEqual(seen, ['native', 'native', 'cua']);
+    assert.deepEqual(seen, ['native', 'native', 'native']);
     assert.equal(closeCalls, 2);
   } finally {
     releaseClose();
@@ -916,16 +830,15 @@ test('scoped status exposes the preference backend after run end, null when trul
   const computer = createComputerUseManager({
     createDriver: fakeDriver,
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
-  await computer.enable({ sessionId: 'sess-9', cwd: '/tmp/p', backend: 'cua' });
+  await computer.enable({ sessionId: 'sess-9', cwd: '/tmp/p' });
   await computer.noteRunStarted({ sessionId: 'sess-9', runId: 'run-9', cwd: '/tmp/p' });
   acquireChild(computer, { runId: 'run-9', sessionId: 'sess-9' });
   await computer.driver();
   await computer.releaseRun('run-9');
   const scoped = computer.status({ sessionId: 'sess-9' });
   assert.equal(scoped.enabled, true);
-  assert.equal(scoped.backend, 'cua');
+  assert.equal(scoped.backend, 'native');
   // Unscoped and foreign-scoped queries never leak the stored preference.
   assert.equal(computer.status().backend, null);
   assert.equal(computer.status({ sessionId: 'other' }).backend, null);
@@ -935,30 +848,12 @@ test('scoped status exposes the preference backend after run end, null when trul
   assert.equal(off.backend, null);
 });
 
-test('backend availability refresh is TTL-gated and forceable', async () => {
-  let calls = 0;
-  let tick = 1000;
-  const computer = createComputerUseManager({
-    createDriver: fakeDriver,
-    isSupported: true,
-    // Async sources are called once synchronously at construction to seed.
-    getCuaAvailability: async () => {
-      calls += 1;
-      return { available: true, supported: true };
-    },
-    availabilityTtlMs: 100,
-    now: () => tick,
-  });
-  assert.equal(calls, 1);
-  await computer.refreshBackends();
-  assert.equal(calls, 2);
-  await computer.refreshBackends();
-  assert.equal(calls, 2);
-  tick += 150;
-  await computer.refreshBackends();
-  assert.equal(calls, 3);
-  await computer.refreshBackends({ force: true });
-  assert.equal(calls, 4);
+test('backend availability refresh stays static and native', async () => {
+  const computer = createComputerUseManager({ createDriver: fakeDriver, isSupported: true });
+  assert.deepEqual(await computer.refreshBackends(), [{ id: 'native', supported: true, available: true }]);
+  assert.deepEqual(await computer.refreshBackends({ force: true }), [
+    { id: 'native', supported: true, available: true },
+  ]);
 });
 
 test('a failed teardown close surfaces cleanup flags without faking lease state', async (t) => {
@@ -1043,25 +938,17 @@ test('an in-flight native-stop close surfaces cleanupPending', async (t) => {
   }
 });
 
-test('slow CUA enable cannot resurrect a lease stopped during availability preflight', async () => {
-  let release,
-    hold = false;
-  const computer = manager({
-    getCuaAvailability: () =>
-      hold
-        ? new Promise((resolve) => {
-            release = resolve;
-          })
-        : { supported: true, available: true },
-    availabilityTtlMs: 0,
+test('a slow enable cannot resurrect a lease stopped during authorization', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
   });
-  await computer.enable({ sessionId: 'first', backend: 'native' });
-  hold = true;
-  const pending = computer.enable({ sessionId: 'first', backend: 'cua' });
-  assert.equal(typeof release, 'function');
+  const computer = manager();
+  await computer.enable({ sessionId: 'first' });
+  const pending = computer.enable({ sessionId: 'first' }, { authorize: () => gate });
   const rejected = assert.rejects(pending, (error) => error.code === 'computer_use_conflict');
   await computer.stop();
-  release({ supported: true, available: true });
+  release();
   await rejected;
   assert.equal(computer.status().owner, null);
   assert.equal(computer.status({ sessionId: 'first' }).enabled, false);
@@ -1269,12 +1156,11 @@ test('scoped status never leaks another scope backend; unscoped off means off', 
   const computer = createComputerUseManager({
     createDriver: fakeDriver,
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
-  await computer.enable({ sessionId: 'sess-a', runId: 'run-a', backend: 'cua' });
-  await computer.enable({ sessionId: 'sess-b', runId: 'run-b', backend: 'native' });
+  await computer.enable({ sessionId: 'sess-a', runId: 'run-a' });
+  await computer.enable({ sessionId: 'sess-b', runId: 'run-b' });
   await computer.acquire(childCaller({ runId: 'run-a', sessionId: 'sess-a', agentId: 'agent-a' }));
-  assert.equal(computer.status({ sessionId: 'sess-a' }).backend, 'cua');
+  assert.equal(computer.status({ sessionId: 'sess-a' }).backend, 'native');
   assert.equal(computer.status({ sessionId: 'sess-b' }).backend, 'native');
   assert.equal(computer.status({ runId: 'run-b' }).backend, 'native');
   // Releasing the holder clears the unscoped backend but keeps both grants.
@@ -1367,7 +1253,7 @@ test('release before mint cancels the suspended driver without creating a worker
   await computer.close();
 });
 
-test('a released native mint never leaks into the next cua holder', async () => {
+test('a released native mint never leaks into the next holder', async () => {
   const seen = [];
   const computer = createComputerUseManager({
     createDriver: (options) => {
@@ -1375,10 +1261,9 @@ test('a released native mint never leaks into the next cua holder', async () => 
       return fakeDriver();
     },
     isSupported: true,
-    cuaAvailability: cuaAvailable(),
   });
-  await computer.enable({ sessionId: 'sess-a', runId: 'run-a', backend: 'native' });
-  await computer.enable({ sessionId: 'sess-b', runId: 'run-b', backend: 'cua' });
+  await computer.enable({ sessionId: 'sess-a', runId: 'run-a' });
+  await computer.enable({ sessionId: 'sess-b', runId: 'run-b' });
   await computer.acquire(childCaller({ runId: 'run-a', sessionId: 'sess-a', agentId: 'agent-a' }));
   const stale = computer.driver();
   await computer.releaseAgent('run-a', 'agent-a');
@@ -1387,8 +1272,8 @@ test('a released native mint never leaks into the next cua holder', async () => 
   assert.deepEqual(seen, []);
   const inst = await computer.driver();
   assert.ok(inst);
-  assert.deepEqual(seen, ['cua']);
+  assert.deepEqual(seen, ['native']);
   assert.equal(computer.status().owner?.agentId, 'agent-b');
-  assert.equal(computer.status().owner?.backend, 'cua');
+  assert.equal(computer.status().owner?.backend, 'native');
   await computer.close();
 });

@@ -15,55 +15,20 @@ function truncate(text, limit = ACTION_PREVIEW_LIMIT) {
   return `${value.slice(0, limit - 1)}…`;
 }
 
+// Single desktop engine: the custom native integration only. Any stored or
+// reported legacy 'cua' value sanitizes to 'native'. The backends list keeps
+// its shape (one native entry) so status consumers keep working.
 export const COMPUTER_USE_BACKEND_NATIVE = 'native';
-export const COMPUTER_USE_BACKEND_CUA = 'cua';
 
 export function normalizeBackendId(value) {
-  return value === COMPUTER_USE_BACKEND_CUA ? COMPUTER_USE_BACKEND_CUA : COMPUTER_USE_BACKEND_NATIVE;
-}
-
-function cleanBackendReason(value) {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  return value.trim().slice(0, 500);
+  void value;
+  return COMPUTER_USE_BACKEND_NATIVE;
 }
 
 export function normalizeComputerBackends(raw, supportedFallback = true) {
+  void raw;
   const fallback = supportedFallback !== false;
-  const source = raw && typeof raw === 'object' ? raw : {};
-  const list = Array.isArray(source.backends) ? source.backends : null;
-  if (!list) {
-    return [
-      { id: COMPUTER_USE_BACKEND_NATIVE, supported: fallback, available: fallback, reason: null },
-      { id: COMPUTER_USE_BACKEND_CUA, supported: false, available: false, reason: null },
-    ];
-  }
-  const byId = new Map();
-  for (const entry of list) {
-    if (!entry || typeof entry !== 'object') continue;
-    if (entry.id !== COMPUTER_USE_BACKEND_NATIVE && entry.id !== COMPUTER_USE_BACKEND_CUA) continue;
-    if (byId.has(entry.id)) continue;
-    byId.set(entry.id, {
-      id: entry.id,
-      supported: entry.supported !== false,
-      available: entry.available === true,
-      reason: cleanBackendReason(entry.reason),
-    });
-  }
-  if (!byId.has(COMPUTER_USE_BACKEND_NATIVE))
-    byId.set(COMPUTER_USE_BACKEND_NATIVE, {
-      id: COMPUTER_USE_BACKEND_NATIVE,
-      supported: fallback,
-      available: fallback,
-      reason: null,
-    });
-  if (!byId.has(COMPUTER_USE_BACKEND_CUA))
-    byId.set(COMPUTER_USE_BACKEND_CUA, {
-      id: COMPUTER_USE_BACKEND_CUA,
-      supported: false,
-      available: false,
-      reason: null,
-    });
-  return [byId.get(COMPUTER_USE_BACKEND_NATIVE), byId.get(COMPUTER_USE_BACKEND_CUA)];
+  return [{ id: COMPUTER_USE_BACKEND_NATIVE, supported: fallback, available: fallback, reason: null }];
 }
 
 export function ownerDisplayName(owner) {
@@ -284,11 +249,7 @@ export function createComputerUse({ api, getContext, toast, getDetailTargets = n
     const hotkeyEl = $('computer-use-hotkey');
     if (hotkeyEl)
       bindText(hotkeyEl, () =>
-        status == null
-          ? '-'
-          : status.hotkeyError
-            ? tr('computer.hotkeyUnavailable')
-            : status.hotkey || '-',
+        status == null ? '-' : status.hotkeyError ? tr('computer.hotkeyUnavailable') : status.hotkey || '-',
       );
   }
 

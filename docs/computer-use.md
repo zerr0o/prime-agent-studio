@@ -13,14 +13,11 @@ Computer Use est un mode expert pour le **vrai bureau Windows**. Son activation 
 
 Le mode est désactivé par défaut et n’est pas restauré après un redémarrage du serveur. Une conversation peut conserver son autorisation entre ses tours dans le même processus serveur. Plusieurs conversations peuvent être autorisées, mais un seul agent précis peut contrôler le bureau partagé à la fois. **Arrêter Computer Use** supprime toutes les autorisations et arrête le contrôleur actif. Décocher une conversation révoque uniquement son autorisation, sans interrompre un contrôleur étranger. L’accès distant en lecture seule ne peut ni l’activer ni l’arrêter.
 
-## Choisir un moteur global
+## Moteur natif Windows
 
-Ouvrez **Préférences > Outils > Computer Use**. Le moteur est un réglage global unique pour ce PC, enregistré côté serveur :
+Computer Use utilise uniquement notre exécuteur Windows PowerShell/.NET. Il prend en charge le bureau multi-écrans, les régions et le focus natif. Aucun moteur externe ni téléchargement de pilote supplémentaire n’est nécessaire.
 
-- **Intégration originale (Windows)** est le choix par défaut. Elle utilise notre exécuteur PowerShell/.NET et prend en charge le bureau multi-écrans complet, les régions et le focus natif.
-- **Cua Driver (beta)** utilise la version **0.28.2** Windows x64, dans des processus privés du Studio. Elle ajoute l’inspection d’accessibilité des fenêtres et les actions ciblées par élément. Elle ne remplace ni l’agent ni le modèle et ne demande pas de connexion MCP à configurer.
-
-Choisir un moteur n’active pas le contrôle. Le changement exige que toutes les autorisations Computer Use soient désactivées et qu’aucun agent ne détienne le bureau : la zone reste verrouillée tant qu’une autorisation subsiste, pendant le nettoyage ou après son échec. Une simple autorisation n’acquiert toujours pas le bureau et ne démarre aucun pilote. Un moteur indisponible affiche la raison ; le Studio ne bascule jamais silencieusement vers l’autre et ne rejoue pas une action. L’ancienne sélection par session a disparu : toutes les conversations utilisent le même moteur global. La garde native Windows conserve l’exclusivité du bureau et le raccourci d’arrêt avec CUA. CUA refuse de démarrer si ce raccourci n’est pas enregistré. Si l’arrêt des processus ou la libération des entrées ne peut pas être vérifié, tout nouveau contrôle reste bloqué. Utilisez Arrêter pour réessayer ; une autorisation désactivée ne prouve pas à elle seule que le nettoyage est terminé.
+Une autorisation n’acquiert pas le bureau et ne démarre aucun pilote. Si la libération du contrôleur ne peut pas être vérifiée, tout nouveau contrôle reste bloqué. Utilisez Arrêter pour réessayer ; une autorisation désactivée ne prouve pas à elle seule que le nettoyage est terminé.
 
 ## Modèle de décision Computer Use
 
@@ -32,19 +29,13 @@ Le sélecteur **Réflexion** s’applique uniquement au sous-agent de bureau. **
 
 L’agent principal utilise les mécanismes existants `rlm.spawn` et `agent_message`. Il peut réutiliser un enfant inactif avec son contexte ou en créer un nouveau pour une autre tâche. Il n’y a ni spécialiste automatique par conversation, ni rôle obligatoire, ni nom réservé. L’enfant transmet un résultat ou un blocage ; les captures restent dans sa propre conversation sauf partage explicite. La réutilisation peut préserver le cache du fournisseur, sans garantie de cache utilisé ni de gain de vitesse.
 
-Les actions par pixels de CUA sont plus limitées dans cette beta. Préférez un `windowId` précis. Les images de fenêtres complètes sont prises en charge, mais pas les captures de régions. La capture du bureau couvre l’écran principal à sa résolution native ; si une dimension dépasse 2000 pixels, choisissez une fenêtre. `maxWidth` limite le grand côté des images de fenêtres CUA, mais ne réduit pas le bureau. Les glissés à plusieurs segments et les déplacements du pointeur propres à une fenêtre sont refusés, pas approximés. Un refus de focus n’autorise pas à relancer l’application.
-
-`computer_inspect` lit l’arbre d’accessibilité d’une fenêtre CUA sans capture d’écran. Il renvoie une liste bornée d’éléments et un `frameId` d’accessibilité. Utilisez l’`elementId` retourné dans `computer_act`, ou `set_value` avec `elementId` et `value` pour un champ éditable. Une valeur vide efface le champ. Ces observations n’ont pas de coordonnées en pixels. Les captures de fenêtres incluent aussi les éléments d’accessibilité disponibles.
-
-Par défaut, les actions CUA par pixels passent au premier plan ; les actions ciblées par élément utilisent l’arrière-plan. Le paramètre de lot `deliveryMode` permet de choisir `foreground` ou `background`. Un refus ne provoque aucun changement automatique de mode. Inspectez ou observez à nouveau après un lot. Les résultats peuvent être partiels, refusés ou invérifiables ; `executed` et une entrée transmise ne prouvent pas la réussite de la tâche. Aucun gain de vitesse global par rapport au backend original n’est établi.
-
 ## Fiabilité des images et du focus
 
 Les nouvelles captures tiennent dans **2000 × 2000 pixels**, en conservant leurs proportions et les métadonnées de coordonnées, même si `maxWidth` demande davantage. Cette limite couvre aussi les écrans en portrait. Elle évite la limite d’images signalée par Opus dans les requêtes contenant beaucoup d’images, sans dépendre de la tolérance d’un autre fournisseur.
 
 Les anciennes captures Computer Use trop grandes sont omises uniquement du contexte temporaire envoyé au modèle, avec une consigne de nouvelle observation. Leurs pixels ne sont pas redimensionnés en gardant d’anciennes coordonnées. Les conversations enregistrées et les autres images de l’utilisateur restent inchangées.
 
-Le backend original attend brièvement la restauration d’une fenêtre minimisée et effectue des tentatives natives de focus bornées. Il vérifie la fenêtre réellement au premier plan. Windows peut encore refuser l’activation ou l’accès à une fenêtre plus privilégiée ; l’erreur identifie la cible et la fenêtre au premier plan au lieu d’annoncer un succès. Aucun contournement par élévation ou Win+R n’est utilisé.
+Le moteur natif attend brièvement la restauration d’une fenêtre minimisée et effectue des tentatives natives de focus bornées. Il vérifie la fenêtre réellement au premier plan. Windows peut encore refuser l’activation ou l’accès à une fenêtre plus privilégiée ; l’erreur identifie la cible et la fenêtre au premier plan au lieu d’annoncer un succès. Aucun contournement par élévation ou Win+R n’est utilisé.
 
 ## Capacités de l’agent
 
@@ -53,13 +44,19 @@ Le backend original attend brièvement la restauration d’une fenêtre minimis�
 - Déplacer le pointeur, cliquer, double-cliquer, glisser, faire défiler, utiliser des raccourcis clavier et saisir du texte Unicode.
 - Observer à nouveau pour vérifier le résultat avant de continuer.
 
-Les outils natifs sont `computer_status`, `computer_windows`, `computer_observe`, `computer_inspect`, `computer_act` et `computer_release`. Les capacités ci-dessous dépendent du backend choisi. Les outils ne peuvent pas activer le mode eux-mêmes. L’agent principal délègue le travail de bureau au lieu de le piloter. Les enfants natifs héritent de l’autorisation de la conversation, **pas du verrou du bureau**. Le premier outil de bureau acquiert ce verrou pour l’enfant précis ; les frères et les agents des autres conversations reçoivent un refus pour bureau occupé. `computer_status` n’acquiert pas le verrou et ne démarre aucun pilote. Le verrou est libéré lorsque l’enfant termine, s’arrête, est supprimé ou appelle `computer_release` ; les anciennes captures sont invalidées. Un refus d’outil récupérable ne donne pas le contrôle à un autre agent. Réutiliser un enfant exige une nouvelle acquisition et une observation fraîche.
+Les outils natifs sont `computer_status`, `computer_windows`, `computer_observe`, `computer_act` et `computer_release`. Les outils ne peuvent pas activer le mode eux-mêmes. L’agent principal délègue le travail de bureau au lieu de le piloter. Les enfants natifs héritent de l’autorisation de la conversation, **pas du verrou du bureau**. Le premier outil de bureau acquiert ce verrou pour l’enfant précis ; les frères et les agents des autres conversations reçoivent un refus pour bureau occupé. `computer_status` n’acquiert pas le verrou et ne démarre aucun pilote. Le verrou est libéré lorsque l’enfant termine, s’arrête, est supprimé ou appelle `computer_release` ; les anciennes captures sont invalidées. Un refus d’outil récupérable ne donne pas le contrôle à un autre agent. Réutiliser un enfant exige une nouvelle acquisition et une observation fraîche.
 
-`computer_observe` transmet une véritable image au modèle, avec ses dimensions et un identifiant de capture. Les actions utilisent les coordonnées de cette image. Avec le backend original, le Studio les convertit en pixels physiques de l’écran, y compris pour les captures réduites et les moniteurs à origine négative. CUA conserve son propre espace de coordonnées lié à l’observation. Chaque lot d’actions nécessite une observation récente. Si une action expire, l’agent doit observer l’état actuel au lieu de la répéter à l’aveugle. Chaque capture est un instantané qui peut montrer une interface en cours de chargement, pas une interface stabilisée.
+`computer_observe` transmet une véritable image au modèle, avec ses dimensions et un identifiant de capture. Les actions utilisent les coordonnées de cette image. Le Studio les convertit en pixels physiques de l’écran, y compris pour les captures réduites et les moniteurs à origine négative. Chaque lot d’actions nécessite une observation récente. Si une action expire, l’agent doit observer l’état actuel au lieu de la répéter à l’aveugle. Chaque capture est un instantané qui peut montrer une interface en cours de chargement, pas une interface stabilisée.
 
 Après le lancement d’une application, attendez sa fenêtre avec `computer_windows` (`action: "wait"`), mettez la au premier plan si besoin (`action: "focus"`), puis observez cette fenêtre avant de conclure. L’attente est en lecture seule, bornée et annulable : elle ne met jamais une fenêtre au premier plan, ne lance rien et ne capture rien. Les filtres `processName` (comparaison exacte insensible à la casse, suffixe `.exe` accepté), `title` (sous chaîne insensible à la casse) et `windowId` se combinent avec AND, et au moins un filtre non vide est requis. `timeoutMs` accepte un entier de 100 à 20000, 10000 par défaut. La réponse contient `found`, `timedOut`, `window` en cas de succès, la liste `windows`, `elapsedMs` et `note`. `found` signifie que la fenêtre existe, pas que l’interface ou le son sont prêts. `timedOut` signifie qu’elle n’a pas été vue dans le budget, pas que l’application a échoué. Si le focus change, observez à nouveau au lieu de relancer l’application ou d’agir depuis une image périmée.
 
 `computer_act` accepte `observeAfter` et `observeOptions` (`windowId`, `region`, `maxWidth`) pour cadrer la vérification. Par défaut la vérification reprend les options de la capture d’origine ; `observeOptions: {}` demande tout le bureau. Une nouvelle fenêtre peut apparaître sur un autre écran, donc préférez `wait` puis `observe` de la nouvelle fenêtre avant d’agir dessus. Chaque résultat porte `applicationState: "unverified"` car une entrée envoyée n’est pas la réussite de la tâche. Si la capture de vérification échoue après une entrée réussie, le résultat garde `executed` plus `observationError: {code, message}` sans échec global ni rejeu ; observez à nouveau au lieu de rejouer le lot.
+
+## Bordure d’activité
+
+Une bordure orange avec un fondu intérieur apparaît sur chaque écran lorsque le worker natif détient le bureau. Elle ne prend pas le focus et laisse passer les clics. Elle disparaît à l’arrêt ou à la fermeture du worker ; une simple autorisation ne l’affiche pas.
+
+Windows doit confirmer l’exclusion des captures (`WDA_EXCLUDEFROMCAPTURE`) avant tout affichage. Si cette protection est indisponible, la bordure reste cachée et `computer_status` expose le diagnostic dans `driver.overlay`. Le contrôle natif reste disponible. La bordure n’est pas une protection contre un logiciel tiers de capture.
 
 ## Conséquences sur le vrai bureau
 
@@ -70,9 +67,9 @@ N’utilisez pas la souris ou le clavier en même temps que l’agent. Gardez le
 ## Prérequis et limites Windows
 
 - Windows et un bureau interactif déverrouillé sont nécessaires. Les autres systèmes signalent la fonction comme indisponible.
-- L’exécuteur original utilise Windows PowerShell et .NET. CUA est distribué pour Windows x64 avec sa licence MIT et des sommes de contrôle. Aucun des deux modes ne demande de serveur MCP à configurer séparément.
+- L’exécuteur utilise Windows PowerShell et .NET. Aucun serveur MCP à configurer séparément.
 - Les limites de privilèges Windows restent applicables. Le bureau sécurisé UAC et les applications plus privilégiées ne sont pas contournés. Le Studio ne s’élève pas automatiquement.
-- Avec le backend original, une observation de fenêtre capture les pixels visibles de l’écran, pas la surface interne d’une application masquée ou minimisée. Une fenêtre superposée peut donc apparaître sur l’image.
+- Une observation de fenêtre capture les pixels visibles de l’écran, pas la surface interne d’une application masquée ou minimisée. Une fenêtre superposée peut donc apparaître sur l’image.
 - Un changement d’écran ou de focus peut invalider une observation. L’agent doit observer à nouveau lorsque cela lui est demandé.
 - Le raccourci dépend de son enregistrement réussi par l’exécuteur natif. La commande d’arrêt distincte du Studio reste également disponible.
 
@@ -82,19 +79,13 @@ Le pilote Node démarre son exécuteur natif masqué à la demande. Le gestionna
 
 La preuve de délégation couvre un tour ordinaire avec Computer Use activé mais sans enfant ni pilote, un vrai enfant natif, la propriété exclusive, la libération automatique et la réutilisation du même enfant avec une nouvelle capture. Elle utilise uniquement un fournisseur local et un faux bureau. Cette évolution ne résout pas tous les problèmes de fenêtres temporaires, d’actions natives partielles ou de rétention des anciennes captures ; les protections de focus, d’annulation et d’absence de rejeu restent actives.
 
-Pour préparer les fichiers CUA dans un checkout de développement, lancez `npm run cua:prepare`. La commande vérifie une archive en cache ou télécharge la version figée, prépare le pilote et sa licence, mais ne l’exécute jamais. Les builds Windows x64 exigent ces fichiers vérifiés ; les autres plateformes ne les embarquent pas.
-
 ```sh
 npm run test:computer-use
-npm run test:cua
 npm run test:computer-use:ui
 npm run test:computer-use:native
 npm run test:computer-use:worker
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File runtime/computer-use-worker.ps1 -JobSelfTest
-node scripts/test-cua-job-adoption.mjs --mode=both
+powershell.exe -NoProfile -NonInteractive -File runtime/computer-use-overlay.selftest.ps1
 ```
-
-Les contrôles Windows Job utilisent uniquement des processus de test privés. Ils n’initialisent ni capture, ni entrée, ni focus, ni raccourci global du bureau.
 
 Les vérifications automatisées utilisent un faux pilote de bureau et des images synthétiques. Le test d’intégration d’agent natif utilise le moteur installé, un fournisseur local déterministe, des données temporaires et des processus isolés. Ces vérifications ne capturent pas le bureau personnel, ne déplacent pas le vrai pointeur et ne font pas d’appels payants à un modèle. Elles ne remplacent pas un essai coordonné sur le vrai bureau pour les entrées, la mise à l’échelle des moniteurs, les restrictions de focus Windows et le raccourci global.
 

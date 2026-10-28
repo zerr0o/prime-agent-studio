@@ -4,6 +4,19 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.7
+
+- **On-demand Computer Use**: desktop tasks use ordinary native subagents while the main agent keeps its model and reasoning level. Permission alone starts no desktop worker; one exact agent holds the desktop at a time.
+- **Native Windows engine only**: removed CUA and its bundled executables. Existing engine preferences migrate to native without starting desktop control; model and reasoning settings are preserved.
+- **Orange activity border**: a click-through, non-activating border follows desktop ownership on every display. Windows capture exclusion is verified before showing it; it closes on stop or worker exit and stays hidden if protection is unavailable.
+- **16 open conversations**: raised the conversation limit without sharing the exclusive desktop lock.
+- **Tools settings**: restored separate lines for the Computer Use model and reasoning selector on desktop and mobile.
+
+## 4.4.7-beta.2
+
+- **Native-only Computer Use**: removed CUA, its engine selector, executables and build preparation. Old preferences resolve to the native engine without starting desktop control. Model and thinking settings are preserved.
+- **Activity border**: a subtle orange border follows desktop ownership on every display. It takes no focus or clicks, is excluded from captures by Windows, and closes with the worker. It stays hidden if capture protection is refused.
+
 ## 4.4.7-beta.1
 
 - **On-demand delegation**: the main agent keeps its model and reasoning level. Desktop tasks use ordinary native subagents with the configured Computer Use model and effort. No child or desktop worker is created just by enabling permission. An idle child can be reused, or a new one created for another task.
