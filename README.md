@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/3ac0cccf-c95b-4add-a6fe-64eee66845dd
 
 <a id="a-space-for-every-project"></a>
 
-Arrange up to **8 conversations and 16 tool panels** with drag-and-drop tabs and splits. Lock a tool to its project or let it follow the active conversation. Save named layouts, or stay with the classic view.
+Arrange up to **16 conversations and 16 tool panels** with drag-and-drop tabs and splits. Lock a tool to its project or let it follow the active conversation. Save named layouts, or stay with the classic view.
 
 Each conversation keeps its draft, attachments and reading position. Closing a tab does not stop its agent or delete the conversation; the server must stay running.
 

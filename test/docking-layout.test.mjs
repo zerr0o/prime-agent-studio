@@ -113,7 +113,7 @@ function assertInvariants(doc, label) {
 test('PANEL_IDS is the fixed V4 set and ratios bound splits', () => {
   assert.deepEqual([...PANEL_IDS], ['conversation', 'roadmap', 'session', 'agents', 'files', 'preferences', 'performance', 'context']);
   assert.deepEqual([...TOOL_KINDS], ['roadmap', 'session', 'agents', 'files', 'preferences', 'performance', 'context']);
-  assert.equal(MAX_CONVERSATIONS, 8);
+  assert.equal(MAX_CONVERSATIONS, 16);
   assert.equal(MAX_TOOL_PANELS, 16);
   assert.equal(MIN_RATIO, 0.15);
   assert.equal(MAX_RATIO, 0.85);
@@ -1036,14 +1036,14 @@ test('tool bound: 16 tool tabs validate, the 17th is rejected', () => {
     ),
   };
   assert.equal(validateLayout(seventeen), null, '17 tool tabs rejected');
-  // Full house: 8 conversations + 16 tools = 24 tabs validate.
+  // Full house: 16 conversations + 16 tools = 32 tabs validate.
   const full = {
     version: 4,
     root: split(
       'main',
       'row',
       0.5,
-      group('a', convIds(8), 'conversation'),
+      group('a', convIds(16), 'conversation'),
       group(
         'b',
         ['roadmap', 'session', 'agents', 'files', 'preferences', ...toolIds('session', 11)],
@@ -1052,36 +1052,36 @@ test('tool bound: 16 tool tabs validate, the 17th is rejected', () => {
     ),
   };
   const fullClean = validateLayout(full);
-  assert.ok(fullClean, '24 tabs validate');
+  assert.ok(fullClean, '32 tabs validate');
   assertInvariants(fullClean, 'full house');
 });
 
-test('conversation bound: 8 instances validate, the 9th is rejected', () => {
-  const eight = {
+test('conversation bound: 16 instances validate, the 17th is rejected', () => {
+  const sixteen = {
     version: 3,
-    root: group('root', convIds(8), 'conversation'),
+    root: group('root', convIds(16), 'conversation'),
   };
-  const clean = validateLayout(eight);
-  assert.ok(clean, '8 conversations validate');
-  assertInvariants(clean, '8 conversations');
-  const nine = {
+  const clean = validateLayout(sixteen);
+  assert.ok(clean, '16 conversations validate');
+  assertInvariants(clean, '16 conversations');
+  const seventeen = {
     version: 3,
-    root: group('root', convIds(9), 'conversation'),
+    root: group('root', convIds(17), 'conversation'),
   };
-  assert.equal(validateLayout(nine), null, '9 conversations rejected');
-  // Full house: 8 conversations + 5 singletons = 13 tabs validate.
+  assert.equal(validateLayout(seventeen), null, '17 conversations rejected');
+  // Full house: 16 conversations + 5 singletons = 21 tabs validate.
   const full = {
     version: 3,
     root: split(
       'main',
       'row',
       0.5,
-      group('a', convIds(8), 'conversation'),
+      group('a', convIds(16), 'conversation'),
       group('b', ['roadmap', 'session', 'agents', 'files', 'preferences'], 'roadmap'),
     ),
   };
   const fullClean = validateLayout(full);
-  assert.ok(fullClean, '13 tabs validate');
+  assert.ok(fullClean, '21 tabs validate');
   assertInvariants(fullClean, 'full house');
 });
 

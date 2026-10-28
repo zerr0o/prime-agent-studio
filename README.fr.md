@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/3ac0cccf-c95b-4add-a6fe-64eee66845dd
 
 <a id="un-espace-pour-chaque-projet"></a>
 
-Organisez jusqu’à **8 conversations et 16 panneaux d’outils** avec des onglets déplaçables et des divisions. Verrouillez un outil sur son projet ou laissez-le suivre la conversation active. Enregistrez vos dispositions, ou gardez la vue classique.
+Organisez jusqu’à **16 conversations et 16 panneaux d’outils** avec des onglets déplaçables et des divisions. Verrouillez un outil sur son projet ou laissez-le suivre la conversation active. Enregistrez vos dispositions, ou gardez la vue classique.
 
 Chaque conversation conserve son brouillon, ses pièces jointes et sa position de lecture. Fermer un onglet n’arrête pas son agent et ne supprime pas la conversation ; le serveur doit rester actif.
 

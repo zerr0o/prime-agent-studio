@@ -11,7 +11,7 @@
 // for visuals. Reading refs/storage through page.evaluate for comparison is
 // allowed and is NOT UI forcing (same rule as scripts/test-docking-ui.mjs).
 //
-// CONTRACT (round-2 docking, V4 geometry): at most 8 conversation panels;
+// CONTRACT (round-2 docking, V4 geometry): at most 16 conversation panels;
 // panel ids conversation/roadmap/session/agents/files/preferences plus
 // conv:<id> refs plus tool:<kind>:<nonce> instances.
 // Session/Agents/Files are INDEPENDENT dock tabs (no monolithic inspector tab):
@@ -56,7 +56,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createApp } from '../server.mjs';
 import { createLanGateway, hashAccessCode } from '../lib/lan.mjs';
-import { createDefaultLayout } from '../public/docking-layout.js';
+import { createDefaultLayout, MAX_CONVERSATIONS } from '../public/docking-layout.js';
 
 const STUDIO_VERSION = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
 // Source fence: hashes + timestamps at start/end prove the tree did not move
@@ -154,7 +154,6 @@ const LAYOUT_KEY = 'prime-studio.docking.layout';
 const PRESETS_KEY = 'prime-studio.docking.presets';
 const CONV_KEY = 'prime-studio.docking.conversations';
 const DRAFTS_KEY = 'prime-studio.drafts';
-const MAX_CONVERSATIONS = 8;
 const ZONES = ['center', 'left', 'right', 'top', 'bottom'];
 // Canonical V4 default used ONLY to seed an explicit classic opt-out
 // (enabled:false) for scenarios that specifically start undocked. Fresh
@@ -3805,10 +3804,10 @@ try {
   const tabsRecovered = await convTabIds(page);
   assert.equal(new Set(tabsRecovered).size, tabsRecovered.length, 'Recovered tabs must have unique ids');
   step('Corrupt sidecar (duplicate ids/nonces/sessionIds, over-cap 25) recovers visibly with zero errors.');
-  // Grow to the 8-conversation cap through the real picker, then prove over-cap
+  // Grow to the 16-conversation cap through the real picker, then prove over-cap
   // attempts on both paths create no ghost tab (chooser resolves, view null).
   let guard = 0;
-  while ((await convTabIds(page)).length < MAX_CONVERSATIONS && guard < 12) {
+  while ((await convTabIds(page)).length < MAX_CONVERSATIONS && guard < MAX_CONVERSATIONS) {
     const growGroup = (await layoutSignature(page)).groups[0].id;
     await menuAdd(page, growGroup, 'new-conversation');
     await expectPickerOpen(page);

@@ -72,7 +72,7 @@ export const PANEL_IDS = Object.freeze([
 ]);
 
 /** Maximum conversation instances mounted at once, legacy primary included. */
-export const MAX_CONVERSATIONS = 8;
+export const MAX_CONVERSATIONS = 16;
 
 /** Tool kinds that support extra lockable instances (all non-conversation kinds). */
 export const TOOL_KINDS = Object.freeze(['roadmap', 'session', 'agents', 'files', 'preferences', 'performance', 'context']);
@@ -130,8 +130,8 @@ const V1_VERSION = 1;
 const V2_VERSION = 2;
 const V3_VERSION = 3;
 // Tree budgets derived from the maximum mounted tab count
-// (MAX_TOOL_PANELS tools + MAX_CONVERSATIONS conversations = 24). Binary
-// tree: at most 24 groups, at most 47 nodes, split nesting well under 47.
+// (MAX_TOOL_PANELS tools + MAX_CONVERSATIONS conversations = 32). Binary
+// tree: at most 32 groups, at most 63 nodes, split nesting well under 63.
 // Nested empty groups collapse, so every surviving non-root group holds
 // >= 1 panel.
 const MAX_PANELS = MAX_TOOL_PANELS + MAX_CONVERSATIONS;
@@ -262,7 +262,7 @@ export function createDefaultLayout() {
  * (singletons plus tool: refs), duplicate panels (globally) or duplicate
  * node ids, `active` not in `panels` (non-empty groups) or non-null `active`
  * on empty groups, nested empty groups, non-finite ratios, topology over
- * budget (nodes > 47, groups > 24, split depth > 47, panels/group > 24),
+ * budget (nodes > 63, groups > 32, split depth > 63, panels/group > 32),
  * cyclic references, or anything beyond the visit budget.
  * Unknown EXTRA fields are stripped (canonical nodes keep exactly the
  * schema fields). Finite out-of-range ratios are CLAMPED (see header).
