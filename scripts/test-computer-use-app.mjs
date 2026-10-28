@@ -318,6 +318,14 @@ try {
     expect(thinking).not.toBeNull();
     expect(thinking.y).toBeGreaterThanOrEqual(model.y + model.height + 6);
     expect(Math.abs(thinking.x - model.x)).toBeLessThanOrEqual(1);
+    const field = await page.locator('#settings-panel-tools .computer-model-field').boundingBox();
+    expect(Math.abs(model.width - field.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(thinking.width - model.width)).toBeLessThanOrEqual(1);
+    await expect(page.locator('#computer-thinking')).toHaveCSS(
+      'min-height',
+      await page.locator('#computer-model-button').evaluate((button) => getComputedStyle(button).minHeight),
+    );
+    expect(model.height).toBeGreaterThanOrEqual(42);
   }
   await expect(page.locator('#computer-model-button')).toBeVisible();
   await expectComputerControlsStacked();
@@ -560,8 +568,13 @@ try {
   await expect(computerModelButton).not.toHaveClass(/secondary-button/);
   await expect(computerModelButton.locator('.subagent-model-icon svg')).toBeVisible();
   await expect(computerModelButton.locator('.model-picker-chevron svg')).toBeVisible();
-  // Shared selector wiring (pixel values live under .subagent-controls in the
-  // committed shell, so assert the reusable hooks instead of shell-scoped CSS).
+  // The Tools picker must use the same visual rules as the default-model picker.
+  expect(await computerModelButton.evaluate((button) => {
+    const actual = getComputedStyle(button);
+    const shared = getComputedStyle(document.getElementById('default-main-model'));
+    return ['minHeight', 'padding', 'borderRadius', 'borderTopWidth',
+      'backgroundColor', 'color', 'fontSize', 'gap'].every((key) => actual[key] === shared[key]);
+  })).toBe(true);
   await expect(computerModelButton).toHaveClass(/model-picker-button/);
   await expect(computerModelButton.locator('.model-picker-selection')).toBeVisible();
   await expect(computerModelButton.locator('.model-picker-name')).toBeVisible();

@@ -4133,7 +4133,8 @@ a.sidebar-settings {
   color: var(--muted);
   font-size: 11px;
 }
-.subagent-controls .model-picker-button {
+.subagent-controls .model-picker-button,
+.computer-model-field .model-picker-button {
   display: flex;
   width: 100%;
   max-width: none;
@@ -4154,7 +4155,8 @@ a.sidebar-settings {
   width: 17px;
   height: 17px;
 }
-.subagent-controls .subagent-thinking-field select {
+.subagent-controls .subagent-thinking-field select,
+.computer-prefs-row .computer-model-field > select {
   display: block;
   width: 100%;
   min-width: 0;
@@ -4173,6 +4175,7 @@ a.sidebar-settings {
   overflow-wrap: anywhere;
 }
 .subagent-controls :focus-visible,
+.computer-model-field :focus-visible,
 .subagent-scope:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

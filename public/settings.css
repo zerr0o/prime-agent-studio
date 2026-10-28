@@ -297,9 +297,8 @@
 .computer-prefs-row {
   align-items: flex-start;
 }
-.computer-model-field > select {
-  display: block;
-  margin-top: 8px;
+.computer-model-field {
+  width: 100%;
 }
 #computer-prefs-error:not([hidden]) {
   margin-top: 4px;
