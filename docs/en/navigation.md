@@ -11,6 +11,14 @@ Since version 3.0.0, conversations appear directly beneath their collapsible pro
 - An expanded project initially shows five conversations, with pinned sessions first, followed by the most recent ones. **Show more** adds five. **Show less** returns to the first page. The selected conversation stays visible even when it is older.
 - Expanded and collapsed projects are remembered in this browser. Opening a conversation from another view expands its project.
 
+## Persistent goals
+
+When a conversation has a native goal, the **Goal** button in its header shows status and usage. **Edit objective** keeps the counters. **Stop goal** pauses it and stops the current run after the engine confirms the change. **Clear goal** removes the goal while preserving conversation messages. If a goal ends in **Error**, **Retry goal** starts one visible run of `/goal resume` on that same saved session without resetting its identity or usage. Retry is explicit; an error never starts an automatic retry loop. If another client changed the goal, reload it before retrying.
+
+**Resume goal** also continues a paused goal, or a budget-limited goal whose original budget still has room. It never increases the budget or resets usage. While the current run is active, stopping, or being admitted, the dialog explains why Resume is unavailable. Opening the dialog refreshes its state before enabling actions; after Stop finishes, Resume becomes available. A failed refresh offers Reload instead of acting on stale state.
+
+Editing appears when the connected engine advertises `goal_objective_edit`; stopping and clearing require `goal_lifecycle_control`. Resume and Retry additionally require the `goal_error_resume` capability. With no engine connection, or with an older engine, the goal remains read-only. Consultation mode also hides mutations.
+
 ## Switch quickly with Alt
 
 Hold **Alt** to show the radial switcher above the workspace, including open dialogs. It contains up to six non-archived conversations, chosen by their latest activity across all projects, then sorted alphabetically by title. Project names appear in bold with their assigned color.

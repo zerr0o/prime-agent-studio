@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PNG_BASE64 } from '../scripts/fixtures/pixel.mjs';
 import { request } from 'node:http';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, readdir, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createApp } from '../server.mjs';
@@ -76,6 +76,132 @@ test('server health and system settings report the packaged release version', as
   const { api } = await fixture(t);
   assert.equal((await api('/api/health')).json.version, version);
   assert.equal((await api('/api/system')).json.studio, version);
+});
+
+test('session goal routes dispatch read, edit, stop and clear to the goal service', async (t) => {
+  const calls = [];
+  const goalService = {
+    get: async (id) => {
+      calls.push(['get', id]);
+      return { goal: null, editable: false };
+    },
+    update: async (id, body) => {
+      calls.push(['update', id, body]);
+      return { goal: null, editable: false };
+    },
+    control: async (id, action, body) => {
+      calls.push(['control', id, action, body]);
+      return { goal: null, editable: false };
+    },
+    busy: () => false,
+  };
+  const { api } = await fixture(t, { goalService });
+  const body = { cwd: 'sample', goalId: 'goal-1', expectedObjective: 'Finish' };
+  assert.equal((await api('/api/sessions/thread-1/goal')).status, 200);
+  assert.equal(
+    (await api('/api/sessions/thread-1/goal', { method: 'PATCH', body: { ...body, objective: 'Ship' } }))
+      .status,
+    200,
+  );
+  assert.equal((await api('/api/sessions/thread-1/goal/stop', { method: 'POST', body })).status, 200);
+  assert.equal((await api('/api/sessions/thread-1/goal/clear', { method: 'POST', body })).status, 200);
+  assert.deepEqual(calls, [
+    ['get', 'thread-1'],
+    ['update', 'thread-1', { ...body, objective: 'Ship' }],
+    ['control', 'thread-1', 'stop', body],
+    ['control', 'thread-1', 'clear', body],
+  ]);
+});
+
+test('goal resume requires native capability and starts one run on the exact saved session', async (t) => {
+  let nativeSupport = false;
+  const f = await fixture(t, {
+    savedGoalCapabilities: async () => ({ resumable: nativeSupport }),
+  });
+  const saved = {
+    goalId: 'same-goal',
+    objective: 'Continue exact goal',
+    status: 'error',
+    tokensUsed: 72,
+    tokenBudget: 1000,
+    timeUsedSeconds: 40,
+    continuationsUsed: 3,
+  };
+  await appendFile(
+    join(f.sessionDir, '2026-native-session.jsonl'),
+    JSON.stringify({
+      type: 'custom',
+      id: 'goal-state-1',
+      parentId: 'initial-message',
+      customType: 'thread_goal_state',
+      data: saved,
+    }) + '\n',
+  );
+  const path = '/api/sessions/native-session/goal/resume';
+  const body = { cwd: f.cwd, goalId: saved.goalId, expectedObjective: saved.objective };
+  assert.equal((await f.api('/api/sessions/native-session/goal')).json.resumable, undefined);
+  assert.equal((await f.api(path, { method: 'POST', body })).status, 503);
+  assert.equal(f.runtime.controls.length, 0);
+
+  nativeSupport = true;
+  assert.equal((await f.api('/api/sessions/native-session/goal')).json.resumable, true);
+  for (const invalid of [
+    { ...body, goalId: 'other' },
+    { ...body, expectedObjective: 'Other goal' },
+    { ...body, cwd: f.root },
+    { ...body, tokenBudget: 99999 },
+  ]) {
+    assert.equal(
+      (await f.api(path, { method: 'POST', body: invalid })).status,
+      invalid.tokenBudget ? 400 : 409,
+    );
+  }
+  assert.equal(f.runtime.controls.length, 0);
+  const accepted = await f.api(path, { method: 'POST', body });
+  assert.equal(accepted.status, 200, accepted.text);
+  assert.equal(accepted.json.run.sessionId, 'native-session');
+  assert.equal(accepted.json.run.prompt, '/goal resume');
+  assert.equal(f.runtime.controls.length, 1);
+  assert.equal(f.runtime.controls[0].input.message, '/goal resume');
+  assert.equal(f.runtime.controls[0].input.sessionFile, join(f.sessionDir, '2026-native-session.jsonl'));
+  assert.equal((await f.api(path, { method: 'POST', body })).status, 409);
+  assert.equal(f.runtime.controls.length, 1);
+  f.runtime.controls[0].finish();
+
+  for (const [index, status] of ['paused', 'budget_limited'].entries()) {
+    const resumable = { ...saved, goalId: `${status}-goal`, status };
+    await appendFile(
+      join(f.sessionDir, '2026-native-session.jsonl'),
+      JSON.stringify({
+        type: 'custom',
+        id: `goal-state-${index + 2}`,
+        parentId: 'initial-message',
+        customType: 'thread_goal_state',
+        data: resumable,
+      }) + '\n',
+    );
+    const requestBody = { ...body, goalId: resumable.goalId };
+    assert.equal((await f.api('/api/sessions/native-session/goal')).json.resumable, true);
+    const acceptedAgain = await f.api(path, { method: 'POST', body: requestBody });
+    assert.equal(acceptedAgain.status, 200, acceptedAgain.text);
+    assert.equal(acceptedAgain.json.run.sessionId, 'native-session');
+    assert.equal(acceptedAgain.json.run.prompt, '/goal resume');
+    assert.equal(f.runtime.controls.length, index + 2);
+    assert.equal(f.runtime.controls.at(-1).input.message, '/goal resume');
+    f.runtime.controls.at(-1).finish();
+  }
+});
+
+test('ordinary run admission waits while a saved goal mutation owns the session', async (t) => {
+  const goalService = {
+    get: async () => ({ goal: null, editable: false }),
+    update: async () => ({ goal: null, editable: false }),
+    control: async () => ({ goal: null, editable: false }),
+    busy: (id) => id === 'native-session',
+  };
+  const { run, runtime } = await fixture(t, { goalService });
+  assert.equal((await run({ sessionId: 'native-session' })).status, 409);
+  assert.equal(runtime.controls.length, 0);
 });
 
 test('retired model choices are rejected for messages and defaults without switching to a paid model', async (t) => {
