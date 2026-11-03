@@ -8,4 +8,7 @@ if (packageRoot) {
   register('./session-quiescence.mjs', import.meta.url, { data });
   // Per-conversation shared memories (default off). Same scope.
   register('./shared-memories.mjs', import.meta.url, { data });
+  // Beta: implicit generation default follows model.maxTokens. Same scope,
+  // inherited by both RPC and print workers (and their child processes).
+  register('./model-output-budget.mjs', import.meta.url, { data });
 }

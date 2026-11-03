@@ -4,6 +4,11 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.8-beta.2
+
+- **Model output budget**: native requests now use the model’s declared `maxTokens` by default instead of the implicit 32,000-token cap. Explicit request limits remain unchanged. The same default applies to main conversations and subagents.
+- **Long reasoning**: Claude Opus 5.5 can use its declared 128,000-token output ceiling. This is a ceiling, not a required token count; long reasoning can take longer and cost more. Reaching the new ceiling is still possible.
+
 ## 4.4.8-beta.1
 
 - **Shared memories per conversation**: the new option is off by default. Its saved choice controls global memory injection and knowledge retrieval, including resumed conversations and subagents. Local memories and project context remain available.

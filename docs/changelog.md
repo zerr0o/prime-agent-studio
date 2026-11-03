@@ -4,6 +4,11 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.8-beta.2
+
+- **Budget de sortie du modèle** : les requêtes natives utilisent désormais le `maxTokens` déclaré par le modèle, au lieu du plafond implicite de 32 000 tokens. Les limites explicites restent inchangées. Le même défaut s’applique aux conversations principales et aux sous-agents.
+- **Réflexions longues** : Claude Opus 5.5 peut utiliser son plafond déclaré de 128 000 tokens en sortie. Il s’agit d’un plafond, pas d’un quota à consommer ; une longue réflexion peut durer et coûter davantage. Atteindre le nouveau plafond reste possible.
+
 ## 4.4.8-beta.1
 
 - **Mémoires partagées par conversation** : la nouvelle option est désactivée par défaut. Son choix est conservé et contrôle l’injection des mémoires globales et la recherche de connaissances, y compris à la reprise et pour les sous-agents. Les mémoires locales et le contexte du projet restent disponibles.

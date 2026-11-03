@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "4.4.8-beta.1",
+  "version": "4.4.8-beta.2",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -32,6 +32,7 @@
     "test:knowledge": "node scripts/test-knowledge-ui.mjs",
     "test:knowledge:native": "node scripts/test-knowledge-native.mjs",
     "test:shared-memories:native": "node scripts/test-shared-memories-native.mjs",
+    "test:output-budget:native": "node scripts/test-model-output-budget-native.mjs",
     "test:computer-use": "node --test test/computer-use*.test.mjs",
     "test:computer-use:ui": "node scripts/test-computer-use-ui.mjs && node scripts/test-computer-use-app.mjs",
     "test:computer-use:native": "node scripts/test-computer-use-native.mjs && node scripts/test-computer-use-history-native.mjs && node scripts/test-computer-use-delegation-native.mjs",
