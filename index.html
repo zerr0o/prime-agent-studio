@@ -637,6 +637,7 @@
                       <option value="xhigh" data-i18n="ui.tres_eleve">Très élevé</option>
                       <option value="max" data-i18n="ui.maximum">Maximum</option>
                     </select>
+                    <span class="composer-permissions">
                     <label
                       class="questions-toggle"
                       data-i18n-title="questions.scope"
@@ -654,6 +655,20 @@
                     </label>
                     <label
                       class="questions-toggle"
+                      data-i18n-title="sharedMemories.scope"
+                      title="Partage les mémoires globales. Ne restreint pas l’accès fichiers/MCP et ne supprime pas l’historique."
+                    >
+                      <input
+                        id="allow-shared-memories"
+                        type="checkbox"
+                        aria-label="Injecter les mémoires partagées"
+                        data-i18n-aria-label="sharedMemories.toggle"
+                      />
+                      <span class="toggle-full" data-i18n="sharedMemories.toggle">Injecter les mémoires partagées</span
+                      ><span class="toggle-short" data-i18n="sharedMemories.toggleShort">Mémoires</span>
+                    </label>
+                    <label
+                      class="questions-toggle"
                       data-i18n-title="questions.scope"
                       title="Propre à cette conversation · modifiable entre deux exécutions"
                     >
@@ -666,6 +681,7 @@
                       <span class="toggle-full" data-i18n="computer.allow">Autoriser le Computer Use</span
                       ><span class="toggle-short" data-i18n="computer.label">Computer Use</span>
                     </label>
+                    </span>
                   </div>
                   <button
                     id="stop-button"

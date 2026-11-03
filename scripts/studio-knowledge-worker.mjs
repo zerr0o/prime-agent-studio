@@ -27,7 +27,7 @@ export async function readKnowledgeRequest(request) {
   )
     throw new Error('Knowledge reader configuration is invalid.');
   const store = createStore({ dataDir: config.dataDir, sessionDir: config.sessionDir });
-  const knowledge = createKnowledge({ store, ...config });
+  const knowledge = createKnowledge({ store, ...config, sharedMemories: request.sharedMemories === true });
   if (action === 'search') {
     if (typeof params.q !== 'string' || !params.q.trim() || params.q.length > 300)
       throw new Error('Use a focused query of 1 to 300 characters.');

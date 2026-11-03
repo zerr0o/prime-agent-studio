@@ -4,6 +4,12 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.8-beta.1
+
+- **Shared memories per conversation**: the new option is off by default. Its saved choice controls global memory injection and knowledge retrieval, including resumed conversations and subagents. Local memories and project context remain available.
+- **Mobile options on one row**: Questions, Memories and Computer Use stay together below the model and reasoning controls, including narrow conversation panes. Existing labels and toggle styles are preserved.
+- **Scope**: this controls memory injection, not file, network or MCP permissions. Global instructions and skills remain independent; information already exchanged in the conversation is not erased.
+
 ## 4.4.7
 
 - **On-demand Computer Use**: desktop tasks use ordinary native subagents while the main agent keeps its model and reasoning level. Permission alone starts no desktop worker; one exact agent holds the desktop at a time.

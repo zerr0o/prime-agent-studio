@@ -161,3 +161,116 @@ test('native extension loader discovers tools; execution uses native cwd and sup
   });
   assert.equal(JSON.parse(otherResult.content[0].text).items.length, 0);
 });
+
+test('agent knowledge defaults to local memories; opt-in is per request and cannot be spoofed in tool params', async (t) => {
+  const { config, cwd, file } = await fixture(t);
+  const entry = (id, content, scope, kind = 'memory') => ({
+    id,
+    kind,
+    title: id,
+    content,
+    scope,
+    version: 1,
+  });
+  const global = entry('global-memory', 'SHARED_SENTINEL', 'global');
+  const local = entry('local-memory', 'PROJECT_SENTINEL', 'local');
+  const paths = [
+    [
+      join(config.agentHome, 'harness/harness_state.json'),
+      {
+        schema: 1,
+        entries: {
+          memory: { global },
+          prompt: { rule: entry('rule', 'GLOBAL_STYLE_RULE', 'global', 'prompt') },
+          skill: {},
+          subagent: {},
+        },
+        refinements: [],
+      },
+    ],
+    [
+      join(config.agentHome, 'session-artifacts/history/harness/harness_state.json'),
+      {
+        schema: 1,
+        entries: { memory: { local }, prompt: {}, skill: {}, subagent: {} },
+        refinements: [],
+      },
+    ],
+  ];
+  for (const [path, state] of paths) {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(state));
+  }
+  // Global refinements may also be recorded in a project session, not only in
+  // the global log. Both sources must respect the same conversation opt-in.
+  const refinement = {
+    id: 'global-refinement',
+    scope: 'global',
+    summary: 'SHARED_SENTINEL refinement',
+    appliedEdits: [{ id: global.id, kind: 'memory', action: 'create', applied: true, after: global }],
+  };
+  await writeFile(join(config.agentHome, 'harness/refinements.jsonl'), JSON.stringify(refinement) + '\n');
+  await appendFile(
+    file,
+    JSON.stringify({
+      type: 'custom',
+      id: 'global-ref-entry',
+      parentId: 'answer',
+      customType: 'prime-agent.refinement',
+      data: refinement,
+    }) + '\n',
+  );
+  const files = [...paths.map(([path]) => path), file, join(config.agentHome, 'harness/refinements.jsonl')];
+  const original = await Promise.all(files.map((path) => readFile(path, 'utf8')));
+  const query = (sharedMemories, q = 'SENTINEL') =>
+    readKnowledgeRequest({
+      config: { ...config, sharedMemories: true },
+      cwd,
+      sharedMemories,
+      action: 'search',
+      params: { q, sharedMemories: true },
+    });
+  const shared = await query(true);
+  assert.ok(shared.items.some((item) => item.kind === 'memory' && item.scope === 'global'));
+  assert.ok(shared.items.some((item) => item.kind === 'refinement' && item.scope === 'global'));
+  const globals = shared.items.filter((item) => item.scope === 'global');
+  for (const sharedMemories of [undefined, false, null, 'true', 1]) {
+    const isolated = await query(sharedMemories);
+    assert.equal(isolated.items.length, 1);
+    assert.equal(isolated.items[0].scope, 'session');
+    assert.match(isolated.items[0].excerpt, /PROJECT_SENTINEL/);
+    assert.doesNotMatch(JSON.stringify(isolated), /SHARED_SENTINEL/);
+    for (const item of globals) {
+      await assert.rejects(
+        readKnowledgeRequest({
+          config,
+          cwd,
+          sharedMemories,
+          action: 'detail',
+          params: { id: item.id, sharedMemories: true },
+        }),
+        { status: 404 },
+      );
+    }
+  }
+  const parallel = await Promise.all([query(true, 'SHARED_SENTINEL'), query(false, 'SHARED_SENTINEL')]);
+  assert.ok(parallel[0].total >= 2);
+  assert.equal(parallel[1].total, 0);
+  assert.equal(
+    (await query(false, 'GLOBAL_STYLE_RULE')).total,
+    1,
+    'Global instructions are not the memory toggle',
+  );
+  assert.equal((await query(false, 'BRIDGE_REFERENCE')).total, 1, 'Project history remains available');
+  for (const item of globals) {
+    const detail = await readKnowledgeRequest({
+      config,
+      cwd,
+      sharedMemories: true,
+      action: 'detail',
+      params: { id: item.id },
+    });
+    assert.match(detail.body, /SHARED_SENTINEL/);
+  }
+  assert.deepEqual(await Promise.all(files.map((path) => readFile(path, 'utf8'))), original);
+});

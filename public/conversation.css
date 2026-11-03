@@ -253,6 +253,12 @@
   margin: 8px 12px;
 }
 
+/* Permissions wrapper: display:contents on wide rows so the three labels
+   keep participating in .model-controls directly (desktop unchanged). */
+#composer-form .composer-permissions {
+  display: contents;
+}
+
 /* Keep model, effort and the action on one compact, shared toolbar. */
 #composer-form .composer-toolbar {
   display: grid;
@@ -355,6 +361,24 @@
   .composer-footnote:not(:has(.composer-context-gauge:not([hidden]))) {
     display: none;
   }
+  /* Narrow composer: the three permission labels share one horizontal
+     row of their own, independent of the model/thinking controls above. */
+  #composer-form .composer-permissions {
+    display: flex;
+    align-items: center;
+    gap: 4px 8px;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  /* The row owns the full grid width, so never clip its labels: the shared
+     ellipsis from computer-use.css only guarded the old two-column wrap. */
+  #composer-form .model-controls .composer-permissions .questions-toggle {
+    overflow: visible;
+  }
+  #composer-form .model-controls .composer-permissions .questions-toggle span {
+    overflow: visible;
+    text-overflow: clip;
+  }
   /* Narrow composer: short permission labels fit whole; full names stay
      in checkbox aria-labels and the label title. */
   .questions-toggle .toggle-full {
@@ -367,6 +391,19 @@
 /* Very narrow screens: narrower attach buttons leave the textarea wide
    enough for the long placeholder in two lines instead of three. */
 @media (max-width: 400px) {
+  /* Tightest panes (320px): same single row, same type size; only the
+     gaps and checkbox shrink so the three labels still fit with no
+     clipping or horizontal scroll. */
+  #composer-form .composer-permissions {
+    column-gap: 6px;
+  }
+  #composer-form .composer-permissions .questions-toggle {
+    gap: 3px;
+  }
+  #composer-form .composer-permissions .questions-toggle input {
+    width: 12px;
+    height: 12px;
+  }
   #composer-form .attachment-controls .attach-image-button {
     width: 34px;
     flex-basis: 34px;

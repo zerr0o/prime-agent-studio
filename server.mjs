@@ -110,6 +110,7 @@ const publicRun = ({
   model,
   thinking,
   allowQuestions,
+  sharedMemories,
   interactions,
   prompt,
   worktreeId,
@@ -130,6 +131,7 @@ const publicRun = ({
     model,
     thinking,
     allowQuestions: !!allowQuestions,
+    sharedMemories: sharedMemories === true,
     interactions: interactions || [],
     prompt: text,
     attachments,
@@ -862,9 +864,12 @@ export function createApp(options = {}) {
           })
           .catch(() => {});
       }
-      if (run.allowQuestions !== undefined)
+      if (run.allowQuestions !== undefined || run.sharedMemories !== undefined)
         void store
-          .setConversationSettings(event.sessionId, { allowQuestions: run.allowQuestions })
+          .setConversationSettings(event.sessionId, {
+            ...(run.allowQuestions !== undefined ? { allowQuestions: run.allowQuestions } : {}),
+            ...(run.sharedMemories !== undefined ? { sharedMemories: run.sharedMemories } : {}),
+          })
           .catch(console.error);
     }
     if (event.kind === 'done') {
@@ -1170,6 +1175,9 @@ export function createApp(options = {}) {
       throw new HttpError(400, tr('server.niveau_de_reflexion_invalide'));
     if (body.sessionId != null && body.sessionId !== '' && !validId(body.sessionId))
       throw new HttpError(400, tr('server.identifiant_de_session_invalide'));
+    // Resume must see a just-finished binding write; otherwise a slow
+    // initial set(true) could be missed and a later opt-out lost.
+    await store.flushConversationSettings?.().catch(() => {});
     let existing;
     if (body.sessionId) {
       existing = await store.history(body.sessionId);
@@ -1216,6 +1224,8 @@ export function createApp(options = {}) {
       (body.thinking ?? settings?.thinking ?? existing?.thinking) || catalog.default?.thinking;
     if (body.allowQuestions !== undefined && typeof body.allowQuestions !== 'boolean')
       throw new HttpError(400, tr('server.demande_invalide'));
+    if (body.sharedMemories !== undefined && typeof body.sharedMemories !== 'boolean')
+      throw new HttpError(400, tr('server.demande_invalide'));
     if (body.computerUse !== undefined && typeof body.computerUse !== 'boolean')
       throw new HttpError(400, 'Invalid computerUse flag. Send true to enable desktop control for this run.');
     // Native-only engine: an explicit computerUseBackend is only legitimate
@@ -1228,6 +1238,10 @@ export function createApp(options = {}) {
     }
     const allowQuestions =
       body.allowQuestions ?? settings?.allowQuestions ?? (await studioPreferences()).allowQuestionsByDefault;
+    // Per-conversation opt-in for user-approved shared memories. Missing in
+    // new or legacy conversations means false; no Studio-wide default.
+    // Strict boolean: stored legacy non-booleans read as false.
+    const sharedMemories = body.sharedMemories ?? settings?.sharedMemories === true;
     if (catalog.models?.find((model) => model.id === selectedModel)?.availability === 'unavailable')
       throw new HttpError(409, tr('model.unavailableSelection'));
     // Check after awaited validation so simultaneous HTTP requests cannot race the lock.
@@ -1236,6 +1250,12 @@ export function createApp(options = {}) {
     if (existing && (sessionLocks.has(existing.id) || conversationSettings.busy(existing.id)))
       throw new HttpError(409, tr('server.cette_session_travaille_deja'));
     if (existing) sessionLocks.add(existing.id);
+    // Explicit resume override persists authoritatively even if native reuses
+    // the session without emitting a session event. Serialized in the store
+    // so a later binding write cannot silently revert an opt-out.
+    if (existing?.id && body.sharedMemories !== undefined) {
+      await store.setConversationSettings(existing.id, { sharedMemories });
+    }
     const run = {
       id: randomUUID(),
       sessionId: existing?.id || null,
@@ -1245,6 +1265,7 @@ export function createApp(options = {}) {
       model: selectedModel || null,
       thinking: selectedThinking || null,
       allowQuestions,
+      sharedMemories,
       interactions: [],
       prompt: body.message.trim() || tr('ui.analyse_les_pieces_jointes'),
       seq: 0,
@@ -1298,6 +1319,7 @@ export function createApp(options = {}) {
         model: selectedModel || undefined,
         thinking: selectedThinking || undefined,
         allowQuestions,
+        sharedMemories,
         onEvent: (event) => pushEvent(run, event),
       });
       void context.notify(metricsProjectId(worktreeAuth?.projectCwd || cwd)).catch(() => {});

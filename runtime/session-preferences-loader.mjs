@@ -6,4 +6,6 @@ if (packageRoot) {
   register('./session-preferences.mjs', import.meta.url, { data });
   // Same native AgentSession scope, inherited by both RPC and print workers.
   register('./session-quiescence.mjs', import.meta.url, { data });
+  // Per-conversation shared memories (default off). Same scope.
+  register('./shared-memories.mjs', import.meta.url, { data });
 }

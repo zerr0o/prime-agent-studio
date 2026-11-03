@@ -150,6 +150,12 @@
   display: none;
 }
 
+/* Permissions wrapper: display:contents on wide rows so the three labels
+   keep participating in .model-controls directly (desktop unchanged). */
+.cvw-shell .cv-composer-form .composer-permissions {
+  display: contents;
+}
+
 /* M2 per-pane composer compat (STAGED — .cv-composer-form exists only on
    unmounted builder output for now, so nothing below matches live DOM yet).
    Mirrors the #composer-form / control-ID rules of conversation.css,
@@ -253,6 +259,15 @@
     grid-row: 1;
     min-height: 44px;
   }
+  /* Narrow panes: the three permission labels share one horizontal row of
+     their own, independent of the model/thinking controls above. */
+  .cvw-shell .cv-composer-form .composer-permissions {
+    display: flex;
+    align-items: center;
+    gap: 4px 8px;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
   .cvw-shell .cv-composer-form .has-command-chip {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 2px 8px;
@@ -284,6 +299,18 @@
   }
 }
 @media (max-width: 400px) {
+  /* Tightest panes: same single row, same type size; only gaps and
+     checkbox shrink so the three labels still fit with no clipping. */
+  .cvw-shell .cv-composer-form .composer-permissions {
+    column-gap: 6px;
+  }
+  .cvw-shell .cv-composer-form .composer-permissions .questions-toggle {
+    gap: 3px;
+  }
+  .cvw-shell .cv-composer-form .composer-permissions .questions-toggle input {
+    width: 12px;
+    height: 12px;
+  }
   .cvw-shell .cv-composer-form .attachment-controls .attach-image-button {
     width: 34px;
     flex-basis: 34px;

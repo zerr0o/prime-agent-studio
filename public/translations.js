@@ -829,6 +829,12 @@ export const messages = {
     fr: 'Propre à cette conversation · modifiable entre deux exécutions',
     en: 'For this conversation · editable between runs',
   },
+  'sharedMemories.toggle': { fr: 'Injecter les mémoires partagées', en: 'Inject shared memories' },
+  'sharedMemories.toggleShort': { fr: 'Mémoires', en: 'Memories' },
+  'sharedMemories.scope': {
+    fr: 'Partage les mémoires globales. Ne restreint pas l’accès fichiers/MCP et ne supprime pas l’historique.',
+    en: 'Shares global memories. Does not restrict file/MCP access or remove prior history.',
+  },
   'questions.other': { fr: 'Ou écrivez une autre réponse…', en: 'Or write another answer…' },
   'questions.answer': { fr: 'Votre réponse…', en: 'Your answer…' },
   'questions.send': { fr: 'Envoyer la réponse', en: 'Send answer' },

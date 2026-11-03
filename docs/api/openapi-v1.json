@@ -814,6 +814,9 @@
                   },
                   "allowQuestions": {
                     "type": "boolean"
+                  },
+                  "sharedMemories": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -4080,6 +4083,7 @@
           "model",
           "thinking",
           "allowQuestions",
+          "sharedMemories",
           "interactions"
         ],
         "properties": {
@@ -4120,6 +4124,9 @@
             "nullable": true
           },
           "allowQuestions": {
+            "type": "boolean"
+          },
+          "sharedMemories": {
             "type": "boolean"
           },
           "interactions": {

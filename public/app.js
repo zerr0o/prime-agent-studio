@@ -550,6 +550,7 @@ function restoreGenerationSettings(history = session(), run = activeRun()) {
     model: state.modelCatalogDefault || '',
     thinking: state.modelCatalogThinking || '',
     allowQuestions: state.studioPreferences?.allowQuestionsByDefault !== false,
+    sharedMemories: false,
   };
   const saved =
     rememberGenerationSettings(state.sessionId, history?.generationSettings, history?.generationRevision)
@@ -562,6 +563,7 @@ function restoreGenerationSettings(history = session(), run = activeRun()) {
           model: saved.model ?? run?.model ?? history?.model ?? defaults.model,
           thinking: saved.thinking ?? run?.thinking ?? history?.thinking ?? defaults.thinking,
           allowQuestions: saved.allowQuestions ?? run?.allowQuestions ?? defaults.allowQuestions,
+          sharedMemories: saved.sharedMemories ?? run?.sharedMemories ?? defaults.sharedMemories,
         }
       : { ...defaults, ...draft };
   selectedGeneration = { ...settings, ...pending?.settings };
@@ -576,6 +578,8 @@ function restoreGenerationSettings(history = session(), run = activeRun()) {
     setSelectedModel(selectedGeneration.model, false);
     $('thinking-select').value = selectedGeneration.thinking;
     $('allow-questions').checked = !!selectedGeneration.allowQuestions;
+    const sharedBox = $('allow-shared-memories');
+    if (sharedBox) sharedBox.checked = selectedGeneration.sharedMemories === true;
   }
 }
 // Single origin-aware save path (no shadow state). The origin view AND its
@@ -601,7 +605,7 @@ async function saveGenerationSettings(patch, view = null) {
     return;
   }
   const run = origin ? runForView(origin) : activeRun();
-  if (isRunning(run) && ('model' in patch || 'allowQuestions' in patch || !id || run.status !== 'running')) {
+  if (isRunning(run) && ('model' in patch || 'allowQuestions' in patch || 'sharedMemories' in patch || !id || run.status !== 'running')) {
     restoreGenerationSettings();
     return;
   }
@@ -622,7 +626,7 @@ async function saveGenerationSettings(patch, view = null) {
   if (convViews && origin && convViews.isFocused(origin.id)) selectedGeneration = { ...previous, ...patch };
   if (!id) {
     if (origin && bindingOk() && !origin.sessionId) {
-      origin.gen = { model: '', thinking: '', allowQuestions: true, ...origin.gen, ...patch };
+      origin.gen = { model: '', thinking: '', allowQuestions: true, sharedMemories: false, ...origin.gen, ...patch };
       if (convViews) convViews.persist();
     }
     return;
@@ -1432,6 +1436,7 @@ function updateComposer(view = null) {
   const modelSelect = node('model-select', 'modelSelect');
   const modelButton = node('model-picker-button', 'modelBtn');
   const allowQuestions = node('allow-questions', 'allowQ');
+  const allowShared = node('allow-shared-memories', 'allowSM');
   const thinkingSelect = node('thinking-select', 'thinking');
   const runStatus = node('run-status', 'runStatus');
   const runStatusLabel = node('run-status-label', 'runLabel');
@@ -1468,6 +1473,7 @@ function updateComposer(view = null) {
   if (modelSelect) modelSelect.disabled = settingsDisabled || running;
   if (modelButton) modelButton.disabled = settingsDisabled || running;
   if (allowQuestions) allowQuestions.disabled = settingsDisabled || running;
+  if (allowShared) allowShared.disabled = settingsDisabled || running;
   Q?.update();
   if (thinkingSelect) {
     thinkingSelect.disabled = settingsDisabled || (running && (!viewSessionId || run?.status !== 'running'));
@@ -2476,6 +2482,7 @@ convViews = createConversationViews({
     model: $('model-select').value,
     thinking: $('thinking-select').value,
     allowQuestions: $('allow-questions').checked,
+    sharedMemories: $('allow-shared-memories')?.checked === true,
   }),
   hostRender: (force) => renderMessages(force),
   historyRenderOptions: (view) => historyRenderOptions(view),
@@ -3013,6 +3020,9 @@ function ensureViewUnits(view) {
   nodes.allowQ.addEventListener('change', () => {
     void saveGenerationSettings({ allowQuestions: nodes.allowQ.checked }, view);
   });
+  nodes.allowSM.addEventListener('change', () => {
+    void saveGenerationSettings({ sharedMemories: nodes.allowSM.checked }, view);
+  });
   // Computer Use engine stays sibling-owned: the pane checkbox delegates to
   // the host checkbox flow (focus-first makes it the acting view).
   nodes.allowCU.addEventListener('change', () => {
@@ -3046,6 +3056,7 @@ function writeTripleToNodes(nodes, triple) {
   try {
     if (nodes.thinking) nodes.thinking.value = triple.thinking || '';
     if (nodes.allowQ) nodes.allowQ.checked = !!triple.allowQuestions;
+    if (nodes.allowSM) nodes.allowSM.checked = triple.sharedMemories === true;
   } catch {}
   paintModelControl(nodes, triple.model || '');
 }
@@ -3089,6 +3100,7 @@ function hostComposerNodes() {
     modelSelect: pick('model-select'),
     thinking: pick('thinking-select'),
     allowQ: pick('allow-questions'),
+    allowSM: pick('allow-shared-memories'),
     allowCU: pick('allow-computer-use'),
     send: pick('send-button'),
     stop: pick('stop-button'),
@@ -3160,6 +3172,7 @@ function tripleForView(view) {
     model: state.modelCatalogDefault || '',
     thinking: state.modelCatalogThinking || '',
     allowQuestions: state.studioPreferences?.allowQuestionsByDefault !== false,
+    sharedMemories: false,
   };
   // Draft picks belong to unbound new chats only; a stale gen must never
   // override a bound session (cleared on bind, guarded here regardless).
@@ -3168,6 +3181,7 @@ function tripleForView(view) {
       model: view.gen.model || '',
       thinking: view.gen.thinking || '',
       allowQuestions: view.gen.allowQuestions !== false,
+      sharedMemories: view.gen.sharedMemories === true,
     };
   if (view?.sessionId || view?.viewRunId) {
     // Per-field nullish fallback (same semantics as restoreGenerationSettings):
@@ -3205,6 +3219,13 @@ function tripleForView(view) {
         run?.allowQuestions ??
         row?.allowQuestions ??
         defaults.allowQuestions,
+      sharedMemories:
+        (pending?.sharedMemories ??
+          confirmed?.sharedMemories ??
+          settings?.sharedMemories ??
+          run?.sharedMemories ??
+          row?.sharedMemories ??
+          defaults.sharedMemories) === true,
     };
   }
   return { ...defaults };
@@ -3219,6 +3240,8 @@ function paintViewChrome(view) {
   const triple = tripleForView(view);
   if (nodes.thinking.value !== (triple.thinking || '')) nodes.thinking.value = triple.thinking || '';
   if (nodes.allowQ.checked !== triple.allowQuestions) nodes.allowQ.checked = triple.allowQuestions;
+  if (nodes.allowSM && nodes.allowSM.checked !== (triple.sharedMemories === true))
+    nodes.allowSM.checked = triple.sharedMemories === true;
   const hostCU = document.getElementById('allow-computer-use');
   if (hostCU && nodes.allowCU.checked !== hostCU.checked) nodes.allowCU.checked = hostCU.checked;
   const run = runForView(view);
@@ -3237,6 +3260,7 @@ function restoreGenerationForView(view) {
     model: gen.model || state.modelCatalogDefault || '',
     thinking: gen.thinking || '',
     allowQuestions: gen.allowQuestions !== false,
+    sharedMemories: gen.sharedMemories === true,
   };
   if (convViews?.composerLive?.() && view.units?.nodes) {
     // Dynamic pane owns its nodes; host keeps primary truth (untouched here).
@@ -3245,6 +3269,8 @@ function restoreGenerationForView(view) {
     setSelectedModel(triple.model, false);
     $('thinking-select').value = triple.thinking;
     $('allow-questions').checked = triple.allowQuestions;
+    const sharedBox = $('allow-shared-memories');
+    if (sharedBox) sharedBox.checked = triple.sharedMemories === true;
   }
   renderConfigurationWarning();
 }
@@ -4129,6 +4155,7 @@ async function sendMessage(event) {
         model: effectiveModel,
         thinking: originTriple?.thinking || $('thinking-select').value || state.modelCatalogThinking || '',
         allowQuestions: origin ? !!originTriple?.allowQuestions : $('allow-questions').checked,
+        sharedMemories: origin ? originTriple?.sharedMemories === true : $('allow-shared-memories')?.checked === true,
       },
     });
     Object.assign(run, {
@@ -6439,6 +6466,11 @@ $('allow-questions').onchange = () =>
     { allowQuestions: $('allow-questions').checked },
     convViews?.byId(PRIMARY_VIEW_ID) || undefined,
   );
+$('allow-shared-memories').onchange = () =>
+  void saveGenerationSettings(
+    { sharedMemories: $('allow-shared-memories').checked },
+    convViews?.byId(PRIMARY_VIEW_ID) || undefined,
+  );
 questionsUI = makeQuestions(convViews.byId(PRIMARY_VIEW_ID), $('interactive-questions'));
 $('enter-to-send').onchange = (e) => {
   savePreferences({ enterToSend: e.target.checked });
@@ -6710,6 +6742,7 @@ function voiceSnapshot(view) {
     execCwd: view.execCwd,
     triple: JSON.stringify(tripleForView(view)),
     allowQuestions: tripleForView(view).allowQuestions,
+    sharedMemories: tripleForView(view).sharedMemories,
     runId: runForView(view)?.id || null,
     runStatus: runForView(view)?.status || null,
     draft: text.get(),

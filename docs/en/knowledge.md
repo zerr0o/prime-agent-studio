@@ -6,7 +6,7 @@ Available since version 3.0.0, this view lets you find past work from a project,
 
 ## Read a source
 
-Open **Project knowledge** from the **Session** tab in the workspace panel on the right, below **Copy path**. The button is also available in the project overview and its **⋯** menu. Search for words from a decision, problem or solution, then filter by **Past work**, **Memories**, **Prompts**, **Skills**, **Subagents** or **Refinements**. The last four show every native harness entry the agent receives. **Global** shows only cross-project entries. Search ignores case and accents; every word entered must match. This is text search with no model call.
+Open **Project knowledge** from the **Session** tab in the workspace panel on the right, below **Copy path**. The button is also available in the project overview and its **⋯** menu. Search for words from a decision, problem or solution, then filter by **Past work**, **Memories**, **Prompts**, **Skills**, **Subagents** or **Refinements**. The last four show the native harness entries recorded by Prime Agent. **Global** shows only cross-project entries. Search ignores case and accents; every word entered must match. This is text search with no model call.
 
 Select a result to read its content and **Exact source**. Displayed dates come from native files. Missing dates are not invented. Refinements show before/after changes when these were recorded; changes that were not applied remain explicitly identified.
 
@@ -24,6 +24,14 @@ New runs started by Studio receive two tools, `studio_knowledge_search` and `stu
 
 The agent searches within its execution project and reads useful sources. The tool cannot choose a different project. Content from an old conversation remains reference material to verify; it does not replace your current request. Searches do not automatically add the full history to context. A run started before this feature was enabled must finish; the tools become available when the session resumes.
 
+### Choose shared memories
+
+The conversation option **Inject shared memories** is off by default, including for an older conversation with no saved choice. Turn it on before sending to reuse global memories. The choice is saved for that conversation and inherited by its subagents; it does not become the default for new conversations. Wait for the run to finish before changing it.
+
+When the option is off, the engine does not inject global memories or global refinement summaries. The `studio_knowledge_search` and `studio_knowledge_read` tools exclude them too, even when given a previously returned source ID. Local memories and project work remain available. The **Project knowledge** view, which you browse yourself, still displays global sources.
+
+This setting deletes no files or information already exchanged in the conversation history. Global instructions, skills, subagent definitions and MCP connections remain independent. It does not restrict access to files, the network or other agents: it is not a sandbox. To start without information already received, create a new conversation with the option off.
+
 ## Sources and limits
 
 Native JSONL files remain the source of truth. Studio reads the current branch of each conversation, subagents preserved in native artifact directories, harness entries in `harness_state.json` and native `prime-agent.refinement` events. Refinement history remains readable after switching branches. Global memories and refinements are shared across projects by Prime Agent.
@@ -35,5 +43,7 @@ Large excerpts and changes are bounded and labelled. Some unreadable or oversize
 ## Verification
 
 `npm run test:knowledge` checks the UI against synthetic files in French and English, on desktop and mobile. `npm run test:navigation` checks nested projects and conversations. `npm test` covers sources, bounds, project isolation, concurrent cache writes and HTTP access.
+
+`npm run test:shared-memories:native` checks the context sent to a local fixture provider: simultaneous conversations, subagent inheritance, preference changes, resuming and keeping local memories. Unit tests also cover compaction and branch-summary filters. No external model is called.
 
 `npm run test:knowledge:native` verifies actual tool calls by Prime Agent and a subagent using a local fixture provider, with no external model request. After `npm run desktop:resources`, `npm run test:knowledge:packaged` checks the copied resources outside the checkout with multiple concurrent readers.

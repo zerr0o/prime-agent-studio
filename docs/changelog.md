@@ -4,6 +4,12 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.8-beta.1
+
+- **Mémoires partagées par conversation** : la nouvelle option est désactivée par défaut. Son choix est conservé et contrôle l’injection des mémoires globales et la recherche de connaissances, y compris à la reprise et pour les sous-agents. Les mémoires locales et le contexte du projet restent disponibles.
+- **Options mobiles sur une seule ligne** : Questions, Mémoires et Computer Use restent ensemble sous les réglages de modèle et de réflexion, y compris dans les panneaux de conversation étroits. Les libellés et styles de cases existants sont conservés.
+- **Portée** : ce réglage contrôle l’injection de mémoires, pas les droits d’accès aux fichiers, au réseau ou aux connexions MCP. Les instructions et skills globaux restent indépendants ; les informations déjà échangées dans la conversation ne sont pas effacées.
+
 ## 4.4.7
 
 - **Computer Use à la demande** : les tâches de bureau utilisent des sous-agents natifs ordinaires, tandis que l’agent principal garde son modèle et son niveau de réflexion. Une autorisation seule ne démarre aucun pilote ; un seul agent précis détient le bureau à la fois.

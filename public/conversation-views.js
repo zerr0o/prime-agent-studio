@@ -128,15 +128,17 @@ export function validateSidecar(input) {
     let gen = null;
     if (raw.gen !== null && raw.gen !== undefined) {
       if (typeof raw.gen !== 'object' || Array.isArray(raw.gen)) return null;
-      const { model, thinking, allowQuestions } = raw.gen;
+      const { model, thinking, allowQuestions, sharedMemories } = raw.gen;
       if ((model !== undefined && typeof model !== 'string') || String(model || '').length > 200) return null;
       if ((thinking !== undefined && typeof thinking !== 'string') || String(thinking || '').length > 200)
         return null;
       if (allowQuestions !== undefined && typeof allowQuestions !== 'boolean') return null;
+      if (sharedMemories !== undefined && typeof sharedMemories !== 'boolean') return null;
       gen = {
         model: typeof model === 'string' ? model : '',
         thinking: typeof thinking === 'string' ? thinking : '',
         allowQuestions: allowQuestions !== false,
+        sharedMemories: sharedMemories === true,
       };
     }
     entries.push({
@@ -785,6 +787,17 @@ export function createConversationViews(deps) {
     const allowQShort = cvNode('span', 'toggle-short');
     bindText(allowQShort, () => tr('questions.toggleShort'));
     allowQ.append(allowQInput, allowQFull, allowQShort);
+    const allowSM = cvNode('label', 'questions-toggle', 'allow-shared-wrap');
+    bindAttribute(allowSM, 'title', () => tr('sharedMemories.scope'));
+    const allowSMInput = cvNode('input', '', 'allow-shared-memories');
+    allowSMInput.type = 'checkbox';
+    allowSMInput.checked = false;
+    bindAttribute(allowSMInput, 'aria-label', () => tr('sharedMemories.toggle'));
+    const allowSMFull = cvNode('span', 'toggle-full');
+    bindText(allowSMFull, () => tr('sharedMemories.toggle'));
+    const allowSMShort = cvNode('span', 'toggle-short');
+    bindText(allowSMShort, () => tr('sharedMemories.toggleShort'));
+    allowSM.append(allowSMInput, allowSMFull, allowSMShort);
     const allowCU = cvNode('label', 'questions-toggle', 'allow-computer-wrap');
     allowCU.title = tr('questions.scope');
     const allowCUInput = cvNode('input', '', 'allow-computer-use');
@@ -795,6 +808,12 @@ export function createConversationViews(deps) {
     const allowCUShort = cvNode('span', 'toggle-short');
     bindText(allowCUShort, () => tr('computer.label'));
     allowCU.append(allowCUInput, allowCUFull, allowCUShort);
+    // One horizontal permissions row on narrow panes: display:contents on
+    // wide rows keeps the three labels participating in .model-controls
+    // directly (desktop layout unchanged); narrow CSS turns this wrapper
+    // into a full-width flex row independent of model/thinking controls.
+    const permissions = cvNode('span', 'composer-permissions', 'permissions');
+    permissions.append(allowQ, allowSM, allowCU);
     modelControls.append(
       modelIcon,
       modelBtn,
@@ -802,8 +821,7 @@ export function createConversationViews(deps) {
       separator,
       thinkingLabel,
       thinking,
-      allowQ,
-      allowCU,
+      permissions,
     );
     const stop = cvNode('button', 'stop-button', 'stop');
     stop.type = 'button';
@@ -841,6 +859,7 @@ export function createConversationViews(deps) {
       modelSelect,
       thinking,
       allowQ: allowQInput,
+      allowSM: allowSMInput,
       allowCU: allowCUInput,
       send,
       stop,
@@ -985,12 +1004,14 @@ export function createConversationViews(deps) {
               model: prev.gen?.model || '',
               thinking: prevNodes.thinking ? prevNodes.thinking.value : '',
               allowQuestions: prevNodes.allowQ ? !!prevNodes.allowQ.checked : true,
+              sharedMemories: prevNodes.allowSM ? prevNodes.allowSM.checked === true : false,
             }
           : getControls();
         prev.gen = {
           model: controls.model || '',
           thinking: controls.thinking || '',
           allowQuestions: controls.allowQuestions !== false,
+          sharedMemories: controls.sharedMemories === true,
         };
       }
     }

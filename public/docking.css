@@ -717,6 +717,18 @@
     grid-row: 1;
     min-height: 44px;
   }
+  /* Narrow dock panes: the three permission labels share one horizontal
+     row of their own, independent of the model/thinking controls above.
+     Specificity beats the display:contents wide bases (a later stylesheet
+     ties this selector otherwise). */
+  .dock-panel .cv-composer-form .model-controls .composer-permissions,
+  .dock-panel #composer-form .model-controls .composer-permissions {
+    display: flex;
+    align-items: center;
+    gap: 4px 8px;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
   .dock-panel .model-controls .questions-toggle {
     grid-column: auto;
     min-width: 0;
@@ -734,6 +746,18 @@
   }
 }
 @container dock-panel (max-width: 360px) {
+  /* Tightest panes: same single row, same type size; only gaps and
+     checkbox shrink so the three labels still fit with no clipping. */
+  .dock-panel .model-controls .composer-permissions {
+    column-gap: 6px;
+  }
+  .dock-panel .model-controls .composer-permissions .questions-toggle {
+    gap: 3px;
+  }
+  .dock-panel .model-controls .composer-permissions .questions-toggle input {
+    width: 12px;
+    height: 12px;
+  }
   .dock-panel .messages,
   .dock-panel .inspector-content,
   .dock-panel.inspector-content {

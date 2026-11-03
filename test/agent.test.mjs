@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAgentRuntime, normalizeEvent, discoverCli, agentEnvironment } from '../lib/agent.mjs';
 import { createModelAvailability } from '../lib/model-availability.mjs';
+import { localKernelPython } from '../lib/kernel.mjs';
 
 const exec = promisify(execFile);
 const fixture = fileURLToPath(new URL('./fixtures/agent-cli.mjs', import.meta.url));
@@ -362,12 +363,8 @@ test(
   },
 );
 
-const localPython = resolve('.local/kernel-venv/Scripts/python.exe');
-const kernelPython =
-  process.env.PRIME_AGENT_KERNEL_PYTHON ||
-  (existsSync(localPython)
-    ? localPython
-    : join(homedir(), '.prime', 'agent', 'kernel-venv', 'Scripts', 'python.exe'));
+// Use the project's managed kernel, including hashed environments, like the app.
+const kernelPython = process.env.PRIME_AGENT_KERNEL_PYTHON || localKernelPython();
 test(
   'Windows Python kernel subprocesses receive CREATE_NO_WINDOW and SW_HIDE',
   { skip: process.platform !== 'win32' || !existsSync(kernelPython) },
