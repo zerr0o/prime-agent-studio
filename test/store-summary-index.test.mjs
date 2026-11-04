@@ -107,6 +107,37 @@ function richEntries(tag, { named = true } = {}) {
   return entries;
 }
 
+test('the summary index omits Goal contents while selected history retains the native Goal', async (t) => {
+  const { options, native } = await fixture(t);
+  const goal = {
+    goalId: 'goal-index',
+    objective: 'Keep the private objective in native session history',
+    status: 'paused',
+    tokensUsed: 12,
+    tokenBudget: 100,
+    timeUsedSeconds: 4,
+    continuationsUsed: 1,
+  };
+  await native('goal-index', [
+    message('root-goal-index', null, 'user', 'Continue this work'),
+    {
+      type: 'custom',
+      id: 'goal-state-index',
+      parentId: 'root-goal-index',
+      customType: 'thread_goal_state',
+      data: goal,
+    },
+  ]);
+  const store = createStore(options);
+  await store.overview();
+  const index = JSON.parse(await readFile(join(options.dataDir, 'session-index.json'), 'utf8'));
+  const row = Object.values(index.entries)[0];
+  assert.ok(row);
+  assert.equal(Object.hasOwn(row.summary, 'goal'), false);
+  assert.equal(JSON.stringify(index).includes(goal.objective), false);
+  assert.equal((await createStore(options).history('goal-index')).goal.objective, goal.objective);
+});
+
 function stripSessions(overview) {
   return {
     totalSessions: overview.totalSessions,

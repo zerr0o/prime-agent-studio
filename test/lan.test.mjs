@@ -508,6 +508,62 @@ test('successful LAN login issues an opaque HttpOnly cookie and enables read-onl
   assert.equal((await api('/api/bootstrap', { headers: { Cookie: 'prime_studio_lan=forged' } })).status, 401);
 });
 
+test('LAN goal controls reach Studio only with full control; consultation can read the goal', async (t) => {
+  for (const readOnly of [false, true]) {
+    const calls = [];
+    const goalService = {
+      get: async (id) => {
+        calls.push(['get', id]);
+        return { goal: { id: 'goal-1', objective: 'Finish' }, editable: !readOnly };
+      },
+      update: async (id, body) => {
+        calls.push(['update', id, body]);
+        return { goal: { id: 'goal-1', objective: body.objective }, editable: true };
+      },
+      control: async (id, action, body) => {
+        calls.push(['control', id, action, body]);
+        return { goal: null, editable: true };
+      },
+      busy: () => false,
+    };
+    const f = await fixture(t, { readOnly }, { goalService });
+    const path = '/api/sessions/native-session/goal';
+    const body = { cwd: f.cwd, goalId: 'goal-1', expectedObjective: 'Finish' };
+    const headers = { Cookie: await f.authenticate(), 'Content-Type': 'application/json' };
+
+    assert.equal((await f.api(path)).status, 401);
+    const current = await f.api(path, { headers });
+    assert.equal(current.status, 200);
+    assert.equal(current.json.goal.objective, 'Finish');
+    assert.deepEqual(calls, [['get', 'native-session']]);
+
+    for (const [method, suffix, data] of [
+      ['PATCH', '', { ...body, objective: 'Ship' }],
+      ['POST', '/stop', body],
+      ['POST', '/clear', body],
+    ]) {
+      const response = await f.api(path + suffix, { method, headers, body: JSON.stringify(data) });
+      assert.equal(response.status, readOnly ? 405 : 200, `${method} ${path + suffix}`);
+    }
+    const retry = await f.api(path + '/resume', { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal(retry.status, readOnly ? 405 : 409, 'A read-only phone cannot retry a goal');
+    assert.deepEqual(
+      calls,
+      readOnly
+        ? [['get', 'native-session']]
+        : [
+            ['get', 'native-session'],
+            ['update', 'native-session', { ...body, objective: 'Ship' }],
+            ['control', 'native-session', 'stop', body],
+            ['control', 'native-session', 'clear', body],
+            ['get', 'native-session'],
+          ],
+    );
+    assert.equal((await f.api(path + '/unknown', { headers })).status, 404);
+    assert.equal((await f.api(path + '/stop', { headers })).status, 404);
+  }
+});
+
 test('LAN login throttles repeated failed codes', async (t) => {
   const { login } = await fixture(t);
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -912,7 +968,11 @@ test('LAN full control reaches former local-only routes, consultation stays bloc
     for (const secret of [ACCESS_CODE, full.config.salt, full.config.codeHash])
       assert.equal(text.includes(secret), false);
     // Stored keys are never echoed: only names, revisions and presence flags.
-    assert.equal(/secretAccessKey|secret_access|api_key\s*[:=]\s*[A-Za-z0-9]{8}|passphrase/i.test(text) && text.includes('secretAccessKey":"'), false);
+    assert.equal(
+      /secretAccessKey|secret_access|api_key\s*[:=]\s*[A-Za-z0-9]{8}|passphrase/i.test(text) &&
+        text.includes('secretAccessKey":"'),
+      false,
+    );
     assert.equal(text.includes('sk-'), false);
   };
   // Reads allowed for full control.
@@ -999,13 +1059,18 @@ test('LAN full control reaches former local-only routes, consultation stays bloc
     ['POST', '/api/system/logs', '{}'],
     ['POST', '/api/worktrees', '{}'],
   ]) {
-    const response = await full.api(path, { method, headers: fullHeaders, ...(body !== undefined ? { body } : {}) });
+    const response = await full.api(path, {
+      method,
+      headers: fullHeaders,
+      ...(body !== undefined ? { body } : {}),
+    });
     assert.notEqual(response.status, 404, `full ${method} ${path}`);
     noSecrets(response.json ?? response.text);
   }
   // PC-screen actions succeed through stubs (they open on the PC).
   assert.equal(
-    (await full.api('/api/projects/pick-directory', { method: 'POST', headers: fullHeaders, body: '{}' })).status,
+    (await full.api('/api/projects/pick-directory', { method: 'POST', headers: fullHeaders, body: '{}' }))
+      .status,
     200,
   );
   assert.equal(
@@ -1013,7 +1078,11 @@ test('LAN full control reaches former local-only routes, consultation stays bloc
     200,
   );
   // Provider OAuth job lifecycle stays reachable for full control.
-  const loginJob = await full.api('/api/providers/login', { method: 'POST', headers: fullHeaders, body: '{}' });
+  const loginJob = await full.api('/api/providers/login', {
+    method: 'POST',
+    headers: fullHeaders,
+    body: '{}',
+  });
   assert.notEqual(loginJob.status, 404);
   // Consultation stays read-only exactly as before: writes blocked, former local routes hidden.
   for (const [method, path, body] of [
@@ -1039,11 +1108,64 @@ test('LAN full control reaches former local-only routes, consultation stays bloc
     ['POST', '/api/system/logs', '{}'],
     ['POST', '/api/worktrees', '{}'],
   ]) {
-    const response = await ro.api(path, { method, headers: roHeaders, ...(body !== undefined ? { body } : {}) });
+    const response = await ro.api(path, {
+      method,
+      headers: roHeaders,
+      ...(body !== undefined ? { body } : {}),
+    });
     assert.ok([404, 405].includes(response.status), `consultation ${method} ${path} got ${response.status}`);
   }
   // Health metadata never leaves the PC, even for full control.
   assert.equal((await full.api('/api/health', { headers: fullHeaders })).status, 404);
+});
+
+test('goal and voice writes retain independent authenticated full-control and origin gates', async (t) => {
+  for (const readOnly of [false, true]) {
+    const mutations = [];
+    const f = await fixture(
+      t,
+      { readOnly },
+      {
+        goalService: {
+          get: async () => ({ goal: null, editable: false }),
+          update: async (_id, body) => {
+            mutations.push(body);
+            return { goal: null };
+          },
+          busy: () => false,
+        },
+      },
+    );
+    const headers = { Cookie: await f.authenticate(), 'Content-Type': 'application/json' };
+    const routes = [
+      ['/api/sessions/native-session/goal', { objective: 'Synthetic goal draft' }],
+      ['/api/voice/settings', { timeoutMs: 600000 }],
+    ];
+    for (const [path, data] of routes) {
+      const body = JSON.stringify(data);
+      assert.equal(
+        (await f.api(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }))
+          .status,
+        401,
+      );
+      assert.equal(
+        (
+          await f.api(path, {
+            method: 'PATCH',
+            headers: { ...headers, Origin: 'https://untrusted.example' },
+            body,
+          })
+        ).status,
+        403,
+      );
+      assert.equal((await f.api(path, { method: 'PATCH', headers, body })).status, readOnly ? 405 : 200);
+    }
+    assert.equal(mutations.length, readOnly ? 0 : 1);
+    const voice = await f.local('/api/voice/settings');
+    assert.equal(voice.status, 200);
+    assert.equal(voice.json.timeoutMs, readOnly ? 90000 : 600000);
+    assert.equal(f.runtime.controls.length, 0, 'Settings and goal edits never start a model turn');
+  }
 });
 
 test('legacy engine settings require authenticated full control over LAN; retired quota routes stay gone', async (t) => {
