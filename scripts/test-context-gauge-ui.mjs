@@ -117,9 +117,10 @@ try {
       const page = await context.newPage();
       page.setDefaultTimeout(15000);
       page.on('pageerror', (error) => errors.push(String(error?.message || error)));
-      let reads = 0;
+      let reads = 0, actionPosts = 0;
       page.on('request', (request) => {
         if (request.url().includes('/api/inspector?')) reads++;
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs') actionPosts++;
       });
       await page.goto(url);
       let gauge = page.locator('#composer-context-gauge');
@@ -145,6 +146,20 @@ try {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
       assert.equal(overflow, false, `${locale} ${mode}: no horizontal overflow`);
       await page.screenshot({ path: `test-results/context-gauge/${mode}-${locale}.png`, fullPage: true });
+      // Opening details is read-only: even keyboard activation never compacts.
+      if (mode === 'phone') await page.setViewportSize({width:320,height:900});
+      await gauge.focus();
+      await page.keyboard.press('Enter');
+      const details = page.locator('dialog.context-details-dialog');
+      await expect(details).toBeVisible();
+      await expect(details).toContainText(locale === 'fr-FR' ? 'Détails du contexte' : 'Context details');
+      await expect(details.getByRole('button', {name: locale === 'fr-FR' ? 'Compacter maintenant' : 'Compact now', exact:true})).toBeEnabled();
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await page.screenshot({path:`.local/study/v448-usability/context-${mode}-${locale}.png`});
+      await page.keyboard.press('Escape');
+      await expect(details).toBeHidden();
+      assert.equal(actionPosts,0,'opening/closing details sends no provider request');
+
       if (mode === 'classic') {
         await expect(page.locator('#inspector-usage')).toContainText(
           locale === 'fr-FR' ? 'Cache lu' : 'Cache read',

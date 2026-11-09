@@ -857,6 +857,15 @@ a.sidebar-settings {
   min-width: 0;
   overflow: hidden;
 }
+.navigation-history {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.navigation-history .icon-button {
+  width: 28px;
+  height: 28px;
+}
 .breadcrumb-icon {
   color: var(--muted);
 }
@@ -925,6 +934,28 @@ a.sidebar-settings {
   flex: 1;
   min-height: 0;
   scrollbar-gutter: stable;
+}
+/* tabindex=-1 scrollers (static #conversation-scroll and dynamic
+   .cvw-scroller, which shares this class): without an author rule the UA
+   paints `outline: auto` as a thin bar at the scroll edge once a keypress
+   flips :focus-visible on. Mouse/programmatic focus stays clean; keyboard
+   focus keeps a small inset LEFT marker only (no top/bottom bar above the
+   composer), using the theme accent (dark+light). */
+.conversation-scroll:focus:not(:focus-visible) {
+  outline: none;
+}
+.conversation-scroll:focus-visible {
+  outline: none;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+/* Forced-colors mode ignores box-shadow: fall back to a system outline so
+   keyboard focus stays visible there. */
+@media (forced-colors: active) {
+  .conversation-scroll:focus-visible {
+    box-shadow: none;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 .breadcrumb-project {
   padding: 0;

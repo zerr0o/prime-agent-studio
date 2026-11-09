@@ -355,6 +355,26 @@ fn quit_eval_detects_handler_before_dispatching() {
 }
 
 #[test]
+fn studio_navigation_blocks_bootstrap_history_but_preserves_recovery() {
+    for origin in ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"] {
+        for path in ["/", "/index.html", "/index.html?background", "/index.html#old"] {
+            let url = tauri::Url::parse(&format!("{origin}{path}")).unwrap();
+            assert!(super::allow_launcher_navigation(&url, false));
+            assert!(!super::allow_launcher_navigation(&url, true));
+        }
+        for query in ["settings", "quit", "settings=updates"] {
+            let url = tauri::Url::parse(&format!("{origin}/index.html?{query}")).unwrap();
+            assert!(super::allow_launcher_navigation(&url, true));
+        }
+    }
+    for foreign in ["https://example.com/?settings", "http://tauri.localhost:9000/?quit", "http://127.0.0.1:3088/"] {
+        let url = tauri::Url::parse(foreign).unwrap();
+        assert!(!super::allow_launcher_navigation(&url, false));
+        assert!(!super::allow_launcher_navigation(&url, true));
+    }
+}
+
+#[test]
 fn quit_treats_already_stopped_as_terminated() {
     // Real criteria: absent server {stopped:false, reason:already-stopped} is done.
     assert!(super::is_quit_terminated(true, None));

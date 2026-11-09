@@ -158,6 +158,13 @@ fn quit_handshake_script(shell: &str) -> String {
         "(() => {{ if (window.__PRIME_STUDIO_QUIT_READY__ === true) {{ window.dispatchEvent(new CustomEvent('studio:quit-request')); }} else {{ window.location.replace({shell:?}); }} }})()",
     )
 }
+// Once Studio has opened, native Back must not revisit the bootstrap page.
+// Explicit settings/quit recovery still uses the trusted local shell.
+fn allow_launcher_navigation(url: &tauri::Url, studio_entered: bool) -> bool {
+    is_launcher_url(url)
+        && (!studio_entered
+            || url.query_pairs().any(|(key, _)| key == "settings" || key == "quit"))
+}
 // Local shell URL inside the single main window. Prefers the launcher origin
 // observed at runtime (same scheme/host the window was created with); derives
 // it from the current URL when already on the shell; last resort is the
@@ -721,19 +728,20 @@ async fn desktop_start(
                 return Ok(result);
             }
             if let Some(main) = app.get_webview_window("main") {
-                main.navigate(
-                    tauri::Url::parse(&format!(
-                        "http://127.0.0.1:{}/{}",
-                        state.port,
-                        if result["showUpdates"] == true {
-                            "?settings=updates"
-                        } else {
-                            ""
-                        }
-                    ))
-                    .map_err(|e| e.to_string())?,
-                )
-                .map_err(|e| e.to_string())?;
+                let studio_url = format!(
+                    "http://127.0.0.1:{}/{}",
+                    state.port,
+                    if result["showUpdates"] == true {
+                        "?settings=updates"
+                    } else {
+                        ""
+                    }
+                );
+                // This must be browser-initiated navigation. A renderer-side
+                // location.replace from tauri.localhost sends cross-site fetch
+                // metadata, correctly rejected by the server's origin guard.
+                main.navigate(tauri::Url::parse(&studio_url).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
             }
             // ?settings=updates opens the existing main Preferences panel once
             // its page is ready. Do not also open a duplicate launcher window.
@@ -1144,6 +1152,7 @@ fn main() {
             app.manage(LauncherOrigin::default());
             let handle = app.handle().clone();
             let navigation_app = handle.clone();
+            let studio_entered = AtomicBool::new(false);
             let links_app = handle.clone();
             let background = std::env::args().any(|arg| arg == "--background");
             let main_window = WebviewWindowBuilder::new(
@@ -1174,8 +1183,12 @@ fn main() {
                 tauri::webview::NewWindowResponse::Deny
             })
             .on_navigation(move |url| {
-                if is_launcher_url(url) || is_studio_url(url, port) {
+                if is_studio_url(url, port) {
+                    studio_entered.store(true, Ordering::Relaxed);
                     return true;
+                }
+                if is_launcher_url(url) {
+                    return allow_launcher_navigation(url, studio_entered.load(Ordering::Relaxed));
                 }
                 open_external_link(&navigation_app, url);
                 false

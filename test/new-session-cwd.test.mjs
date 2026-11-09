@@ -13,7 +13,7 @@ test('newSession ignores non-string cwd (click events) in every creation mode', 
   );
   const noop = () => {};
   const effects = Object.fromEntries(
-    'afterViewFocused saveSelection renderNavigation closeSidebar openProjectDialog saveDraft resetView selectNewConversationModel restoreDraft renderMessages'
+    'afterViewFocused saveSelection renderNavigation closeSidebar openProjectDialog saveDraft resetView selectNewConversationModel restoreDraft renderMessages captureCurrentHistoryScroll pushUserSelection restoreHistoryScroll'
       .split(' ')
       .map((name) => [name, noop]),
   );
@@ -24,6 +24,9 @@ test('newSession ignores non-string cwd (click events) in every creation mode', 
     const create = runInNewContext(`(${source})`, {
       ...effects,
       state,
+      historyNavSilence: false,
+      historyTargetViewId: null,
+      navHistory: { isCurrent: () => true, invalidate: () => 0 },
       convViews: null,
       dockingUI: { active: false },
       computerUseUI: null,
@@ -66,6 +69,9 @@ test('newSession ignores non-string cwd (click events) in every creation mode', 
       const create = runInNewContext(`(${source})`, {
         ...effects,
         state,
+        historyNavSilence: false,
+        historyTargetViewId: null,
+        navHistory: { isCurrent: () => true, invalidate: () => 0 },
         convViews: {
           focused: () => ({ id: 'conversation' }),
           bindFocused: (value, opts) => {
@@ -126,9 +132,15 @@ test('docked tab-limit refusal cannot rebind or reset the existing conversation'
   let saved = 0;
   const create = runInNewContext(`(${source})`, {
     state,
+    historyNavSilence: false,
+    historyTargetViewId: null,
+    navHistory: { isCurrent: () => true, invalidate: () => 0 },
     saveDraft: () => {
       saved += 1;
     },
+    captureCurrentHistoryScroll: () => {},
+    pushUserSelection: () => assert.fail('must not push at capacity'),
+    restoreHistoryScroll: () => assert.fail('must not restore at capacity'),
     convViews: {
       focused: () => ({ id: 'conversation' }),
       createView: () => null,

@@ -1,5 +1,10 @@
 import { t as tr, bindText, bindAttribute, textNode, translateKnown } from './i18n.js';
 import {
+  stopKindOf,
+  resolveContinueTarget,
+  buildStopNotice,
+} from './response-status.js';
+import {
   WINDOW_DEFAULTS,
   buildBlocks,
   computeWindow,
@@ -217,14 +222,35 @@ export function createConversationRenderer({
     }
     return { key, node: part.node };
   }
-  function textPart(turn, m) {
+  // Owner-scoped Continue context for one render list (or null): the gate
+  // comes from render opts (root revalidates read-only / run / binding).
+  // Notices render regardless; only the trailing failure may offer a CTA.
+  const stopCtxFor = (messages, opts) => {
+    const gate = opts?.stopContinue;
+    if (!gate || typeof gate.onContinue !== 'function') return null;
+    return { gate, target: resolveContinueTarget(messages, gate) };
+  };
+  const stopNoticeFor = (m, stopCtx) => {
+    const kind = stopKindOf(m);
+    if (!kind) return null;
+    return buildStopNotice({ el, icon, tr }, m, kind, {
+      showContinue: Boolean(stopCtx && stopCtx.target && stopCtx.target.messageId === m.id),
+      onContinue: stopCtx?.gate.onContinue,
+      canContinue: stopCtx?.gate.canContinue,
+    });
+  };
+  function textPart(turn, m, stopCtx) {
     const key = `text:${m.id}`;
+    const stopKind = stopKindOf(m);
+    const showContinue = Boolean(stopCtx?.target && stopCtx.target.messageId === m.id);
     const signature = JSON.stringify([
       m.text,
       translateKnown(m.error),
       m.attachments,
       m.streaming,
       m.stopReason,
+      stopKind,
+      showContinue,
     ]);
     let part = turn.parts.get(key);
     if (!part || part.signature !== signature) {
@@ -232,6 +258,11 @@ export function createConversationRenderer({
       node.dataset.messageId = m.id;
       if (m.text) node.append(markdown(m.text, { imageRoot: part?.node, streaming: m.streaming }));
       if (translateKnown(m.error)) node.append(el('div', 'message-error', () => translateKnown(m.error)));
+      // Explicit stop notice stays OUTSIDE the collapsed activity block so
+      // a thinking-only length stop remains visible when reasoning is
+      // hidden or collapsed. Never auto-retries; owner-gated Continue only.
+      const stopNotice = stopNoticeFor(m, stopCtx);
+      if (stopNotice) node.append(stopNotice);
       if (m.attachments?.length)
         node.append(
           el('div', 'attachment-note', () => tr('count.attachments', { count: m.attachments.length })),
@@ -260,7 +291,7 @@ export function createConversationRenderer({
     }
     return { key, node: part.node };
   }
-  function assistantTurn(messages) {
+  function assistantTurn(messages, stopCtx) {
     const key = messages[0].id;
     let turn = turns.get(key);
     if (!turn) {
@@ -296,23 +327,23 @@ export function createConversationRenderer({
     for (const m of messages) {
       const hasTools = m.tools?.length > 0;
       if (m.role !== 'assistant') activity.push(m);
-      else if (m.error || m.stopReason === 'aborted' || m.stopReason === 'error') {
+      else if (stopKindOf(m)) {
         flush();
-        parts.push(textPart(turn, m));
+        parts.push(textPart(turn, m, stopCtx));
         if (m.thinking || hasTools)
           activity.push({ ...m, text: '', error: undefined, attachments: [], streaming: false });
       } else if (m.text && hasTools) {
         flush();
-        parts.push(textPart(turn, { ...m, error: undefined, streaming: false }));
+        parts.push(textPart(turn, { ...m, error: undefined, streaming: false }, stopCtx));
         activity.push(m);
       } else if (m.text) {
         if (m.thinking) activity.push({ ...m, error: undefined, streaming: false });
         flush();
-        parts.push(textPart(turn, m));
+        parts.push(textPart(turn, m, stopCtx));
       } else if (m.thinking || hasTools || m.streaming) activity.push(m);
       else {
         flush();
-        parts.push(textPart(turn, m));
+        parts.push(textPart(turn, m, stopCtx));
       }
       // Keep the native dialog beside its tool call. Later streamed messages
       // belong after this point, including while the answer is being confirmed.
@@ -331,7 +362,8 @@ export function createConversationRenderer({
     for (const id of turn.parts.keys()) if (!keep.has(id)) turn.parts.delete(id);
     return turn.node;
   }
-  function legacyRender(root, messages) {
+  function legacyRender(root, messages, opts = {}) {
+    const stopCtx = stopCtxFor(messages, opts);
     if (observedRoot !== root) {
       resizeObserver.disconnect();
       resizeObserver.observe(root);
@@ -351,7 +383,7 @@ export function createConversationRenderer({
     let assistant = [];
     const flush = () => {
       if (assistant.length) {
-        nodes.push(assistantTurn(assistant));
+        nodes.push(assistantTurn(assistant, stopCtx));
         activeTurns.add(assistant[0].id);
         assistant = [];
       }
@@ -546,13 +578,13 @@ export function createConversationRenderer({
       applyWindowFromScroll(state);
     });
   };
-  const blockNodeFor = (blocks, filtered, block) => {
+  const blockNodeFor = (blocks, filtered, block, stopCtx) => {
     if (block.kind === 'single') {
       const f = filtered[block.start];
       return renderMessage(f.msg, f.origIndex);
     }
     const slice = filtered.slice(block.start, block.end).map((f) => ({ ...f.msg, id: f.id }));
-    return assistantTurn(slice);
+    return assistantTurn(slice, stopCtx);
   };
   // Windowed mode runs in real browsers only: document/Elements/ResizeObserver
   // are guaranteed, so mount/scroll/style errors must surface, never hide.
@@ -563,7 +595,7 @@ export function createConversationRenderer({
     for (let i = win.start; i < win.end; i += 1) {
       const block = blocks[i];
       nextKeys.push(block.key);
-      nextNodes.push(blockNodeFor(blocks, filtered, block));
+      nextNodes.push(blockNodeFor(blocks, filtered, block, state.stopCtx));
     }
     const oldNodes = state.mountedNodes || [];
     const oldKeys = state.mountedKeys || [];
@@ -866,6 +898,9 @@ export function createConversationRenderer({
     })();
     state.blocks = blocks;
     state.filtered = filtered;
+    // Owner-scoped Continue context for the windowed path (notices need no
+    // gate; the CTA needs onContinue + trailing-failure eligibility).
+    state.stopCtx = stopCtxFor(messages, opts);
     {
       carryOpenMsgIds = null;
       const openIds = new Set();
@@ -1140,7 +1175,7 @@ export function createConversationRenderer({
   return {
     render(root, messages, opts) {
       if (!windowed) {
-        legacyRender(root, messages);
+        legacyRender(root, messages, opts || {});
         return undefined;
       }
       return windowedRender(root, messages, opts || {});

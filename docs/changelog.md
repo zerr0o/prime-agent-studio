@@ -4,6 +4,32 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.8
+
+- **Mémoires partagées par conversation** : nouvelle option, désactivée par défaut. Le choix enregistré contrôle l’injection des mémoires globales et la recherche de connaissances, y compris pour les conversations reprises et les sous-agents. Les mémoires locales et le contexte du projet restent disponibles. Ce réglage contrôle uniquement l’injection des mémoires, pas l’accès aux fichiers, au réseau ni aux connexions MCP ; les instructions et skills globaux restent indépendants, et les informations déjà échangées ne sont pas effacées.
+- **Options visibles sur mobile** : Questions, Mémoires et Computer Use restent regroupés sous les réglages de modèle et de réflexion, y compris dans les panneaux de conversation étroits. Les libellés et styles de cases existants sont conservés.
+- **Plafond de sortie du modèle** : les requêtes natives utilisent le `maxTokens` déclaré par le modèle au lieu du plafond implicite de 32 000 tokens. Les limites explicites restent inchangées, pour les conversations principales comme pour les sous-agents. Claude Opus 5.5 peut utiliser son plafond déclaré de 128 000 tokens ; il s’agit d’un plafond, pas d’un quota : une longue réflexion peut durer et coûter davantage.
+- **Arrêts visibles, Continuer manuel et détails du contexte** : les réponses tronquées, interrompues ou en erreur affichent un motif visible, même avec la réflexion repliée. **Continuer** reprend uniquement la dernière réponse interrompue, sur demande, sans envoyer ni effacer le brouillon ou ses pièces jointes. La jauge ouvre les détails du contexte et du cache ; le compactage exige une confirmation et résume le contexte actif sans effacer l’historique ; les valeurs de la dernière requête sont distinguées des données en direct.
+- **Retour et Suivant internes, repère de focus** : navigation entre conversations sans recharger l’application, avec conservation des brouillons et du défilement. Les raccourcis d’édition restent disponibles dans les champs de saisie. Le retour au lanceur est bloqué après l’ouverture du Studio tout en conservant les écrans de récupération Préférences et Quitter. Le focus de la conversation utilise un repère latéral accessible.
+- **Correctif de démarrage Windows** : retour à la navigation native vers le serveur local. La redirection JavaScript introduite dans la beta.3 retirée était considérée comme externe et rejetée avec HTTP 403. Le contrôle de sécurité du serveur reste inchangé. La validation ajoute un test du trajet complet dans un vrai WebView2 isolé ; un test HTTP direct ne couvre pas le démarrage du lanceur.
+
+## 4.4.8-beta.4
+
+- **Démarrage Windows** : retour à la navigation native vers le serveur local. La redirection JavaScript introduite dans beta.3 était considérée comme externe et rejetée avec HTTP 403. Le contrôle de sécurité du serveur reste inchangé.
+- **Retour au lanceur** : blocage dans la fenêtre native après ouverture du Studio, sans empêcher les écrans de récupération Préférences et Quitter.
+- **Validation** : ajout d’un test du trajet complet dans un vrai WebView2 isolé ; un test HTTP direct ne couvre pas le démarrage du lanceur.
+
+## 4.4.8-beta.3 — retirée
+
+**Ne pas installer cette bêta : régression de démarrage HTTP 403. Utiliser beta.2 en attendant le correctif.**
+
+- **Arrêts expliqués** : les réponses tronquées, interrompues ou en erreur affichent un motif visible, même si la réflexion est repliée. **Continuer** relance uniquement la dernière réponse interrompue, sur demande, sans envoyer ni effacer le brouillon ou ses pièces jointes.
+- **Contexte consultable** : la jauge ouvre les détails du contexte et du cache. Le compactage exige une confirmation ; il résume le contexte actif sans effacer l’historique de la conversation. Les valeurs de la dernière requête sont distinguées des données en direct.
+- **Retour et Suivant internes** : navigation entre conversations sans recharger l’application, avec conservation des brouillons et du défilement. Les raccourcis d’édition restent disponibles dans les champs de saisie.
+- **Navigation et focus** : le lanceur natif ne reste plus dans l’historique. Le focus de la conversation utilise un repère latéral accessible plutôt qu’un contour horizontal au-dessus du compositeur.
+
+Bêta de validation. La version stable 4.4.7 reste inchangée.
+
 ## 4.4.8-beta.2
 
 - **Budget de sortie du modèle** : les requêtes natives utilisent désormais le `maxTokens` déclaré par le modèle, au lieu du plafond implicite de 32 000 tokens. Les limites explicites restent inchangées. Le même défaut s’applique aux conversations principales et aux sous-agents.

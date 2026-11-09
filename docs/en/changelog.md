@@ -4,6 +4,32 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.8
+
+- **Shared memories per conversation**: new option, off by default. The saved choice controls global memory injection and knowledge search, including resumed conversations and subagents. Local memories and project context remain available. This controls memory injection only, not file, network or MCP access; global instructions and skills stay independent, and information already exchanged is not erased.
+- **Visible options on mobile**: Questions, Memories and Computer Use stay together below the model and reasoning controls, including narrow conversation panes. Existing labels and toggle styles are preserved.
+- **Model output ceiling**: native requests use the model's declared `maxTokens` instead of the implicit 32,000-token cap. Explicit limits remain unchanged, for main conversations and subagents. Claude Opus 5.5 can use its declared 128,000-token ceiling; this is a ceiling, not a quota: long reasoning can take longer and cost more.
+- **Clear stops, manual Continue, and context details**: truncated, interrupted and failed responses show a visible reason, even with collapsed reasoning. **Continue** resumes only the latest interrupted response on request, without sending or clearing the draft or its attachments. The gauge opens context and cache details; compaction requires confirmation and summarizes the active context without deleting history; last-request values are distinguished from live data.
+- **Internal Back and Forward, focus marker**: move between conversations without reloading the app, preserving drafts and scroll position. Editing shortcuts remain available in text fields. Back to the launcher is blocked after Studio opens while preserving the Settings and Quit recovery screens. Conversation focus uses an accessible side marker.
+- **Windows startup fix**: restore native navigation to the local server. The JavaScript redirect introduced in withdrawn beta.3 was classified as external and rejected with HTTP 403. The server security check remains unchanged. Validation adds a complete startup test in a real, isolated WebView2; a direct HTTP test does not cover launcher startup.
+
+## 4.4.8-beta.4
+
+- **Windows startup**: restore native navigation to the local server. The JavaScript redirect introduced in beta.3 was classified as external and rejected with HTTP 403. The server security check remains unchanged.
+- **Back to the launcher**: block it in the native window after Studio opens, while preserving the Settings and Quit recovery screens.
+- **Validation**: add a complete startup test in a real, isolated WebView2. A direct HTTP test does not cover launcher startup.
+
+## 4.4.8-beta.3 — withdrawn
+
+**Do not install this beta: startup regression with HTTP 403. Use beta.2 until the fix is available.**
+
+- **Clear stop reasons**: truncated, interrupted and failed responses show a visible reason, even with collapsed reasoning. **Continue** resumes only the latest interrupted response on request, without sending or clearing the draft or its attachments.
+- **Context details**: the gauge opens context and cache details. Compaction requires confirmation; it summarizes the active context without deleting conversation history. Last-request values are distinguished from live data.
+- **Internal Back and Forward**: move between conversations without reloading the app, preserving drafts and scroll position. Editing shortcuts remain available in text fields.
+- **Navigation and focus**: the native launcher no longer remains in history. Conversation focus uses an accessible side marker instead of a horizontal outline above the composer.
+
+Validation beta. The stable 4.4.7 release remains unchanged.
+
 ## 4.4.8-beta.2
 
 - **Model output budget**: native requests now use the model’s declared `maxTokens` by default instead of the implicit 32,000-token cap. Explicit request limits remain unchanged. The same default applies to main conversations and subagents.

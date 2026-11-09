@@ -842,7 +842,8 @@ export function createConversationViews(deps) {
     toolbar.append(modelControls, stop, send);
     form.append(inputLabel, textarea, toolbar);
     const footnote = cvNode('div', 'composer-footnote', 'footnote');
-    const contextGauge = cvNode('span', 'composer-context-gauge', 'context-gauge');
+    const contextGauge = cvNode('button', 'composer-context-gauge', 'context-gauge');
+    contextGauge.type = 'button';
     contextGauge.hidden = true;
     const hint = cvNode('span', '', 'send-hint');
     bindText(hint, () => tr('ui.entree_pour_envoyer_maj_entree_pour_un_saut_de_ligne'));

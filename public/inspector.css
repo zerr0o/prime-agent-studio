@@ -762,3 +762,84 @@
   font-family: ui-monospace, Consolas, monospace;
   overflow-wrap: anywhere;
 }
+
+/* Feature2: gauge opens compact details (accessible button, no redesign). */
+.composer-context-gauge[data-gauge-button],
+.composer-context-gauge[role='button'] {
+  cursor: pointer;
+  border-radius: 6px;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.composer-context-gauge[data-gauge-button]:hover,
+.composer-context-gauge[role='button']:hover {
+  background: var(--surface-hover);
+}
+.composer-context-gauge[data-gauge-button]:focus-visible,
+.composer-context-gauge[role='button']:focus-visible {
+  outline: 2px solid var(--accent, #6aa8ff);
+  outline-offset: 2px;
+}
+/* Feature2: compact details dialog reuses .modal + .quota-bar. */
+.context-details-dialog {
+  width: 420px;
+}
+.context-details-body {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.context-details-badge {
+  font-size: 12px;
+  color: var(--muted);
+}
+.context-details-stats {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.context-details-stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.context-details-stats dt {
+  color: var(--muted);
+}
+.context-details-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.context-details-sub {
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.context-details-note {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0;
+}
+.context-details-unknown {
+  font-size: 12px;
+  color: var(--muted);
+}
+.context-details-reason {
+  font-size: 11px;
+  color: var(--warning, #b68a46);
+  min-height: 16px;
+  margin: 0 0 8px;
+}
+.context-details-reason[hidden] {
+  display: none;
+}
+.context-details-error {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--danger, #d06b6b);
+  margin: 0 0 8px;
+}
+.context-details-error[hidden] {
+  display: none;
+}

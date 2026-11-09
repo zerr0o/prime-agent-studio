@@ -172,7 +172,47 @@ const statusNode = (status) =>
 
 // Composer rendering is shared by host/mobile and every visible docked pane.
 // The caller supplies the current session only; no history or message text enters this UI.
-export function renderComposerGauge(element, data) {
+export function renderComposerGauge(element, data, options) {
+  const setButton = (handler) => {
+    const prev = element?._gaugeOpen;
+    if (prev && (!handler || prev.fn !== handler)) {
+      try { element.removeEventListener('click', prev.click); } catch {}
+      try { element.removeEventListener('keydown', prev.key); } catch {}
+      element._gaugeOpen = null;
+    }
+    const active = typeof handler === 'function' ? handler : null;
+    if (!active) {
+      try { element.removeAttribute('role'); } catch {}
+      try { element.removeAttribute('tabindex'); } catch {}
+      try { element.removeAttribute('aria-haspopup'); } catch {}
+      try { delete element.dataset.gaugeButton; } catch {}
+      return;
+    }
+    if (prev && prev.fn === active) return;
+    const click = (event) => { try { event?.preventDefault?.(); } catch {} active(element._contextSummary || null, element); };
+    const key = (event) => {
+      if (event?.key !== 'Enter' && event?.key !== ' ' && event?.key !== 'Spacebar') return;
+      try { event?.preventDefault?.(); } catch {}
+      active(element._contextSummary || null, element);
+    };
+    element._gaugeOpen = { fn: active, click, key };
+    // Native <button> already synthesizes click for Enter/Space: a custom
+    // keydown would double-open on Space and could land the keyup on the
+    // freshly focused confirm button. Spans keep the manual key handler.
+    const nativeButton = element?.tagName === 'BUTTON';
+    if (nativeButton) {
+      try { element.removeAttribute('role'); } catch {}
+    } else {
+      try { element.setAttribute('role', 'button'); } catch {}
+    }
+    try { element.tabIndex = 0; } catch {}
+    try { element.setAttribute('aria-haspopup', 'dialog'); } catch {}
+    try { element.dataset.gaugeButton = 'true'; } catch {}
+    try {
+      element.addEventListener('click', click);
+      if (!nativeButton) element.addEventListener('keydown', key);
+    } catch {}
+  };
   if (!element) return;
   const context = data?.contextUsage ?? data?.session?.contextUsage;
   const known = Number.isFinite(context?.tokens) && context.tokens >= 0 &&
@@ -182,6 +222,8 @@ export function renderComposerGauge(element, data) {
     element.textContent = '';
     element.removeAttribute('title');
     delete element.dataset.level;
+    element._contextSummary = { known: false, tokens: null, contextWindow: null, percent: null, level: null, live: false, approx: false, cache: null, lastRequest: false };
+    setButton(null);
     return;
   }
   const fill = context.tokens / context.contextWindow * 100;
@@ -198,6 +240,25 @@ ${tr('metrics.lastRequest', {
     input: count(last.input), read: count(last.cacheRead), write: count(last.cacheWrite),
   })}` : ''));
   element.dataset.level = fill >= 95 ? 'danger' : fill >= 80 ? 'warning' : 'normal';
+  element._contextSummary = {
+    known: true,
+    tokens: context.tokens,
+    contextWindow: context.contextWindow,
+    percent,
+    level: fill >= 95 ? 'danger' : fill >= 80 ? 'warning' : 'normal',
+    live: !data?.lastRequest,
+    approx: !!data?.lastRequest,
+    lastRequest: !!data?.lastRequest,
+    cacheHitRatio: Number.isFinite(last?.cacheHitRatio) ? last.cacheHitRatio : null,
+    cache: (last == null ? null : {
+      hitRatio: Number.isFinite(last?.cacheHitRatio) ? last.cacheHitRatio : null,
+      input: Number.isFinite(last?.input) ? last.input : null,
+      output: Number.isFinite(last?.output) ? last.output : null,
+      read: Number.isFinite(last?.cacheRead) ? last.cacheRead : null,
+      write: Number.isFinite(last?.cacheWrite) ? last.cacheWrite : null,
+    }),
+  };
+  setButton(typeof options === 'function' ? options : options?.onOpen);
 }
 
 export function createInspector({

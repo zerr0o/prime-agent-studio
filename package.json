@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "4.4.8-beta.2",
+  "version": "4.4.8",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -47,6 +47,7 @@
     "test:docking:workspace": "node scripts/test-docking-workspace-ui.mjs && node scripts/test-docking-new-conversation-ui.mjs && node scripts/test-conversation-registry-cap-ui.mjs",
     "test:docking:resize": "node scripts/test-docking-resize-ui.mjs",
     "test:context-gauge": "node scripts/test-context-gauge-ui.mjs",
+    "test:usability": "node scripts/test-response-status-ui.mjs && node scripts/test-context-details-ui.mjs && node scripts/test-navigation-history-e2e-ui.mjs",
     "test:context": "node scripts/test-context-tab-ui.mjs",
     "test:context:native": "node scripts/test-code-native.mjs",
     "test:inspector": "node scripts/test-inspector-ui.mjs && node scripts/test-agent-history-ui.mjs && node scripts/test-file-context-ui.mjs && node scripts/test-inspector-folder-ui.mjs && node scripts/test-code-highlight-ui.mjs",
@@ -81,6 +82,7 @@
     "desktop:resources": "node scripts/build-desktop-resources.mjs",
     "desktop:icons": "node scripts/generate-desktop-icons.mjs",
     "test:desktop": "node scripts/test-desktop-native.mjs",
+    "test:desktop-startup": "node scripts/test-desktop-startup-native.mjs",
     "test:desktop-ui": "node scripts/test-desktop-ui.mjs && node scripts/test-desktop-notification-ui.mjs",
     "test:desktop-updates": "node scripts/test-desktop-updates-ui.mjs",
     "test:port-ui": "node scripts/test-desktop-port-ui.mjs && node scripts/test-studio-port-ui.mjs",
@@ -106,7 +108,9 @@
     "test:new-session-cwd": "node scripts/test-new-session-cwd-ui.mjs",
     "test:context-extension:native": "node scripts/test-context-extension-native.mjs",
     "test:image-routing:native": "node scripts/test-image-routing-native.mjs",
-    "test:imagemodel-guard": "node scripts/test-imagemodel-guard.mjs"
+    "test:imagemodel-guard": "node scripts/test-imagemodel-guard.mjs",
+    "test:response-status": "node --test test/response-status.test.mjs",
+    "test:response-status:ui": "node scripts/test-response-status-ui.mjs"
   },
   "engines": {
     "node": ">=22.13.0"

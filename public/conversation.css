@@ -7,6 +7,46 @@
 .assistant-text {
   min-width: 0;
 }
+/* Feature1 explicit stop notice: always a direct child of the visible text
+   part, never inside the collapsed activity/thinking block, so a
+   thinking-only length stop stays visible when reasoning is hidden. */
+.stop-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-left-width: 2px;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.stop-notice[data-stop-kind='error'],
+.stop-notice[data-stop-kind='error-network'] {
+  color: var(--red);
+  border-left-color: var(--red);
+  background: #bc65650a;
+}
+.stop-notice-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.stop-notice-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.stop-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Continue reuses the existing retry-button look; only the wrap shrink is local. */
+.stop-continue {
+  flex-shrink: 0;
+}
 .activity-stack {
   border: 1px solid var(--line);
   background: var(--surface);

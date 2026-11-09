@@ -176,6 +176,10 @@
             data-icon="menu"
           ></button>
           <div class="breadcrumb">
+            <div class="navigation-history">
+              <button id="nav-back" class="icon-button" type="button" data-icon="arrow-left" aria-label="Previous conversation" data-i18n-aria-label="navigation.back_aria" disabled></button>
+              <button id="nav-forward" class="icon-button" type="button" data-icon="arrow-right" aria-label="Next conversation" data-i18n-aria-label="navigation.forward_aria" disabled></button>
+            </div>
             <span class="breadcrumb-icon" data-icon="folder"></span
             ><button id="header-project" class="breadcrumb-project" type="button">
               <span data-i18n="ui.espace_de_travail">Espace de travail</span></button
@@ -708,7 +712,7 @@
                 </div>
               </form>
               <div class="composer-footnote">
-                <span id="composer-context-gauge" class="composer-context-gauge" hidden></span>
+                <button type="button" id="composer-context-gauge" class="composer-context-gauge" hidden></button>
                 <span id="send-hint" data-i18n="ui.entree_pour_envoyer_maj_entree_pour_un_saut_de_ligne"
                   >Entrée pour envoyer · Maj Entrée pour un saut de ligne</span
                 >

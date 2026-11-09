@@ -1,4 +1,4 @@
-// Real Studio UI and admission paths, with isolated resources and a local fake runtime.
+// Classic composer UI and admission paths, with isolated resources and a local fake runtime.
 import { chromium, expect } from '@playwright/test';
 import { launchStudioBrowser } from './fixtures/browser.mjs';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { createApp } from '../server.mjs';
 import { commandCatalog } from '../lib/commands.mjs';
+import { createDefaultLayout } from '../public/docking-layout.js';
 
 const root = await mkdtemp(join(tmpdir(), 'prime-chip-ui-'));
 const cwd = join(root, 'project'),
@@ -97,6 +98,12 @@ try {
       isMobile: mobile,
       hasTouch: mobile,
     });
+    // This suite exercises the host #composer; opening a docked session uses
+    // a separate composer instance with data-cvw selectors instead.
+    await context.addInitScript(
+      (layout) => localStorage.setItem('prime-studio.docking.layout', JSON.stringify(layout)),
+      { ...createDefaultLayout(), enabled: false },
+    );
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
     let release,

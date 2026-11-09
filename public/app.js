@@ -10,6 +10,8 @@ import {
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
 import { createConversationRenderer } from './conversation.js';
+import { findLatestResumableId } from './response-status.js';
+import { createContextDetails } from './context-details.js';
 import { historyPageUrl, fetchRecentHistory, prependHistoryPage } from './history-pages.js';
 import { reasoningMode } from './reasoning.js';
 import { createSubagentSettings } from './subagent-settings.js';
@@ -21,6 +23,8 @@ import { createMcpSettings } from './mcp.js';
 import { createProviderSettings } from './providers.js';
 import { setupState, createSetupGate } from './setup-gate.js';
 import { createBootstrapGuard } from './bootstrap-sequence.js';
+import { installNavigationGuard } from './navigation-guard.js';
+import { createNavigationHistory } from './navigation-history.js';
 import { createCommands } from './commands.js';
 import {
   composerText,
@@ -86,6 +90,238 @@ import {
   openDesktopComponents,
 } from './desktop-components-action.js';
 import { needsComponentsUpdate, readComponentsStatus } from './desktop-components.js';
+// Internal Back/Forward: meaningful pushState/replaceState + popstate, no dummy traps.
+// Guard routes Backspace-outside-text, Alt+Left/Right, BrowserBack/Fwd, mouse 3/4 internally.
+const navHistory = createNavigationHistory({ max: 50 });
+let historyBootDone = false;
+let historyNavSilence = false;
+let historyTargetViewId = null;
+function updateHistoryButtons() {
+  try {
+    const back = $('nav-back');
+    const fwd = $('nav-forward');
+    if (back) back.disabled = !navHistory.canBack();
+    if (fwd) fwd.disabled = !navHistory.canForward();
+  } catch {}
+}
+function currentHistoryEntry() {
+  try {
+    const view = convViews?.focused?.() || null;
+    const scrollTop = view ? Math.max(0, Number(view.scrollTop) || 0) : 0;
+    const follow = view ? view.follow !== false : true;
+    if (view?.sessionId) {
+      return { kind: 'session', sessionId: view.sessionId, projectCwd: view.projectCwd || state.projectCwd, viewId: view.id, nonce: view.nonce || null, scrollTop, follow };
+    }
+    if (view?.viewRunId) {
+      return { kind: 'run', runId: view.viewRunId, sessionId: view.sessionId || null, projectCwd: view.projectCwd || state.projectCwd, viewId: view.id, nonce: view.nonce || null, scrollTop, follow };
+    }
+    if (state.projectOverview) {
+      return { kind: 'project', projectCwd: view?.projectCwd || state.projectCwd, viewId: view?.id || null, nonce: view?.nonce || null, scrollTop, follow };
+    }
+    return { kind: 'new', projectCwd: view?.projectCwd || state.projectCwd, viewId: view?.id || null, nonce: view?.nonce || null, scrollTop, follow };
+  } catch {
+    return null;
+  }
+}
+function captureCurrentHistoryScroll() {
+  try {
+    convViews?.captureFocusedScroll?.();
+    const view = convViews?.focused?.() || null;
+    if (!view) return;
+    navHistory.currentScrollPatch({ scrollTop: Math.max(0, Number(view.scrollTop) || 0), follow: view.follow !== false });
+  } catch {}
+}
+function pushUserSelection() {
+  if (!historyBootDone || historyNavSilence) return;
+  try {
+    const entry = currentHistoryEntry();
+    if (!entry) return;
+    navHistory.push(entry);
+    updateHistoryButtons();
+  } catch {}
+}
+function restoreHistoryScroll(entry, seq) {
+  if (seq !== undefined && !navHistory.isCurrent(seq)) return;
+  try {
+    const view = convViews?.focused?.() || null;
+    const top = Math.max(0, Number(entry?.scrollTop) || 0);
+    const follow = entry?.follow !== false;
+    if (view) {
+      view.scrollTop = top;
+      view.follow = follow;
+      if (view.id === PRIMARY_VIEW_ID || !dockingUI?.active) {
+        restoreHostScrollState({ top, follow });
+      } else {
+        try {
+          if (view.shell?.scroller) view.shell.scroller.scrollTop = top;
+        } catch {}
+      }
+    } else {
+      restoreHostScrollState({ top, follow });
+    }
+  } catch {}
+  updateHistoryButtons();
+}
+async function doHistoryNavigate(entry, seq) {
+  if (!entry) return false;
+  if (!navHistory.isCurrent(seq)) return false;
+  historyNavSilence = true;
+  try {
+    historyTargetViewId = entry.viewId || null;
+  } catch {}
+  let ok = false;
+  try {
+    if (entry.kind === 'session' && entry.sessionId) {
+      let known = null;
+      try { known = session(entry.sessionId); } catch { known = null; }
+      const mounted = convViews?.bySession?.(entry.sessionId) || null;
+      if (!known && !mounted) {
+        toast(() => tr('navigation.target_missing'), true);
+        updateHistoryButtons();
+        return false;
+      }
+      ok = await viewsSelectSession(entry.sessionId, entry.projectCwd || undefined, { fromHistory: true, historyEntry: entry, historySeq: seq });
+    } else if (entry.kind === 'run' && entry.runId) {
+      const run = state.runs.get(entry.runId) || null;
+      const mounted = convViews?.byRun?.(entry.runId) || null;
+      if (!run && !mounted) {
+        toast(() => tr('navigation.target_missing'), true);
+        updateHistoryButtons();
+        return false;
+      }
+      if (mounted && !run) {
+        convViews.focusView(mounted.id, { reveal: true });
+        afterViewFocused();
+        ok = true;
+      } else {
+        ok = await viewsSelectRun(run, { fromHistory: true, historyEntry: entry, historySeq: seq });
+      }
+    } else if (entry.kind === 'project') {
+      if (entry.viewId && convViews?.byId?.(entry.viewId)) {
+        const target = convViews.byId(entry.viewId);
+        if (!target.sessionId && !target.viewRunId && (!entry.projectCwd || (() => { try { return samePath(target.projectCwd, entry.projectCwd); } catch { return target.projectCwd === entry.projectCwd; } })())) {
+          if (dockingUI?.active) {
+            const anchor = dockAnchor();
+            if (!canShowDocked(target.id, anchor)) {
+              toast(() => tr('navigation.limit_reached'), true);
+              updateHistoryButtons();
+              return false;
+            }
+            showDocked(target, anchor);
+          } else {
+            convViews.focusView(target.id, { reveal: true });
+          }
+          afterViewFocused();
+          ok = true;
+        } else {
+          selectProject(entry.projectCwd, { fromHistory: true, historyEntry: entry, historySeq: seq });
+          ok = true;
+        }
+      } else {
+        selectProject(entry.projectCwd, { fromHistory: true, historyEntry: entry, historySeq: seq });
+        ok = true;
+      }
+    } else {
+      // Classic reuses ONE primary view for every entry, so a viewId hit alone
+      // proves nothing: only reuse a still-new view whose nonce still matches
+      // the saved new-chat slot (otherwise the current session binding would
+      // be focused and the unsent draft lost). Mismatch rebinds/creates with
+      // the EXACT saved nonce (keepNonce) so the original draft slot returns.
+      if (entry.viewId && convViews?.byId?.(entry.viewId)) {
+        const target = convViews.byId(entry.viewId);
+        const stillNew = !target.sessionId && !target.viewRunId;
+        const nonceMatch = !entry.nonce || target.nonce === entry.nonce;
+        if (stillNew && nonceMatch) {
+          if (dockingUI?.active) {
+            const anchor = dockAnchor();
+            if (!canShowDocked(target.id, anchor)) {
+              toast(() => tr('navigation.limit_reached'), true);
+              updateHistoryButtons();
+              return false;
+            }
+            showDocked(target, anchor);
+          } else {
+            convViews.focusView(target.id, { reveal: true });
+          }
+          afterViewFocused();
+          ok = true;
+        }
+      }
+      if (!ok) {
+        if (dockingUI?.active) {
+        saveDraft();
+        const view = convViews.createView({ kind: 'new', sessionId: null, viewRunId: null, projectCwd: entry.projectCwd || state.projectCwd, execCwd: entry.projectCwd || state.projectCwd, nonce: entry.nonce || undefined });
+        if (!view) {
+          toast(() => tr('navigation.limit_reached'), true);
+          updateHistoryButtons();
+          return false;
+        }
+        dockingUI.openPanel(view.id, convViews.focused()?.shell?.root?.closest?.('[data-dock-group]')?.dataset?.dockGroup);
+        convViews.focusView(view.id, { reveal: true });
+        afterViewFocused();
+        ok = true;
+      } else {
+        saveDraft();
+        convViews.bindFocused({ kind: 'new', sessionId: null, viewRunId: null, projectCwd: entry.projectCwd || state.projectCwd, execCwd: entry.projectCwd || state.projectCwd, nonce: entry.nonce || undefined, keepNonce: true }, { inheritLegacy: false });
+        afterViewFocused();
+        ok = true;
+      }
+      }
+    }
+  } catch (error) {
+    try { toast(translateKnown(error?.message || error), true); } catch {}
+    ok = false;
+  } finally {
+    historyNavSilence = false;
+    historyTargetViewId = null;
+  }
+  if (!navHistory.isCurrent(seq)) return false;
+  restoreHistoryScroll(entry, seq);
+  try { closeSidebar(); } catch {}
+  return ok;
+}
+function requestHistoryBack() {
+  if (!navHistory.canBack()) return false;
+  captureCurrentHistoryScroll();
+  try {
+    if (typeof history !== 'undefined' && typeof history.back === 'function' && navHistory.browserWired && typeof window !== 'undefined') {
+      history.back();
+      return true;
+    }
+  } catch {}
+  const got = navHistory.beginBack();
+  if (!got) return false;
+  void doHistoryNavigate(got.entry, got.seq);
+  return true;
+}
+function requestHistoryForward() {
+  if (!navHistory.canForward()) return false;
+  captureCurrentHistoryScroll();
+  try {
+    if (typeof history !== 'undefined' && typeof history.forward === 'function' && navHistory.browserWired && typeof window !== 'undefined') {
+      history.forward();
+      return true;
+    }
+  } catch {}
+  const got = navHistory.beginForward();
+  if (!got) return false;
+  void doHistoryNavigate(got.entry, got.seq);
+  return true;
+}
+installNavigationGuard(document, { onBack: () => requestHistoryBack(), onForward: () => requestHistoryForward() });
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('popstate', (event) => {
+    try { captureCurrentHistoryScroll(); } catch {}
+    let result = null;
+    try { result = navHistory.handlePopState(event); } catch { result = null; }
+    if (!result || !result.handled) return;
+    if (result.reason === 'same') {
+      updateHistoryButtons();
+      return;
+    }
+    void doHistoryNavigate(result.entry, result.seq);
+  });
+}
 let questionsUI;
 let imageComposer;
 let projectSorting;
@@ -95,6 +331,7 @@ let sessionWheel;
 let liveMessagesUI;
 let commandsUI;
 let inspectorUI;
+let contextDetailsUI = null;
 let roadmapUI;
 let dockingUI;
 let toolViews = null;
@@ -164,6 +401,57 @@ function lastRequestMetrics(view) {
 }
 // Event-driven: assistant completion, compaction/done, view changes and load.
 // Idle views use their last OWN request and catalog window, with no network.
+function actionMessages(view) {
+  if (!view) return activeMessages();
+  const run = runForView(view);
+  return run?.initialized ? [...(run.base || []), ...(run.messages || [])] : view.history || [];
+}
+function captureConversationAction(view = convViews?.focused() || null) {
+  const owner = view || state;
+  return {
+    view, token: view ? view.token : state.requestId,
+    sessionId: owner.sessionId,
+    cwd: owner.execCwd || owner.projectCwd,
+  };
+}
+function conversationActionBlocked(action) {
+  const { view, token, sessionId, cwd } = action;
+  const owner = view || state;
+  if ((view && convViews?.byId(view.id) !== view) ||
+      token !== (view ? view.token : state.requestId) ||
+      sessionId !== owner.sessionId || cwd !== (owner.execCwd || owner.projectCwd))
+    return tr('contextDetails.reasonStale');
+  if (!sessionId || (view?.id === PRIMARY_VIEW_ID && state.projectOverview))
+    return tr('contextDetails.reasonNoSession');
+  if (!state.initialized || state.readOnly) return tr('contextDetails.reasonReadonly');
+  if (state.sending) return tr('contextDetails.reasonPending');
+  if (isRunning(view ? runForView(view) : activeRun()) || isRunning(runningForSession(sessionId)))
+    return tr('contextDetails.reasonRunning');
+  if (owner.loading || owner.unavailable || generationPending.has(sessionId) || !state.online ||
+      state.modelsLoading || state.versionLoading || state.version?.available === false ||
+      !isValidRunCwd(cwd) || state.projects.some((p) => p.cwd === owner.projectCwd && p.exists === false))
+    return tr('conversation.actionUnavailable');
+  return '';
+}
+function renderViewGauge(element, data, view) {
+  renderComposerGauge(element, data, { onOpen: () => {
+    const action = captureConversationAction(view);
+    contextDetailsUI?.destroy();
+    contextDetailsUI = createContextDetails({
+      getSnapshot: () => data,
+      getState: () => ({
+        sessionId: action.sessionId, cwd: action.cwd,
+        key: `${view?.id || 'host'}:${view ? view.token : state.requestId}`,
+        hasSession: !!action.sessionId, readOnly: state.readOnly,
+        running: isRunning(view ? runForView(view) : activeRun()),
+        blockedReason: conversationActionBlocked(action),
+      }),
+      onCompact: () => sendMessage(null, { ...action, message: '/compact' }),
+    });
+    contextDetailsUI.open(element);
+  } });
+}
+
 function refreshComposerGauges() {
   if (!state.initialized || document.hidden) return;
   const targets = dockingUI?.active && convViews
@@ -179,7 +467,7 @@ function refreshComposerGauges() {
     const key = metricsKey(cwd, sessionId);
     element.dataset.contextKey = key;
     if (!key || !state.online || (state.projectOverview && view?.id === PRIMARY_VIEW_ID)) {
-      renderComposerGauge(element, null);
+      renderViewGauge(element, null, view);
       continue;
     }
     let entry = composerMetrics.get(key);
@@ -196,7 +484,7 @@ function refreshComposerGauges() {
     const fallback = lastRequestMetrics(view);
     const running = isRunning(run);
     const requestKey = `${run?.id || ''}:${run?.contextRevision || 0}`;
-    renderComposerGauge(element, running && entry.dataKey === requestKey ? entry.data : fallback);
+    renderViewGauge(element, running && entry.dataKey === requestKey ? entry.data : fallback, view);
     if (!running || !state.inspectorAvailable) continue;
     if (entry.requestKey === requestKey) continue;
     entry.requestKey = requestKey;
@@ -214,7 +502,7 @@ function refreshComposerGauges() {
         if (entry.requestKey !== requestKey) return;
         entry.data = null;
         entry.dataKey = null;
-        if (element.dataset.contextKey === key) renderComposerGauge(element, lastRequestMetrics(view));
+        if (element.dataset.contextKey === key) renderViewGauge(element, lastRequestMetrics(view), view);
       });
     }, 1000);
   }
@@ -1413,6 +1701,7 @@ function resizeComposer(textarea = null, view = null) {
 // update background panes. Units missing (primary pre-enable, classic) falls
 // back to the host singletons, which mirror the focused view — identical.
 function updateComposer(view = null) {
+  contextDetailsUI?.update();
   refreshComposerGauges();
   const target = view || convViews?.focused();
   // The focused view uses its live editor: its pane while docked, the host otherwise.
@@ -2054,6 +2343,7 @@ function renderNavigation() {
   renderSessions();
   renderProjectOverview();
   renderDetails();
+  try { updateHistoryButtons(); } catch {}
   try {
     convViews?.refreshTitles();
   } catch {}
@@ -2769,13 +3059,28 @@ function resetView() {
   state.requestId++;
   messageNodes.clear();
 }
-function newSession(execCwd, projectCwd = state.projectCwd) {
+function newSession(execCwd, projectCwd = state.projectCwd, opts = {}) {
   if (state.readOnly) return;
   // Direct onclick wiring passes a MouseEvent as the first argument. Only a
   // non-empty string is a valid execution cwd. Every caller routes through
   // here, so ignore anything else and fall back to the selected project.
+  const maybeOpts = execCwd && typeof execCwd === 'object' && (execCwd.fromHistory !== undefined || execCwd.historyEntry !== undefined) ? execCwd : null;
+  if (maybeOpts) {
+    opts = maybeOpts;
+    execCwd = undefined;
+  }
+  const fromHistory = opts?.fromHistory === true;
+  if (!fromHistory && historyNavSilence) {
+    historyNavSilence = false;
+    historyTargetViewId = null;
+  }
+  if (fromHistory && opts?.historySeq !== undefined && !navHistory.isCurrent(opts.historySeq)) return;
   const cwd = typeof execCwd === 'string' && execCwd.trim() ? execCwd : projectCwd;
   if (!convViews) {
+    if (!fromHistory) {
+      try { navHistory.invalidate(); } catch {}
+      captureCurrentHistoryScroll();
+    }
     saveDraft();
     resetView();
     state.projectCwd = projectCwd;
@@ -2790,7 +3095,13 @@ function newSession(execCwd, projectCwd = state.projectCwd) {
     computerUseUI?.onSessionChange();
     if (!state.projectCwd) openProjectDialog();
     else $('composer').focus();
+    if (fromHistory) restoreHistoryScroll(opts.historyEntry, opts.historySeq);
+    else pushUserSelection();
     return;
+  }
+  if (!fromHistory) {
+    try { navHistory.invalidate(); } catch {}
+    captureCurrentHistoryScroll();
   }
   saveDraft();
   const binding = {
@@ -2824,8 +3135,20 @@ function newSession(execCwd, projectCwd = state.projectCwd) {
   if (!state.projectCwd) openProjectDialog();
   // A pane composer exists only while docked; classic and mobile use the host editor.
   else ((dockingUI?.active && view?.units?.nodes?.textarea) || $('composer')).focus();
+  if (fromHistory) restoreHistoryScroll(opts.historyEntry, opts.historySeq);
+  else pushUserSelection();
 }
-function selectProject(cwd) {
+function selectProject(cwd, opts = {}) {
+  const fromHistory = opts?.fromHistory === true;
+  if (!fromHistory && historyNavSilence) {
+    historyNavSilence = false;
+    historyTargetViewId = null;
+  }
+  if (fromHistory && opts?.historySeq !== undefined && !navHistory.isCurrent(opts.historySeq)) return;
+  if (!fromHistory) {
+    try { navHistory.invalidate(); } catch {}
+    captureCurrentHistoryScroll();
+  }
   saveDraft();
   if (convViews && dockingUI?.active) {
     // Docked: the overview opens in its own tab (a mounted session-less view of
@@ -2873,6 +3196,8 @@ function selectProject(cwd) {
   closeSidebar();
   computerUseUI?.onSessionChange();
   $('project-overview-title').focus({ preventScroll: true });
+  if (opts?.fromHistory === true) restoreHistoryScroll(opts.historyEntry, opts.historySeq);
+  else pushUserSelection();
 }
 function runningForSession(id) {
   return id ? [...state.runs.values()].find((r) => r.sessionId === id && isRunning(r)) : null;
@@ -3407,6 +3732,7 @@ async function revealHistoryMessage(messageId) {
   if (!ownShell) lastConversationTop = view.scrollTop;
 }
 function historyRenderOptions(view = convViews?.focused() || state) {
+  const action = captureConversationAction(view === state ? null : view);
   const page = historyPageFor(view);
   const following = historyViewFollowing(view);
   const host = !convViews?.composerLive?.() || view?.id === PRIMARY_VIEW_ID || view === state;
@@ -3418,6 +3744,14 @@ function historyRenderOptions(view = convViews?.focused() || state) {
     olderError: page?.error || null,
     follow: following,
     scrollTop: view?.scrollTop ?? (host ? $('conversation-scroll').scrollTop : 0),
+    stopContinue: {
+      resumableId: findLatestResumableId(actionMessages(action.view)) || '',
+      canContinue: (id) => !conversationActionBlocked(action) &&
+        id === findLatestResumableId(actionMessages(action.view)),
+      onContinue: (messageId) => void sendMessage(null, {
+        ...action, messageId, message: tr('conversation.continuePrompt'),
+      }),
+    },
   };
 }
 
@@ -3486,6 +3820,18 @@ function showDocked(view, anchor) {
 // (startup restore, interrupted run): it never applies to user navigation.
 // Returns false when the docked tab limit refused the navigation.
 async function viewsSelectSession(id, cwd, opts = {}) {
+  const fromHistory = opts?.fromHistory === true;
+  const historyEntry = opts?.historyEntry || null;
+  const historySeq = opts?.historySeq;
+  if (!fromHistory && historyNavSilence) {
+    historyNavSilence = false;
+    historyTargetViewId = null;
+  }
+  if (fromHistory && historySeq !== undefined && !navHistory.isCurrent(historySeq)) return true;
+  if (!fromHistory && !opts.replace) {
+    try { navHistory.invalidate(); } catch {}
+    captureCurrentHistoryScroll();
+  }
   // Dedupe: a view already showing this session is focused, never duplicated,
   // so two panels can never hold dual drafts for one session.
   const existing = convViews.bySession(id);
@@ -3496,6 +3842,10 @@ async function viewsSelectSession(id, cwd, opts = {}) {
       showDocked(existing, anchor);
       afterViewFocused();
       closeSidebar();
+      if (fromHistory) {
+        if (historySeq !== undefined && !navHistory.isCurrent(historySeq)) return true;
+        restoreHistoryScroll(historyEntry, historySeq);
+      } else pushUserSelection();
       return true;
     }
     saveDraft();
@@ -3514,6 +3864,10 @@ async function viewsSelectSession(id, cwd, opts = {}) {
     projectNavigation?.reveal(state.projectCwd);
     closeSidebar();
     await loadSessionIntoView(view);
+    if (fromHistory) {
+      if (historySeq !== undefined && !navHistory.isCurrent(historySeq)) return true;
+      restoreHistoryScroll(historyEntry, historySeq);
+    } else pushUserSelection();
     return true;
   }
   if (existing) {
@@ -3523,6 +3877,10 @@ async function viewsSelectSession(id, cwd, opts = {}) {
     convViews.focusView(existing.id, { reveal: true });
     afterViewFocused();
     closeSidebar();
+    if (fromHistory) {
+      if (historySeq !== undefined && !navHistory.isCurrent(historySeq)) return true;
+      restoreHistoryScroll(historyEntry, historySeq);
+    } else if (!opts.replace) pushUserSelection();
     return true;
   }
   saveDraft();
@@ -3540,10 +3898,24 @@ async function viewsSelectSession(id, cwd, opts = {}) {
   projectNavigation?.reveal(state.projectCwd);
   closeSidebar();
   await loadSessionIntoView(view);
+  if (fromHistory) {
+    if (historySeq !== undefined && !navHistory.isCurrent(historySeq)) return true;
+    restoreHistoryScroll(historyEntry, historySeq);
+  } else if (!opts.replace) pushUserSelection();
   return true;
 }
 
 async function viewsSelectRun(run, opts = {}) {
+  const fromHistory = opts?.fromHistory === true;
+  if (!fromHistory && historyNavSilence) {
+    historyNavSilence = false;
+    historyTargetViewId = null;
+  }
+  if (fromHistory && opts?.historySeq !== undefined && !navHistory.isCurrent(opts.historySeq)) return true;
+  if (!fromHistory && !opts.replace) {
+    try { navHistory.invalidate(); } catch {}
+    captureCurrentHistoryScroll();
+  }
   const binding = {
     kind: 'run',
     sessionId: null,
@@ -3572,6 +3944,8 @@ async function viewsSelectRun(run, opts = {}) {
   renderNavigation();
   renderMessages(true);
   closeSidebar();
+  if (fromHistory) restoreHistoryScroll(opts.historyEntry, opts.historySeq);
+  else if (!opts.replace) pushUserSelection();
   return true;
 }
 
@@ -4013,6 +4387,7 @@ async function finishRun(run, e) {
     run.sessionId = e.sessionId;
     upsertSession(e.sessionId, run);
   }
+  if (run.sessionId) navHistory.resolveDraft({ runId: run.id, sessionId: run.sessionId });
   if (translateKnown(e.error)) {
     run.messages.push({
       id: `${run.id}-error`,
@@ -4083,28 +4458,32 @@ async function finishRun(run, e) {
   computerUseUI?.notifyRunFinished();
   updateComposer(finishOrigin || undefined);
 }
-async function sendMessage(event) {
+async function sendMessage(event, action = null) {
   event?.preventDefault();
-  if (state.readOnly || state.sending) return;
+  if (state.readOnly || state.sending) return false;
+  if (action && (conversationActionBlocked(action) ||
+      (action.messageId && action.messageId !== findLatestResumableId(actionMessages(action.view))))) return false;
   // Origin view captured BEFORE any await: late completions update the origin
   // only and never rebind globals or the host from a background send.
-  const entryOriginId = convViews?.focusedId() || null;
+  const entryOriginId = action ? action.view?.id || null : convViews?.focusedId() || null;
   const origin = convViews?.byId(entryOriginId) || null;
   const originUnits = convViews?.liveUnits(origin) || null;
   const originCommands = originUnits?.commands || commandsUI;
-  if (await originCommands?.intercept()) return;
-  if (convViews && convViews.focusedId() !== entryOriginId) return;
-  if (isRunning(activeRun())) return (originUnits?.live || liveMessagesUI)?.submitDraft();
-  updateComposer();
-  const originSend = originUnits?.nodes?.send || $('send-button');
-  if (state.readOnly || (originSend && originSend.disabled) || state.sending) return;
-  if (convViews && convViews.focusedId() !== entryOriginId) return;
+  if (!action) {
+    if (await originCommands?.intercept()) return;
+    if (convViews && convViews.focusedId() !== entryOriginId) return;
+    if (isRunning(activeRun())) return (originUnits?.live || liveMessagesUI)?.submitDraft();
+    updateComposer();
+    const originSend = originUnits?.nodes?.send || $('send-button');
+    if (state.readOnly || (originSend && originSend.disabled) || state.sending) return;
+    if (convViews && convViews.focusedId() !== entryOriginId) return;
+  }
   const originToken = origin?.token;
   const originNonce = origin?.nonce;
   const originKey = origin ? convViews.draftKeyFor(origin) : null;
   const originImages = originUnits?.images || imageComposer;
-  const originText = originUnits ? originUnits.text.get() : composerText();
-  const imageDraft = originImages?.snapshot();
+  const originText = action ? action.message : originUnits ? originUnits.text.get() : composerText();
+  const imageDraft = action ? null : originImages?.snapshot();
   const images = imageDraft?.images || [];
   const files = imageDraft?.files || [];
   const originalDraft = originText,
@@ -4119,28 +4498,31 @@ async function sendMessage(event) {
     cwd = origin?.execCwd || origin?.projectCwd || state.execCwd || state.projectCwd,
     sessionId = origin ? origin.sessionId || null : state.sessionId,
     originTriple = origin ? tripleForView(origin) : null,
-    base = [...activeMessages()],
+    base = [...actionMessages(origin)],
     token = state.requestId;
   if (!isValidRunCwd(cwd)) {
     toast(() => tr('conversation.missing_project'), true);
     updateComposer();
     return;
   }
-  const computerUse = computerUseUI?.shouldIncludeInRun() === true;
+  // Existing-session actions inherit the server's current permission; they
+  // never grant desktop access from a stale or differently focused checkbox.
+  const computerUse = !action && computerUseUI?.shouldIncludeInRun() === true;
   // Computer Use is a permission only: the main run always keeps the origin
   // conversation model+thinking unchanged. The Preferences > Tools decision
   // model+thinking (empty means same as conversation, in a separate child)
   // apply only to the delegated desktop child, never to this main model.
   // No per-run backend is sent; the server applies the stored backend.
-  const effectiveModel =
-    originTriple?.model || $('model-select').value || state.modelCatalogDefault || '';
+  const effectiveModel = origin
+    ? originTriple?.model || state.modelCatalogDefault || ''
+    : $('model-select').value || state.modelCatalogDefault || '';
   // Immediate feedback: the sent text stays visible but locked until the
   // server accepts it, so an edit can never be lost or sent twice.
   const originForm = originUnits?.nodes?.form || $('composer-form');
   const originInput = originUnits?.nodes?.textarea || $('composer');
   state.sending = true;
   state.sendingViewId = entryOriginId;
-  setComposerSending(originForm, originInput, true);
+  if (!action) setComposerSending(originForm, originInput, true);
   updateComposer();
   try {
     const run = await api('/api/runs', {
@@ -4153,7 +4535,7 @@ async function sendMessage(event) {
         ...(sessionId ? { sessionId } : {}),
         ...(computerUse ? { computerUse: true } : {}),
         model: effectiveModel,
-        thinking: originTriple?.thinking || $('thinking-select').value || state.modelCatalogThinking || '',
+        thinking: origin ? originTriple?.thinking ?? '' : $('thinking-select').value || state.modelCatalogThinking || '',
         allowQuestions: origin ? !!originTriple?.allowQuestions : $('allow-questions').checked,
         sharedMemories: origin ? originTriple?.sharedMemories === true : $('allow-shared-memories')?.checked === true,
       },
@@ -4174,6 +4556,7 @@ async function sendMessage(event) {
       lastSeq: 0,
       currentMessage: null,
     });
+    if (!sessionId) navHistory.resolveDraft({ nonce: originNonce, runId: run.id, sessionId: run.sessionId });
     state.runs.set(run.id, run);
     if (imageDraft) originImages.accepted(imageDraft);
     if (run.sessionId) upsertSession(run.sessionId, run);
@@ -4183,7 +4566,7 @@ async function sendMessage(event) {
       // key is cleared when it still holds the submitted text, even if this
       // pane now shows another conversation (different key, untouched) or
       // another view is focused (host textarea kept).
-      convViews.acceptDraftFor(origin, originalDraftKey, originalDraft);
+      if (!action) convViews.acceptDraftFor(origin, originalDraftKey, originalDraft);
       const current = convViews.byId(origin.id);
       if (current && current.token === originToken) {
         current.viewRunId = run.id;
@@ -4192,7 +4575,7 @@ async function sendMessage(event) {
           state.sessionId = run.sessionId || sessionId;
           saveSelection();
           resizeComposer();
-          renderMessages(true);
+          renderMessages(!action);
         } else {
           convViews.refreshView(current.id);
           convViews.refreshTitles();
@@ -4201,24 +4584,28 @@ async function sendMessage(event) {
         convViews.refreshTitles();
       }
     } else {
-      acceptDraft(originalDraftKey, originalDraft);
+      if (!action) acceptDraft(originalDraftKey, originalDraft);
       if (token === state.requestId) {
         state.viewRunId = run.id;
         state.sessionId = run.sessionId || sessionId;
         saveSelection();
         resizeComposer();
-        renderMessages(true);
+        renderMessages(!action);
       }
     }
     subscribe(run);
     computerUseUI?.notifyRunCreated(run);
     renderNavigation();
+    return true;
   } catch (e) {
+    // Keep failures inside the native confirmation dialog, above its backdrop.
+    if (action?.message === '/compact') throw e;
     toast(translateKnown(e.message), true);
+    return false;
   } finally {
     state.sending = false;
     state.sendingViewId = null;
-    setComposerSending(originForm, originInput, false);
+    if (!action) setComposerSending(originForm, originInput, false);
     updateComposer();
   }
 }
@@ -4777,6 +5164,24 @@ async function finishBootstrap() {
     // may still show pre-bootstrap full-control content.
     try {
       updateToolPanels();
+    } catch {}
+    try {
+      const initialEntry = currentHistoryEntry();
+      if (initialEntry) navHistory.replaceInitial(initialEntry);
+      historyBootDone = true;
+      updateHistoryButtons();
+      try {
+        const backBtn = $('nav-back');
+        const fwdBtn = $('nav-forward');
+        if (backBtn && !backBtn.dataset.histWired) {
+          backBtn.dataset.histWired = '1';
+          backBtn.addEventListener('click', () => requestHistoryBack());
+        }
+        if (fwdBtn && !fwdBtn.dataset.histWired) {
+          fwdBtn.dataset.histWired = '1';
+          fwdBtn.addEventListener('click', () => requestHistoryForward());
+        }
+      } catch {}
     } catch {}
     saveSelection();
     void syncSessionActivity();
@@ -6027,7 +6432,31 @@ dockingUI = createDocking({
   onDropConversation: async ({ sessionId, projectCwd } = {}) =>
     openConversationView({ sessionId, projectCwd }),
   onActivatePanel: (id) => {
-    if (convViews?.activateFromDock(id)) afterViewFocused();
+    if (!historyBootDone) {
+      if (convViews?.activateFromDock(id)) afterViewFocused();
+      return;
+    }
+    if (historyNavSilence) {
+      if (id === historyTargetViewId) {
+        if (convViews?.activateFromDock(id)) afterViewFocused();
+        return;
+      }
+      // User intent during a pending history load wins: invalidate the pending
+      // restore at entry (push also bumps seq after focus).
+      historyNavSilence = false;
+      historyTargetViewId = null;
+      try { navHistory.invalidate(); } catch {}
+    } else if (historyBootDone) {
+      try { navHistory.invalidate(); } catch {}
+    }
+    try {
+      const focusedBefore = convViews?.focusedId?.() || null;
+      if (focusedBefore && focusedBefore !== id) captureCurrentHistoryScroll();
+    } catch {}
+    if (convViews?.activateFromDock(id)) {
+      afterViewFocused();
+      try { pushUserSelection(); } catch {}
+    }
   },
   onCreateConversation: (opts) => convViews?.handleCreateConversation(opts) || null,
   onBeforeModeChange: () => convViews?.captureForModeChange(),

@@ -57,6 +57,12 @@ function fixture() {
     renderHostPrimary: (_force, v) => paints.push(v.id),
     renderMessages: () => paints.push(focused.id),
     runForView: (v) => runs.get(v.id),
+    // Action admission is tested separately; paging still renders its owner.
+    navHistory: { resolveDraft() {} },
+    captureConversationAction: (view) => ({ view }),
+    actionMessages: (view) => view?.history || [],
+    findLatestResumableId: () => null,
+    conversationActionBlocked: () => 'unavailable in paging fixture',
     historyBeforeRun: (messages) => messages.filter((m) => !m.id.startsWith('live-')),
     $: () => ({ scrollTop: 0 }),
     tr: (key) => key,

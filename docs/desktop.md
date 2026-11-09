@@ -8,7 +8,7 @@ L’application **Prime Agent Studio**, construite avec Tauri 2, ouvre le Studio
 
 ## Installation et premier lancement
 
-Exécutez l’installateur [Prime-Agent-Studio_4.3.1_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v4.3.1/Prime-Agent-Studio_4.3.1_x64-setup.exe). L’installation est limitée à votre utilisateur Windows et propose les raccourcis du menu Démarrer et du Bureau. Node.js est inclus. L’installateur installe WebView2 si nécessaire ; une connexion Internet peut être requise pour ce composant.
+Exécutez l’installateur [Prime-Agent-Studio_4.4.8_x64-setup.exe](https://github.com/zerr0o/prime-agent-studio/releases/download/v4.4.8/Prime-Agent-Studio_4.4.8_x64-setup.exe). L’installation est limitée à votre utilisateur Windows et propose les raccourcis du menu Démarrer et du Bureau. Node.js est inclus. L’installateur installe WebView2 si nécessaire ; une connexion Internet peut être requise pour ce composant.
 
 Studio télécharge **Prime Agent, npm privé, uv et Python** à la demande. Ces composants ne sont pas embarqués dans l’installateur. Aucune installation préalable de Node, npm ou Python, modification du PATH ou commande de terminal n’est nécessaire. Une connexion réseau initiale est requise. **Git Bash reste un prérequis séparé** pour les commandes shell du moteur ; son absence est signalée.
 
@@ -155,3 +155,16 @@ La clé privée de signature reste hors du dépôt, dans `%USERPROFILE%\.tauri\p
 Après la compilation signée, lancez `npm run desktop:manifest -- chemin/notes.md` (notes facultatives). `.local/desktop-release/v<version>` contient les trois fichiers à joindre ensemble à la release `v<version>` : l’installateur au nom sans espaces, sa signature `.sig` et le catalogue `latest.json` pour une version stable, ou `beta.json` pour une version `-beta.N`. Une bêta doit être publiée comme prerelease, sans remplacer la dernière release stable. Ne renommez pas l’installateur après cette étape : le catalogue contient son URL exacte.
 
 Le workflow GitHub **Windows desktop release** se lance manuellement avec un tag stable ou bêta existant, correspondant à la version de `package.json`. Il teste, compile, signe et prépare une **release brouillon** avec ces trois fichiers. Configurez les secrets du dépôt `TAURI_SIGNING_PRIVATE_KEY` et, si la clé est chiffrée, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Il refuse de remplacer une release déjà publiée. Le workflow ne signe jamais un installateur téléversé manuellement : il reconstruit toujours l'installateur depuis le tag avant de le signer. Relancez **Windows desktop release** avec le même tag pour régénérer un brouillon existant. Relisez le brouillon avant publication. Une version stable peut devenir la dernière release stable ; une bêta doit rester une prerelease. Ne publiez pas une release sans son catalogue et son installateur.
+
+### Vérifier le démarrage natif
+
+Un test HTTP direct ne valide pas la transition du lanceur Tauri vers le serveur. Le test ci-dessous démarre un WebView2 avec une identité distincte, des données et un serveur temporaires. Il vérifie la navigation initiale, le chargement du Studio, le blocage du retour au lanceur et le maintien du rejet des requêtes externes. Il refuse un exécutable d’identité production et n’installe rien.
+
+```powershell
+npm run desktop:build -- --debug --no-bundle --config test/fixtures/desktop-startup-tauri.json
+$env:PRIME_STUDIO_TEST_EXE = (Resolve-Path src-tauri/target/debug/prime-agent-studio.exe).Path
+npm run test:desktop-startup
+Remove-Item Env:PRIME_STUDIO_TEST_EXE
+```
+
+La configuration de test ne doit jamais être passée au build de distribution.
