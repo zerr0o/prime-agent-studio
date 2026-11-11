@@ -4,6 +4,10 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.9
+
+- **Claude Fable 5.2**: add `anthropic/claude-fable-5-2` to the native catalog (text and images, 1-million-token context, 128,000-token output ceiling). Adaptive thinking is always on; existing levels are preserved (`minimal` maps to API effort `low`). Sign-in compatibility uses a Claude Code client identity of at least 2.1.321 without replacing explicit settings or granting access. Signed thinking blocks are preserved; after a context change, the API can discard only those with an invalid prefix, without changing local history or automatically retrying the request. Rebuilding this reasoning can increase output tokens. Anthropic account permissions still apply, and the model requires 30-day data retention unless Anthropic authorizes otherwise.
+
 ## 4.4.8
 
 - **Shared memories per conversation**: new option, off by default. The saved choice controls global memory injection and knowledge search, including resumed conversations and subagents. Local memories and project context remain available. This controls memory injection only, not file, network or MCP access; global instructions and skills stay independent, and information already exchanged is not erased.

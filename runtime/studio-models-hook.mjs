@@ -11,7 +11,7 @@ const alwaysOn = 'function isAlwaysOnAdaptiveThinkingModel(modelId) {';
 const catalogMarker = '/* Studio: additive model catalog compatibility. */';
 const registryMerge = 'return mergePrimeInferenceModels(bundledModels, livePrimeInferenceModels).map(';
 const registryMarker = '/* Studio: additive native registry model compatibility. */';
-const thinkingMarker = '/* Studio: Claude Opus 5.5 always-on thinking. */';
+const thinkingMarker = '/* Studio: Claude Opus 5.5 and Fable 5.2 always-on thinking. */';
 
 function bumpVersion(source, pattern, target, required, message) {
   const versions = [...source.matchAll(pattern)];
@@ -76,13 +76,37 @@ return mergePrimeInferenceModels([
         alwaysOn,
         `${alwaysOn}
   ${thinkingMarker}
-  if (modelId === "claude-opus-5-5") return true;`,
+  if (modelId === "claude-opus-5-5" || modelId === "claude-fable-5-2") return true;`,
+      );
+      // Studio trims old tool results and rebuilds prompts on resume. Fable 5.2
+      // checks every account's thinking prefix; let the API drop only invalid
+      // blocks instead of failing a long conversation. No local history edits
+      // or automatic retries. Explicit user header overrides still win.
+      // https://platform.claude.com/docs/en/build-with-claude/preserved-thinking
+      const betaFeatures = 'const betaFeatures = [];';
+      const toolChoice = 'if (options?.toolChoice) {';
+      if (source.split(betaFeatures).length !== 2 || source.split(toolChoice).length !== 2)
+        throw new Error('Studio Anthropic thinking-binding adapter requires an update.');
+      source = source.replace(
+        betaFeatures,
+        `${betaFeatures}
+    if (model.id === "claude-fable-5-2") betaFeatures.push("thinking-binding-controls-2026-08-01");`,
+      );
+      source = source.replace(
+        toolChoice,
+        `if (model.id === "claude-fable-5-2") {
+        params.thinking = { ...params.thinking, type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } };
+    }
+    ${toolChoice}`,
       );
       // Always-on models can return empty, signed thinking blocks. Keep their
       // signatures in tool loops instead of dropping them as empty content.
+      const emptyThinking = 'if (block.thinking.trim().length === 0)';
+      if (source.split(emptyThinking).length !== 2)
+        throw new Error('Studio Anthropic signed-thinking adapter requires an update.');
       source = source.replace(
-        'if (block.thinking.trim().length === 0)',
-        'if (block.thinking.trim().length === 0 && !(model.id === "claude-opus-5-5" && block.thinkingSignature))',
+        emptyThinking,
+        'if (block.thinking.trim().length === 0 && !((model.id === "claude-opus-5-5" || model.id === "claude-fable-5-2") && block.thinkingSignature))',
       );
     } else if (adapter) {
       throw new Error('Studio Anthropic thinking adapter requires an update.');

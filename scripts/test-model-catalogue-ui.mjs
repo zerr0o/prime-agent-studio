@@ -4,6 +4,39 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createModelCatalogueFixture, modelCatalogue } from './fixtures/model-catalogue.mjs';
 
+// Inert Anthropic Claude Fable 5.2 fixture for UI-only verification.
+// No credentials, no paid calls, no agent start: pure catalogue metadata.
+// Matches native studio-models metadata (verified 2026-11-11):
+// context 1M, maxTokens 128K, image+text, effort minimal/low/medium/high/xhigh/max, no off.
+const FABLE_ID = 'anthropic/claude-fable-5-2';
+const FABLE_THINKING = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const FABLE_FIXTURE = {
+  id: FABLE_ID,
+  name: 'Claude Fable 5.2',
+  provider: 'anthropic',
+  availability: 'available',
+  reasoning: true,
+  input: ['text', 'image'],
+  contextWindow: 1000000,
+  maxTokens: 128000,
+  thinkingLevels: [...FABLE_THINKING],
+};
+
+function catalogueWithFable(options) {
+  const base = modelCatalogue(options);
+  if (!base.models.some((model) => model.id === FABLE_ID)) {
+    base.models = [
+      ...base.models,
+      {
+        ...FABLE_FIXTURE,
+        input: [...FABLE_FIXTURE.input],
+        thinkingLevels: [...FABLE_THINKING],
+      },
+    ];
+  }
+  return base;
+}
+
 const fixture = await createModelCatalogueFixture({ retired: false });
 const errors = [],
   checks = [];
@@ -26,7 +59,7 @@ try {
       await new Promise((resolve) => {
         manualResponse = resolve;
       });
-      return route.fulfill({ json: modelCatalogue() });
+      return route.fulfill({ json: catalogueWithFable() });
     }
     reads += 1;
     if (reads === 2) {
@@ -34,9 +67,9 @@ try {
       // the test has observed the refreshing status, so the assertion cannot race
       // the mocked network round-trip. Release happens right after the status check.
       await autoRefreshGate;
-      return route.fulfill({ json: modelCatalogue({ retired: true, refreshing: false }) });
+      return route.fulfill({ json: catalogueWithFable({ retired: true, refreshing: false }) });
     }
-    return route.fulfill({ json: modelCatalogue({ retired: reads > 1, refreshing: reads === 1 }) });
+    return route.fulfill({ json: catalogueWithFable({ retired: reads > 1, refreshing: reads === 1 }) });
   });
   await page.goto(fixture.url);
   const freeId = 'openrouter/minimax/minimax-m3:free';
@@ -95,9 +128,56 @@ try {
   await expect(page.locator('#model-select')).toHaveValue('openrouter/minimax/minimax-m3');
   checks.push('Reopening rechecks the catalogue; switching to a paid model requires an explicit selection.');
 
+  // Anthropic Claude Fable 5.2: picker/search exposes the inert fixture,
+  // selection persists, and every documented effort level persists (off excluded).
+  await page.locator('#model-picker-button').click();
+  await page.locator('#model-search').fill('fable');
+  const fableRow = page.locator(`.model-row[data-model-id="${FABLE_ID}"]`);
+  await expect(fableRow).toBeVisible();
+  await expect(fableRow.locator('.model-choice')).toBeEnabled();
+  await expect(fableRow).toContainText('Claude Fable 5.2');
+  await expect(fableRow).toContainText(FABLE_ID);
+  await expect(page.locator('.model-row')).toHaveCount(1);
+  await expect(page.locator('#model-results-status')).toHaveText('1 résultat');
+  await expect(page.locator('#model-search')).toHaveValue('fable');
+  await mkdir(resolve('.local/study/claude-fable-52'), { recursive: true });
+  await page.screenshot({
+    path: resolve('.local/study/claude-fable-52/model-catalogue-fable-52.png'),
+    animations: 'disabled',
+  });
+  await fableRow.locator('.model-choice').click();
+  await expect(page.locator('#model-select')).toHaveValue(FABLE_ID);
+  // The composer keeps generic requested preferences. Native clamping of
+  // unsupported levels (including off) is covered by anthropic-models.test.mjs.
+  for (const level of FABLE_THINKING) {
+    await page.locator('#thinking-select').selectOption(level);
+    await expect(page.locator('#thinking-select')).toHaveValue(level);
+    await expect(page.locator('#model-select')).toHaveValue(FABLE_ID);
+  }
+  // Native UI evidence via the real Studio HTTP route (mocked inert catalogue):
+  // metadata matches studio-models (context 1M, 128K output, vision, effort set, no off).
+  const fableCatalog = await page.evaluate(async () => await (await fetch('/api/models')).json());
+  const fableEntry = fableCatalog.models.find((model) => model.id === FABLE_ID);
+  expect(fableEntry).toBeTruthy();
+  expect(fableEntry.provider).toBe('anthropic');
+  expect(fableEntry.availability).toBe('available');
+  expect(fableEntry.contextWindow).toBe(1000000);
+  expect(fableEntry.maxTokens).toBe(128000);
+  expect(fableEntry.input).toEqual(['text', 'image']);
+  expect(fableEntry.thinkingLevels).toEqual(FABLE_THINKING);
+  expect(fableEntry.thinkingLevels).not.toContain('off');
+  // Other providers remain alongside anthropic (regression).
+  const providers = [...new Set(fableCatalog.models.map((model) => model.provider))].sort();
+  expect(providers).toContain('anthropic');
+  expect(providers).toContain('openrouter');
+  expect(providers).toContain('prime-inference');
+  checks.push(
+    'Anthropic Claude Fable 5.2 is searchable, selectable, and retains every supported effort level, with native capability metadata excluding off and including vision/context; other providers remain.',
+  );
+
   const mobile = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 } });
   mobile.on('pageerror', (error) => errors.push(error.message));
-  await mobile.route('**/api/models', (route) => route.fulfill({ json: modelCatalogue() }));
+  await mobile.route('**/api/models', (route) => route.fulfill({ json: catalogueWithFable() }));
   await mobile.goto(fixture.url);
   await mobile.locator('#model-picker-button').click();
   await expect(mobile.locator('.model-choice-availability')).toHaveText('Unavailable');
@@ -127,7 +207,7 @@ try {
   });
   await offline.route('**/api/models', async (route) => {
     offlineReads += 1;
-    if (offlineReads === 1) return route.fulfill({ json: modelCatalogue({ refreshing: true }) });
+    if (offlineReads === 1) return route.fulfill({ json: catalogueWithFable({ refreshing: true }) });
     // Deterministic offline interrupt: hold the dialog-triggered refresh until the
     // test has gone offline, so the continued network attempt must fail while offline.
     await offlineRefreshGate;
