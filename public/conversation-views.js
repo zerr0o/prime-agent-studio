@@ -402,6 +402,9 @@ export function createConversationViews(deps) {
     else view.shell.scroller.scrollTop = view.scrollTop;
     view.shell.pill.hidden = view.follow || !messages.length;
     refreshShellText(view);
+    // A short transcript fits without firing scroll. Acknowledge the focused
+    // pane on paint too; another pane's explicit "unread" survives repaints.
+    if (dockedActive && view.id === focusedId) markSessionRead?.(view);
   }
 
   function scheduleBg(view) {

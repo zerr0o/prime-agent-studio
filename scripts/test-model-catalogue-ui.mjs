@@ -3,6 +3,17 @@ import { launchStudioBrowser } from './fixtures/browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createModelCatalogueFixture, modelCatalogue } from './fixtures/model-catalogue.mjs';
+import { STUDIO_MODELS } from '../lib/studio-models.mjs';
+
+const GPT62_THINKING = ['low', 'medium', 'high', 'xhigh', 'max'];
+const GPT62_FIXTURES = STUDIO_MODELS.filter((model) =>
+  ['gpt-6.2-astra', 'gpt-6.2-sol'].includes(model.id),
+).map((model) => ({
+  ...model,
+  id: `${model.provider}/${model.id}`,
+  availability: 'available',
+  thinkingLevels: GPT62_THINKING,
+}));
 
 // Inert Anthropic Claude Fable 5.2 fixture for UI-only verification.
 // No credentials, no paid calls, no agent start: pure catalogue metadata.
@@ -34,6 +45,7 @@ function catalogueWithFable(options) {
       },
     ];
   }
+  base.models.push(...GPT62_FIXTURES);
   return base;
 }
 
@@ -173,6 +185,26 @@ try {
   expect(providers).toContain('prime-inference');
   checks.push(
     'Anthropic Claude Fable 5.2 is searchable, selectable, and retains every supported effort level, with native capability metadata excluding off and including vision/context; other providers remain.',
+  );
+
+  // New OpenAI models remain explicit choices; no agent is started by this fixture.
+  for (const model of GPT62_FIXTURES) {
+    await page.locator('#model-picker-button').click();
+    await page.locator('#model-search').fill('6.2');
+    await expect(page.locator('.model-row')).toHaveCount(4);
+    const row = page.locator(`.model-row[data-model-id="${model.id}"]`);
+    await expect(row).toContainText(model.name);
+    await expect(row.locator('.model-choice')).toBeEnabled();
+    await row.locator('.model-choice').click();
+    await expect(page.locator('#model-select')).toHaveValue(model.id);
+    for (const level of GPT62_THINKING) {
+      await page.locator('#thinking-select').selectOption(level);
+      await expect(page.locator('#thinking-select')).toHaveValue(level);
+      await expect(page.locator('#model-select')).toHaveValue(model.id);
+    }
+  }
+  checks.push(
+    'GPT-6.2 Astra and Sol are searchable and selectable for API and Codex, with all supported efforts; defaults remain unchanged until explicit selection.',
   );
 
   const mobile = await browser.newPage({ locale: 'en-US', viewport: { width: 390, height: 844 } });

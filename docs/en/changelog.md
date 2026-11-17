@@ -4,6 +4,12 @@
 
 Changes by version. See [GitHub releases](https://github.com/zerr0o/prime-agent-studio/releases) for installers and source archives.
 
+## 4.4.10
+
+- **GPT-6.2 Astra and Sol**: added to the native OpenAI API and Codex catalogues without changing the default model or bypassing account access checks. API: 1.05M context, up to 128K output, text and image inputs, and updated Standard prices. Codex: default context of 272K for Astra and 500K for Sol; catalogue client identity raised to the 0.166.0 minimum. Efforts `low` through `max` are available; `off` and `minimal` clamp to `low`. The current engine does not expose Codex `ultra` with automatic delegation. Reasoning items and tool calls remain in order; OpenAI may drop reasoning after prefix edits or certain model, end-user or organization changes, without rewriting local history or adding a retry. Displayed estimates remain Standard short-context rates, excluding long-context and accelerated-mode surcharges.
+
+- **Short conversations and unread status**: the active secondary tab can now be marked as read after displaying the end of its history, even when scrolling is impossible. Visibility, loading and reading-position checks also apply during refreshes; repainting another secondary tab does not by itself cancel its manual unread marker. No messages or history are changed.
+
 ## 4.4.9
 
 - **Claude Fable 5.2**: add `anthropic/claude-fable-5-2` to the native catalog (text and images, 1-million-token context, 128,000-token output ceiling). Adaptive thinking is always on; existing levels are preserved (`minimal` maps to API effort `low`). Sign-in compatibility uses a Claude Code client identity of at least 2.1.321 without replacing explicit settings or granting access. Signed thinking blocks are preserved; after a context change, the API can discard only those with an invalid prefix, without changing local history or automatically retrying the request. Rebuilding this reasoning can increase output tokens. Anthropic account permissions still apply, and the model requires 30-day data retention unless Anthropic authorizes otherwise.

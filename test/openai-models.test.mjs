@@ -20,12 +20,12 @@ import { createNativeModelCatalog } from '../lib/native-model-catalog.mjs';
 // Official release values: GPT-6 verified 2026-09-23; Codex client 2026-09-29:
 // https://developers.openai.com/api/docs/models/gpt-6-sol
 // https://developers.openai.com/api/docs/models/gpt-6-luna
-// https://github.com/openai/codex/releases/tag/rust-v0.159.1
+// https://github.com/openai/codex/releases/tag/rust-v0.166.0
 const sol = (models) => models.find((model) => model.id === 'gpt-6-sol');
 const luna = (models) => models.find((model) => model.id === 'gpt-6-luna');
 
 test('OpenAI GPT-6 API metadata matches official release values', () => {
-  assert.equal(OPENAI_GPT6_MODELS.length, 4);
+  assert.equal(OPENAI_GPT6_MODELS.length, 6);
   for (const model of [sol(OPENAI_GPT6_MODELS), luna(OPENAI_GPT6_MODELS)]) {
     assert.equal(model.api, 'openai-responses');
     assert.equal(model.provider, 'openai');
@@ -75,8 +75,29 @@ test('GPT-6.1 Terra API metadata matches the official model documentation', () =
   assert.deepEqual(model.thinkingLevelMap, { off: 'none', minimal: null, xhigh: 'xhigh', max: 'max' });
 });
 
+// Official model pages + migration guide, verified 2026-11-17.
+for (const [id, name, cost] of [
+  ['gpt-6.2-astra', 'GPT-6.2 Astra', { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10 }],
+  ['gpt-6.2-sol', 'GPT-6.2 Sol', { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
+]) {
+  test(`${name} API metadata keeps always-on reasoning and official limits/prices`, () => {
+    const model = OPENAI_GPT6_MODELS.find((entry) => entry.id === id);
+    assert.ok(model);
+    assert.equal(model.name, name);
+    assert.equal(model.api, 'openai-responses');
+    assert.equal(model.provider, 'openai');
+    assert.equal(model.baseUrl, 'https://api.openai.com/v1');
+    assert.equal(model.reasoning, true);
+    assert.equal(model.contextWindow, 1050000);
+    assert.equal(model.maxTokens, 128000);
+    assert.deepEqual(model.input, ['text', 'image']);
+    assert.deepEqual(model.cost, cost);
+    assert.deepEqual(model.thinkingLevelMap, { off: null, minimal: null, xhigh: 'xhigh', max: 'max' });
+  });
+}
+
 test('Codex GPT-6 metadata uses subscription transport with per-model context', () => {
-  assert.equal(OPENAI_CODEX_GPT6_MODELS.length, 4);
+  assert.equal(OPENAI_CODEX_GPT6_MODELS.length, 6);
   for (const model of OPENAI_CODEX_GPT6_MODELS) {
     assert.equal(model.api, 'openai-codex-responses');
     assert.equal(model.provider, 'openai-codex');
@@ -84,7 +105,7 @@ test('Codex GPT-6 metadata uses subscription transport with per-model context', 
     assert.equal(model.reasoning, true);
     assert.deepEqual(model.input, ['text', 'image']);
     assert.deepEqual(model.thinkingLevelMap, { off: null, minimal: null, xhigh: 'xhigh', max: 'max' });
-    assert.equal(model.contextWindow, model.id === 'gpt-6.1-terra' ? 500000 : 272000);
+    assert.equal(model.contextWindow, ['gpt-6.1-terra', 'gpt-6.2-sol'].includes(model.id) ? 500000 : 272000);
     assert.equal(model.maxTokens, 128000);
   }
   assert.deepEqual(sol(OPENAI_CODEX_GPT6_MODELS).cost, sol(OPENAI_GPT6_MODELS).cost);
@@ -95,7 +116,7 @@ test('Codex GPT-6 metadata uses subscription transport with per-model context', 
 });
 
 test('STUDIO_MODELS bundles all supported models and pins the Codex client identity', () => {
-  assert.equal(STUDIO_MODELS.length, 10);
+  assert.equal(STUDIO_MODELS.length, 14);
   assert.deepEqual(STUDIO_MODELS.map((model) => `${model.provider}/${model.id}`).sort(), [
     'anthropic/claude-fable-5-2',
     'anthropic/claude-opus-5-5',
@@ -103,13 +124,17 @@ test('STUDIO_MODELS bundles all supported models and pins the Codex client ident
     'openai-codex/gpt-6-sol',
     'openai-codex/gpt-6.1-sol',
     'openai-codex/gpt-6.1-terra',
+    'openai-codex/gpt-6.2-astra',
+    'openai-codex/gpt-6.2-sol',
     'openai/gpt-6-luna',
     'openai/gpt-6-sol',
     'openai/gpt-6.1-sol',
     'openai/gpt-6.1-terra',
+    'openai/gpt-6.2-astra',
+    'openai/gpt-6.2-sol',
   ]);
   assert.ok(STUDIO_MODELS.includes(ANTHROPIC_OPUS_55));
-  assert.equal(CODEX_CATALOG_CLIENT_VERSION, '0.159.1');
+  assert.equal(CODEX_CATALOG_CLIENT_VERSION, '0.166.0');
 });
 
 test('studioModelSourceKind scopes catalog, adapter, registry and bundles', () => {
@@ -235,7 +260,7 @@ globalThis.original = original;
     );
   }
   assert.throws(
-    () => transformStudioModelSupport('const OPENAI_CODEX_CLIENT_VERSION = "0.159.1";', { registry: true }),
+    () => transformStudioModelSupport('const OPENAI_CODEX_CLIENT_VERSION = "0.166.0";', { registry: true }),
     /native model registry adapter requires an update/,
   );
 });
@@ -243,17 +268,17 @@ globalThis.original = original;
 test('registry client version floor updates older and preserves higher', () => {
   const older = versionFixture('var', '0.153.4');
   const bumped = transformStudioModelSupport(older, { registry: true });
-  assert.match(bumped, /(?:const|var)\s+OPENAI_CODEX_CLIENT_VERSION\s*=\s*"0\.159\.1"/);
+  assert.match(bumped, /(?:const|var)\s+OPENAI_CODEX_CLIENT_VERSION\s*=\s*"0\.166\.0"/);
   assert.equal(transformStudioModelSupport(bumped, { registry: true }), bumped);
   const olderConst = versionFixture('const', '0.100.0');
-  assert.match(transformStudioModelSupport(olderConst, { registry: true }), /"0\.159\.1"/);
+  assert.match(transformStudioModelSupport(olderConst, { registry: true }), /"0\.166\.0"/);
   const newer = transformStudioModelSupport(versionFixture('const', '0.200.0'), { registry: true });
   assert.match(newer, /OPENAI_CODEX_CLIENT_VERSION = "0\.200\.0"/);
   assert.equal(transformStudioModelSupport(newer, { registry: true }), newer);
   const equal = transformStudioModelSupport(versionFixture('const', CODEX_CATALOG_CLIENT_VERSION), {
     registry: true,
   });
-  assert.match(equal, /OPENAI_CODEX_CLIENT_VERSION = "0\.159\.1"/);
+  assert.match(equal, /OPENAI_CODEX_CLIENT_VERSION = "0\.166\.0"/);
   assert.equal(transformStudioModelSupport(equal, { registry: true }), equal);
   assert.throws(
     () => transformStudioModelSupport('export const unrelated = true;', { registry: true }),
@@ -281,7 +306,7 @@ const fixtureContext = () => ({
   systemPrompt: 'You are a test fixture.',
 });
 
-async function capturePayload(t, streamFn, model, options) {
+async function capturePayload(t, streamFn, model, options, context = fixtureContext()) {
   const cli = discoverCli();
   if (!cli?.packageDir) return t.skip('Prime Agent integration requires the installed runtime');
   const realFetch = globalThis.fetch;
@@ -290,7 +315,7 @@ async function capturePayload(t, streamFn, model, options) {
   };
   try {
     let captured;
-    const stream = streamFn(model, fixtureContext(), {
+    const stream = streamFn(model, context, {
       apiKey: 'fixture-key',
       sessionId: 'studio-openai-test',
       ...options,
@@ -328,7 +353,7 @@ test('OpenAI API effort mapping keeps model-specific off handling, minimal clamp
     const off = await capturePayload(t, providers.responses.streamSimpleOpenAIResponses, model, {
       reasoning: 'off',
     });
-    assert.equal(off.reasoning?.effort, model.id === 'gpt-6.1-sol' ? 'low' : 'none');
+    assert.equal(off.reasoning?.effort, model.thinkingLevelMap.off === null ? 'low' : 'none');
     assert.equal(off.model, model.id);
     const minimal = await capturePayload(t, providers.responses.streamSimpleOpenAIResponses, model, {
       reasoning: 'minimal',
@@ -380,7 +405,94 @@ test('Codex effort mapping: off and minimal clamp to low, none guarded, low..max
   assert.equal(none.reasoning?.effort, 'none');
 });
 
-test('native picker catalog exposes GPT-6.1 Sol and Terra with supported efforts, without changing defaults', async (t) => {
+test('GPT-6.2 native payloads preserve reasoning and tool order without unsupported Studio defaults', async (t) => {
+  const providers = await openaiProviders(t);
+  if (!providers) return;
+  for (const [models, stream, apiKey] of [
+    [OPENAI_GPT6_MODELS, providers.responses.streamSimpleOpenAIResponses, 'fixture-key'],
+    [OPENAI_CODEX_GPT6_MODELS, providers.codex.streamSimpleOpenAICodexResponses, fixtureJwt],
+  ]) {
+    for (const model of models.filter((entry) => entry.id.startsWith('gpt-6.2-'))) {
+      for (const signature of [
+        {
+          type: 'reasoning',
+          id: 'rs_signed_fixture',
+          summary: [{ type: 'summary_text', text: 'fixture thinking' }],
+          encrypted_content: 'fixture-signed-bytes',
+        },
+        { type: 'reasoning', id: 'rs_empty_fixture' },
+      ]) {
+        const context = {
+          systemPrompt: 'You are a test fixture.',
+          tools: [
+            {
+              name: 'fixture_tool',
+              description: 'Offline fixture',
+              parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+            },
+          ],
+          messages: [
+            { role: 'user', content: 'Call the fixture tool.', timestamp: 1 },
+            {
+              role: 'assistant',
+              model: model.id,
+              provider: model.provider,
+              api: model.api,
+              timestamp: 2,
+              stopReason: 'toolUse',
+              content: [
+                { type: 'thinking', thinking: '', thinkingSignature: JSON.stringify(signature) },
+                {
+                  type: 'toolCall',
+                  id: 'call_abc123|fc_abc123',
+                  name: 'fixture_tool',
+                  arguments: { q: 'ok' },
+                },
+              ],
+            },
+            {
+              role: 'toolResult',
+              toolCallId: 'call_abc123|fc_abc123',
+              toolName: 'fixture_tool',
+              content: [{ type: 'text', text: 'fixture-result' }],
+              isError: false,
+              timestamp: 3,
+            },
+            { role: 'user', content: 'Continue.', timestamp: 4 },
+          ],
+        };
+        const before = structuredClone(context);
+        const payload = await capturePayload(t, stream, model, { apiKey, reasoning: 'medium' }, context);
+        assert.equal(payload.model, model.id);
+        assert.equal(payload.store, false);
+        assert.ok(payload.include.includes('reasoning.encrypted_content'));
+        for (const key of ['temperature', 'top_p', 'top_logprobs', 'prompt_cache_retention']) {
+          assert.equal(payload[key], undefined, `${model.provider}/${model.id} omits ${key}`);
+        }
+        assert.ok(!payload.include.includes('message.output_text.logprobs'));
+        assert.deepEqual(
+          payload.input.filter((item) => item.type === 'reasoning'),
+          [signature],
+        );
+        assert.deepEqual(
+          payload.input
+            .filter((item) => ['reasoning', 'function_call', 'function_call_output'].includes(item.type))
+            .map((item) => item.type),
+          ['reasoning', 'function_call', 'function_call_output'],
+        );
+        const call = payload.input.find((item) => item.type === 'function_call');
+        const result = payload.input.find((item) => item.type === 'function_call_output');
+        assert.equal(call.call_id, 'call_abc123');
+        assert.equal(result.call_id, call.call_id);
+        assert.equal(call.arguments, '{"q":"ok"}');
+        assert.equal(result.output, 'fixture-result');
+        assert.deepEqual(context, before, 'native conversion must not edit the stored transcript');
+      }
+    }
+  }
+});
+
+test('native picker catalog exposes GPT-6.1 and GPT-6.2 with supported efforts, without changing defaults', async (t) => {
   const cli = discoverCli();
   if (!cli?.packageDir) return t.skip('Prime Agent integration requires the installed runtime');
   const dir = await mkdtemp(join(tmpdir(), 'prime-studio-sol61-catalog-'));
@@ -410,6 +522,18 @@ test('native picker catalog exposes GPT-6.1 Sol and Terra with supported efforts
   assert.equal(terra.name, 'GPT-6.1 Terra');
   assert.equal(terra.contextWindow, 1050000);
   assert.deepEqual(terra.thinkingLevels, ['off', 'low', 'medium', 'high', 'xhigh', 'max']);
+  for (const [id, name] of [
+    ['gpt-6.2-astra', 'GPT-6.2 Astra'],
+    ['gpt-6.2-sol', 'GPT-6.2 Sol'],
+  ]) {
+    const next = result.models.find((item) => item.provider === 'openai' && item.id === id);
+    assert.ok(next, `${id} appears in the real native picker catalogue`);
+    assert.equal(next.name, name);
+    assert.equal(next.contextWindow, 1050000);
+    assert.equal(next.maxTokens, 128000);
+    assert.deepEqual(next.input, ['text', 'image']);
+    assert.deepEqual(next.thinkingLevels, ['low', 'medium', 'high', 'xhigh', 'max']);
+  }
   assert.equal(JSON.stringify(result).includes(secret), false);
   assert.equal(await readFile(join(dir, 'auth.json'), 'utf8'), authText);
   assert.equal(await readFile(join(dir, 'settings.json'), 'utf8'), settingsText);
@@ -418,7 +542,7 @@ test('native picker catalog exposes GPT-6.1 Sol and Terra with supported efforts
   assert.ok(!signedOut.models.some((item) => item.provider === 'openai'));
 });
 
-test('mocked Codex catalog uses client 0.159.1 and preserves GPT-6.1 Sol and Terra account access checks', async (t) => {
+test('mocked Codex catalog uses client 0.166.0 and preserves account access checks including GPT-6.2', async (t) => {
   const cli = discoverCli();
   if (!cli?.packageDir) return t.skip('Prime Agent integration requires the installed runtime');
   registerStudioModelSupport(cli.packageDir);
@@ -471,7 +595,15 @@ test('mocked Codex catalog uses client 0.159.1 and preserves GPT-6.1 Sol and Ter
   const realFetch = globalThis.fetch;
   const previousOffline = process.env.PI_OFFLINE;
   process.env.PI_OFFLINE = '1';
-  let allowedIds = ['gpt-6-sol', 'gpt-6-luna', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-5.6-luna'];
+  let allowedIds = [
+    'gpt-6-sol',
+    'gpt-6-luna',
+    'gpt-6.1-sol',
+    'gpt-6.1-terra',
+    'gpt-6.2-astra',
+    'gpt-6.2-sol',
+    'gpt-5.6-luna',
+  ];
   globalThis.fetch = async (url, init) => {
     seen.push({ url: String(url), init });
     return {
@@ -491,7 +623,7 @@ test('mocked Codex catalog uses client 0.159.1 and preserves GPT-6.1 Sol and Ter
   assert.equal(seen.length, 1);
   const fetched = new URL(seen[0].url);
   assert.ok(fetched.pathname.endsWith('/codex/models'));
-  assert.equal(fetched.searchParams.get('client_version'), '0.159.1');
+  assert.equal(fetched.searchParams.get('client_version'), '0.166.0');
   assert.equal(seen[0].init.headers['chatgpt-account-id'], 'studio-test-account');
   const codexIds = new Set(
     executable.filter((model) => model.provider === 'openai-codex').map((model) => model.id),
@@ -500,13 +632,20 @@ test('mocked Codex catalog uses client 0.159.1 and preserves GPT-6.1 Sol and Ter
   assert.ok(codexIds.has('gpt-6-luna'));
   assert.ok(codexIds.has('gpt-6.1-sol'));
   assert.ok(codexIds.has('gpt-6.1-terra'));
+  assert.ok(codexIds.has('gpt-6.2-astra'));
+  assert.ok(codexIds.has('gpt-6.2-sol'));
   assert.ok(!codexIds.has('gpt-6-stale-fixture'));
   // A fresh native registry must hide the same built-in when the account's
   // server catalog does not grant it. No permissive Studio fallback is added.
-  allowedIds = allowedIds.filter((id) => !['gpt-6.1-sol', 'gpt-6.1-terra'].includes(id));
+  allowedIds = allowedIds.filter(
+    (id) => !['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6.2-astra', 'gpt-6.2-sol'].includes(id),
+  );
   const restricted = await ModelRegistry.create(auth, join(dir, 'models.json')).getExecutableModels();
   assert.equal(seen.length, 2);
   assert.ok(restricted.some((model) => model.provider === 'openai-codex' && model.id === 'gpt-6-sol'));
   assert.ok(!restricted.some((model) => model.provider === 'openai-codex' && model.id === 'gpt-6.1-sol'));
   assert.ok(!restricted.some((model) => model.provider === 'openai-codex' && model.id === 'gpt-6.1-terra'));
+  assert.ok(
+    !restricted.some((model) => model.provider === 'openai-codex' && model.id.startsWith('gpt-6.2-')),
+  );
 });

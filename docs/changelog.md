@@ -4,6 +4,12 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.10
+
+- **GPT-6.2 Astra et Sol** : ajout au catalogue natif OpenAI API et Codex, sans changer le modèle par défaut ni contourner les droits du compte. Via l’API : contexte 1,05 M, sortie jusqu’à 128 K, texte et images, tarifs standard actualisés. Via Codex : contexte par défaut de 272 K pour Astra et 500 K pour Sol ; identité minimale du catalogue relevée à 0.166.0. Les efforts `low` à `max` sont disponibles ; `off` et `minimal` sont ramenés à `low`. Le mode Codex `ultra` à délégation automatique n’est pas exposé par le moteur actuel. Les éléments de raisonnement et les appels d’outils restent transmis dans l’ordre ; selon OpenAI, une modification du préfixe ou certains changements de modèle, d’utilisateur ou d’organisation peuvent faire écarter le raisonnement côté API, sans réécriture de l’historique local ni nouvelle tentative ajoutée. Les estimations affichées restent celles du tarif standard court contexte, hors majorations de contexte long et modes accélérés.
+
+- **Conversations courtes et non-lus** : l’onglet secondaire actif peut désormais être marqué comme lu après l’affichage de la fin de son historique, même quand aucun défilement n’est possible. Les contrôles de visibilité, de chargement et de position de lecture s’appliquent aussi aux rafraîchissements ; repeindre un autre onglet secondaire ne suffit pas à annuler son marquage manuel en non lu. Aucun message ni historique n’est modifié.
+
 ## 4.4.9
 
 - **Claude Fable 5.2** : ajout de `anthropic/claude-fable-5-2` au catalogue natif (texte et images, contexte de 1 million de tokens, plafond de sortie de 128 000 tokens). Réflexion adaptative toujours active ; les niveaux existants sont conservés (`minimal` correspond à l’effort API `low`). La compatibilité de connexion utilise l’identité cliente Claude Code 2.1.321 au minimum, sans remplacer les réglages explicites ni accorder de droits supplémentaires. Les blocs de réflexion signés sont conservés ; après une modification du contexte, l’API peut écarter uniquement ceux dont le préfixe n’est plus valide, sans modifier l’historique local ni relancer automatiquement la requête. Reconstruire cette réflexion peut augmenter les tokens de sortie. L’accès reste soumis aux droits Anthropic et le modèle impose une conservation des données de 30 jours, sauf autorisation contraire d’Anthropic.

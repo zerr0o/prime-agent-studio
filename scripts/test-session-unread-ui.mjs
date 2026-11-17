@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, writeFile, appendFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createApp } from '../server.mjs';
+import { createDefaultLayout } from '../public/docking-layout.js';
 
 const root = await mkdtemp(join(tmpdir(), 'prime-studio-unread-ui-'));
 const cwd = join(root, 'Atelier');
@@ -77,6 +78,10 @@ async function markUnreadViaMenu(id) {
 try {
   browser = await launchStudioBrowser({ channel: 'chrome' });
   const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1440, height: 960 } });
+  // This legacy regression exercises the classic host; docking has its own test.
+  await context.addInitScript(layout => {
+    localStorage.setItem('prime-studio.docking.layout', JSON.stringify(layout));
+  }, { ...createDefaultLayout(), enabled: false });
   page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(url);

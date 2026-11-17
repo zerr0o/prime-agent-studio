@@ -2823,10 +2823,20 @@ function atConversationBottom() {
   return s.scrollHeight - s.scrollTop - s.clientHeight < 3;
 }
 function markVisibleSessionRead(view = null) {
-  const live = convViews?.composerLive?.();
+  const live = convViews?.composerLive?.() && dockingUI?.active;
   const target = view || (live ? convViews.byId(PRIMARY_VIEW_ID) : convViews?.focused());
   if (!target || !target.sessionId) return;
   if (document.hidden || target.loading || state.projectOverview) return;
+  // Every caller (paint, scroll, focus refresh) must check the owning viewport.
+  // A parked shell or a periodic overview refresh must not acknowledge unseen text.
+  if (dockingUI?.active && !dockingUI.visiblePanels().includes(target.id)) return;
+  if (!live && target !== convViews?.focused()) return;
+  const pane = live && target.id !== PRIMARY_VIEW_ID;
+  const scroller = pane ? target.shell?.scroller : $('conversation-scroll');
+  if (pane && target.shell?.bg?.hidden) return;
+  if (!scroller?.getClientRects().length || scroller.clientHeight <= 0 || scroller.clientWidth <= 0) return;
+  if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight >= (pane ? 3 : 110)) return;
+  if (document.querySelector('dialog:modal, #sidebar.mobile-open, #details-panel.mobile-open')) return;
   const run = runForView(target);
   if (isRunning(run)) return;
   const msgs = run && run.initialized ? [...(run.base || []), ...(run.messages || [])] : target.history || [];
@@ -2838,12 +2848,8 @@ function markVisibleSessionRead(view = null) {
     renderProjectOverview();
   }
 }
-// Host-scroller gates (bottom, modal, visibility) stay host-bound; the pane
-// shells gate themselves before calling markVisibleSessionRead(view).
+// Host-scroller routing; viewport gates live in the shared acknowledgement path.
 function markHostSessionRead() {
-  if (!conversationVisible()) return;
-  if (!nearBottom()) return;
-  if (document.querySelector('dialog:modal, #sidebar.mobile-open, #details-panel.mobile-open')) return;
   markVisibleSessionRead();
 }
 async function syncSessionActivity() {
@@ -2870,7 +2876,7 @@ async function syncSessionActivity() {
     }
     renderMessages();
   }
-  markVisibleSessionRead();
+  markVisibleSessionRead(convViews?.focused());
   renderProjects();
   renderSessions();
   renderProjectOverview();

@@ -1,6 +1,6 @@
 {
   "name": "prime-agent-studio",
-  "version": "4.4.9",
+  "version": "4.4.10",
   "private": true,
   "author": "zerr0o",
   "license": "MIT",
@@ -43,6 +43,7 @@
     "test:roadmap:packaged": "node scripts/test-roadmap-native-packaged.mjs",
     "test:mobile": "node scripts/test-mobile-control.mjs",
     "test:workspace": "node scripts/test-workspace-ui.mjs",
+    "test:unread": "node scripts/test-session-unread-ui.mjs && node scripts/test-short-pane-read-ui.mjs",
     "test:docking": "node --test test/docking-layout.test.mjs && node scripts/test-docking-ui.mjs",
     "test:docking:workspace": "node scripts/test-docking-workspace-ui.mjs && node scripts/test-docking-new-conversation-ui.mjs && node scripts/test-conversation-registry-cap-ui.mjs",
     "test:docking:resize": "node scripts/test-docking-resize-ui.mjs",

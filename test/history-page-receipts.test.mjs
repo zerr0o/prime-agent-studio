@@ -63,11 +63,19 @@ test('optimistic completed run uses its displayed answer, not the stale pre-run 
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const fn = source.slice(
     source.indexOf('function markVisibleSessionRead('),
-    source.indexOf('// Host-scroller gates'),
+    source.indexOf('// Host-scroller routing'),
   );
   const context = {
     state: { projectOverview: false },
-    document: { hidden: false },
+    document: { hidden: false, querySelector: () => null },
+    dockingUI: { active: true, visiblePanels: () => ['conversation'] },
+    $: () => ({
+      scrollHeight: 200,
+      scrollTop: 0,
+      clientHeight: 200,
+      clientWidth: 500,
+      getClientRects: () => [{}],
+    }),
     PRIMARY_VIEW_ID: 'conversation',
     convViews: { composerLive: () => true, byId: () => view },
     runForView: () => ({ initialized: true, status: 'completed', base: [], messages: [final] }),
