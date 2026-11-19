@@ -116,10 +116,13 @@ test('Codex GPT-6 metadata uses subscription transport with per-model context', 
 });
 
 test('STUDIO_MODELS bundles all supported models and pins the Codex client identity', () => {
-  assert.equal(STUDIO_MODELS.length, 14);
+  assert.equal(STUDIO_MODELS.length, 17);
   assert.deepEqual(STUDIO_MODELS.map((model) => `${model.provider}/${model.id}`).sort(), [
     'anthropic/claude-fable-5-2',
     'anthropic/claude-opus-5-5',
+    'google/gemini-4-carbon',
+    'google/gemini-4-hydrogen',
+    'google/gemini-4-neon',
     'openai-codex/gpt-6-luna',
     'openai-codex/gpt-6-sol',
     'openai-codex/gpt-6.1-sol',

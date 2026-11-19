@@ -68,6 +68,70 @@ return mergePrimeInferenceModels([
       throw new Error('Studio native model registry adapter requires an update.');
     }
   }
+  // Gemini 4 uses generateContent ThinkingLevel only (LOW/MEDIUM/HIGH/XHIGH),
+  // has no off or minimal level, and keeps the generic tool and thought-signature
+  // round-trip. Native 0.9.8 routes unknown models through numeric thinking budgets
+  // (AUTOMATIC -1 for gemini-4-*) and cannot express xhigh, so send levels instead
+  // of budgets. XHIGH matches the official ThinkingLevel enum shipped in newer
+  // @google/genai releases; the disabled path uses the lowest supported level,
+  // mirroring the native Gemini 3 handling in the same function.
+  // https://aistudio.google.com/docs/thinking
+  const googleMarker = '/* Studio: Gemini 4 generateContent thinking levels. */';
+  const googleRouting =
+    'if (isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel) || isGemma4Model(googleModel)) {';
+  const googleThinkingFn = 'function getThinkingLevel(effort, model) {';
+  const googleDisabledTail = 'return { thinkingBudget: 0 };';
+  const googleHelperFn = 'function isGemini3FlashModel(model) {';
+  const googleAnchors = [googleRouting, googleThinkingFn, googleDisabledTail, googleHelperFn];
+  const isGoogleShape =
+    source.includes('streamSimpleGoogle') ||
+    source.includes('getGoogleThinkingBudget') ||
+    googleAnchors.some((anchor) => source.includes(anchor));
+  if (!source.includes(googleMarker)) {
+    if (
+      googleAnchors.every((anchor) => source.includes(anchor)) &&
+      googleAnchors.every((anchor) => source.split(anchor).length === 2)
+    ) {
+      source = source.replace(
+        googleRouting,
+        'if (isGemini4Model(googleModel) || isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel) || isGemma4Model(googleModel)) {',
+      );
+      source = source.replace(
+        googleThinkingFn,
+        `${googleThinkingFn}
+  ${googleMarker}
+  if (isGemini4Model(model)) {
+    switch (effort) {
+      case "low":
+        return "LOW";
+      case "medium":
+        return "MEDIUM";
+      case "high":
+        return "HIGH";
+      case "xhigh":
+        return "XHIGH";
+    }
+  }`,
+      );
+      source = source.replace(
+        googleDisabledTail,
+        `/* Studio: Gemini 4 has no off level; use the lowest supported level. */
+  if (isGemini4Model(model)) {
+    return { thinkingLevel: "LOW" };
+  }
+  ${googleDisabledTail}`,
+      );
+      source = source.replace(
+        googleHelperFn,
+        `function isGemini4Model(model) {
+  return /^(?:gemini-4-neon|gemini-4-carbon|gemini-4-hydrogen)$/.test(model.id);
+}
+${googleHelperFn}`,
+      );
+    } else if (adapter && isGoogleShape) {
+      throw new Error('Studio Google thinking adapter requires an update.');
+    }
+  }
   if (!source.includes(thinkingMarker)) {
     if (source.includes(alwaysOn)) {
       if (source.split(alwaysOn).length !== 2)
@@ -108,7 +172,7 @@ return mergePrimeInferenceModels([
         emptyThinking,
         'if (block.thinking.trim().length === 0 && !((model.id === "claude-opus-5-5" || model.id === "claude-fable-5-2") && block.thinkingSignature))',
       );
-    } else if (adapter) {
+    } else if (adapter && !isGoogleShape) {
       throw new Error('Studio Anthropic thinking adapter requires an update.');
     }
   }
@@ -120,7 +184,7 @@ return mergePrimeInferenceModels([
     source,
     claudeVersionPattern,
     ANTHROPIC_CLAUDE_CODE_CLIENT_VERSION,
-    adapter || source.includes(alwaysOn),
+    source.includes(alwaysOn),
     'Studio Claude Code version adapter requires an update.',
   );
   // Codex filters executable models by a versioned server catalog. Raise only
@@ -144,9 +208,10 @@ export function initialize(data) {
 export function studioModelSourceKind(path) {
   return {
     catalog: /^node_modules\/@(?:earendil-works|mariozechner)\/pi-ai\/dist\/models\.js$/.test(path),
-    adapter: /^node_modules\/@(?:earendil-works|mariozechner)\/pi-ai\/dist\/providers\/anthropic\.js$/.test(
-      path,
-    ),
+    adapter:
+      /^node_modules\/@(?:earendil-works|mariozechner)\/pi-ai\/dist\/providers\/(anthropic|google)\.js$/.test(
+        path,
+      ),
     registry: path === 'dist/core/model-registry.js',
     bundle: /^dist\/bundle\/[^/]+\.m?js$/.test(path),
   };

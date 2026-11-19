@@ -4,6 +4,10 @@
 
 Les changements par version. Retrouvez les installateurs et les archives du code source dans les [releases GitHub](https://github.com/zerr0o/prime-agent-studio/releases).
 
+## 4.4.11
+
+- **Gemini 4** : Neon, Carbon et Hydrogen sont ajoutés au fournisseur Google (clé Gemini API). Le modèle par défaut ne change pas. Le quota des abonnements Google AI Pro et Ultra dans AI Studio ne s’applique pas aux appels API de Prime Agent Studio. Hydrogen propose un palier API gratuit sous quota ; Neon et Carbon nécessitent un projet API payant.
+
 ## 4.4.10
 
 - **GPT-6.2 Astra et Sol** : ajout au catalogue natif OpenAI API et Codex, sans changer le modèle par défaut ni contourner les droits du compte. Via l’API : contexte 1,05 M, sortie jusqu’à 128 K, texte et images, tarifs standard actualisés. Via Codex : contexte par défaut de 272 K pour Astra et 500 K pour Sol ; identité minimale du catalogue relevée à 0.166.0. Les efforts `low` à `max` sont disponibles ; `off` et `minimal` sont ramenés à `low`. Le mode Codex `ultra` à délégation automatique n’est pas exposé par le moteur actuel. Les éléments de raisonnement et les appels d’outils restent transmis dans l’ordre ; selon OpenAI, une modification du préfixe ou certains changements de modèle, d’utilisateur ou d’organisation peuvent faire écarter le raisonnement côté API, sans réécriture de l’historique local ni nouvelle tentative ajoutée. Les estimations affichées restent celles du tarif standard court contexte, hors majorations de contexte long et modes accélérés.
